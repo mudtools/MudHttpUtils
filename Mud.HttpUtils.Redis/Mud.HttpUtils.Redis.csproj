@@ -21,7 +21,8 @@
 	</ItemGroup>
 	<!-- MEDI.Abstractions 与 Mud.HttpUtils.Resilience 同口径按 TFM 分组（F7 一致性门禁）：
 	     net8.0/net10.0 → 10.0.9（10.x 资产实测覆盖 netstandard2.0~net10.0）；
-	     net6.0/netstandard2.0 → 8.0.2（维持 legacy TFM 低位依赖面）。
+	     net6.0/netstandard2.0 → 8.0.2（维持 legacy TFM 低位依赖面；SE.Redis legacy 锚 2.x 线
+	     2.13.17，无 >= 10 的传递依赖，NU1605 不复现——3.1.31 曾强制 MEDI >= 10.0.5 故不可用）。
 	     勿改用 VersionOverride 逃生舱：无 CPM 工程上该属性会使 NuGet restore 静默失败（MSB4181）。 -->
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0' or '$(TargetFramework)' == 'net8.0'">
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
@@ -29,7 +30,7 @@
 	</ItemGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'net6.0' or '$(TargetFramework)' == 'netstandard2.0'">
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
-		<PackageReference Include="StackExchange.Redis" Version="2.8.24" />
+		<PackageReference Include="StackExchange.Redis" Version="2.13.17" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />
