@@ -97,6 +97,36 @@
 
 ---
 
+## 3.0.10（未发布：双下游反馈 Batch 1 —— 迁移 codec / 刷新租约 / 打包治理）
+
+> 对应《双下游反馈功能完善方案-MudFeishu与MudWechat-20261015.md》Batch 1（U-1/U-3/U-13）。
+
+### 新增
+
+- **U-1 `MigrationTokenStoreCodec` 迁移期双读编解码器**（`Mud.HttpUtils.Abstractions`）：`Encode` 与
+  `DefaultTokenStoreCodec` 逐字节一致（单写相对秒，不违反 C-2 裁决）；`Decode` 双读——前导数 ≥ 阈值
+  （默认 10^10，阈值参数化）判旧绝对毫秒戳并按 `expiresAtMs - now` floor 投影剩余秒，否则相对秒直读；
+  内建判别失败经 `ILegacyFormatProbe` 钩子兜底；时钟可经构造参数注入。供从 `{expireMs}|{token}` 旧形态
+  迁移的下游拆除私有双读 codec（旧数据按条目自然过期收敛后切回默认 codec）。
+- **U-3 跨进程刷新去重租约**：`ITokenRefreshLease` / `ITokenRefreshLeaseHandle`（抽象层，fail-open 契约）+
+  `TokenManagerBase` 可选钩子（`RefreshLease` 默认 null = 零行为变化；未抢到限时轮询读穿透、超时 fail-open
+  放行本机刷新，释放吞异常）+ `RedisRefreshLease`（Redis 包，`SET NX PX` 原子获取 + Lua compare-and-del
+  释放防误删）。落实 3.0.8 F-3 登记的「跨进程刷新去重（SET NX PX 租约）」增强项。
+- **U-13 pack.ps1 版本递增强制校验**：打包前探测 NuGet 全局缓存同版本包（真实污染向量；artifacts 每次清空重建
+  不构成向量），同版本已存在即拒绝打包（`-ForceSameVersion` 逃生 + 三步清缓存指引）；目标版本不高于
+  CHANGELOG 最新版本段时输出版本纪律告警。`pack_debug.ps1` 默认转发 `-ForceSameVersion`（同版本覆盖缓存
+  为其既定设计目的）。
+
+### 升级注意
+
+- 全部为新增面 + 打包流程治理，无既有行为变更（`RefreshLease` 未配置时令牌管线行为与 3.0.9 逐位一致）。
+- 下游（飞书/微信）接入刷新租约：`RedisRefreshLease` 经 `TokenManagerBase` 派生类覆写 `RefreshLease` 接入；
+  租约键命名空间 `mud:httputils:lease:{管理器键}:{scopeKey}`，与令牌键命名空间并列、可 SCAN。
+- `pack.ps1` 现会对同版本重打包硬拒绝（`-ForceSameVersion` 可越过但后果自负）——依赖「同版本重打覆盖缓存」
+  的本地调试流程请走 `pack_debug.ps1`。
+
+---
+
 ## 3.0.9（工具面竖井整体出清，Mud.HttpUtils 回归纯 HTTP，2026-10-14）
 
 > 对应《Mud.AI 包族详细设计 v2.2/§六 P2》：工具面（ToolSurface）生成引擎已随 P1 迁入飞书仓

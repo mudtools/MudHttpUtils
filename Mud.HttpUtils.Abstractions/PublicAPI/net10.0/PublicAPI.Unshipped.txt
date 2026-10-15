@@ -183,3 +183,21 @@ Mud.HttpUtils.TokenManagerBase.TokenInvalidated -> System.EventHandler<Mud.HttpU
 virtual Mud.HttpUtils.TokenManagerBase.DependencyGraph.get -> Mud.HttpUtils.TokenDependencyGraph!
 virtual Mud.HttpUtils.TokenManagerBase.EnableTokenDependencyCascade.get -> bool
 virtual Mud.HttpUtils.TokenManagerBase.ResolveTokenManagerForType(string! tokenType) -> Mud.HttpUtils.ITokenManager?
+Mud.HttpUtils.ILegacyFormatProbe
+Mud.HttpUtils.ILegacyFormatProbe.TryDecodeLegacy(string! encoded, out string? token, out long expiresInSeconds) -> bool
+Mud.HttpUtils.MigrationTokenStoreCodec
+const Mud.HttpUtils.MigrationTokenStoreCodec.DefaultLegacyAbsoluteMillisecondsThreshold = 100000000000 -> long
+static Mud.HttpUtils.MigrationTokenStoreCodec.Instance.get -> Mud.HttpUtils.MigrationTokenStoreCodec!
+Mud.HttpUtils.MigrationTokenStoreCodec.MigrationTokenStoreCodec(long? legacyAbsoluteMillisecondsThreshold = null, Mud.HttpUtils.ILegacyFormatProbe? legacyProbe = null, Mud.HttpUtils.ITokenStoreCodec? newFormatCodec = null, System.Func<System.DateTimeOffset>? utcNowProvider = null) -> void
+Mud.HttpUtils.MigrationTokenStoreCodec.Encode(string? token, long expiresInSeconds) -> string?
+Mud.HttpUtils.MigrationTokenStoreCodec.Decode(string? encoded) -> (string? Token, long ExpiresInSeconds)?
+Mud.HttpUtils.ITokenRefreshLease
+Mud.HttpUtils.ITokenRefreshLease.TryAcquireAsync(string! leaseKey, System.TimeSpan leaseTime, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.ITokenRefreshLeaseHandle?>!
+Mud.HttpUtils.ITokenRefreshLeaseHandle
+Mud.HttpUtils.ITokenRefreshLeaseHandle.LeaseKey.get -> string!
+Mud.HttpUtils.ITokenRefreshLeaseHandle.ReleaseAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.TokenManagerBase.BuildRefreshLeaseKey(string! scopeKey) -> string!
+virtual Mud.HttpUtils.TokenManagerBase.RefreshLease.get -> Mud.HttpUtils.ITokenRefreshLease?
+virtual Mud.HttpUtils.TokenManagerBase.RefreshLeasePollIntervalMilliseconds.get -> int
+virtual Mud.HttpUtils.TokenManagerBase.RefreshLeaseTime.get -> System.TimeSpan
+virtual Mud.HttpUtils.TokenManagerBase.RefreshLeaseWaitTimeoutMilliseconds.get -> int

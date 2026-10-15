@@ -29,7 +29,9 @@ Write-Host "!!! Debug 打包：产物仅供本地调试，请勿发布到 NuGet 
 Write-Host ""
 
 $DebugOutputDir = "artifacts-debug"
-$forward = @{ Configuration = "Debug"; OutputDir = $DebugOutputDir }
+# U-13：默认携带 -ForceSameVersion —— 本脚本的设计目的就是「同版本覆盖全局缓存做本地调试」
+# （内容哈希 .nupkg.metadata 保证新鲜度），不得被 pack.ps1 的同版本重打防护拦住。
+$forward = @{ Configuration = "Debug"; OutputDir = $DebugOutputDir; ForceSameVersion = $true }
 if (-not [string]::IsNullOrWhiteSpace($Version)) {
     $forward.Version = $Version
 }

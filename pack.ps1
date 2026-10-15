@@ -8,7 +8,9 @@
 param(
     [string]$Configuration = "Release",
     [string]$Version = "",
-    [string]$OutputDir = "artifacts"
+    [string]$OutputDir = "artifacts",
+    # U-13：逃生开关 —— 允许同版本重打包（正常发布流程禁止，防 NuGet 全局缓存同版本键控导致的下游污染）
+    [switch]$ForceSameVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +61,99 @@ $ExpectedPackages = @(
     "Mud.HttpUtils.Resilience",
     "Mud.HttpUtils.Xml"
 )
+
+# -------------------------------------------------------------------------
+# U-13 版本递增强制校验（在清理 artifacts / 还原 / 打包之前执行）
+#   根因：NuGet 全局缓存按 id + version 键控，同版本重打包**不失效**下游缓存 ——
+#   2.0.4 期间三次同版本重打包每次污染全部下游（CS1750，需三步手工清缓存）。
+#   本仓 artifacts 目录每次运行都会清空重建，不构成污染向量；真正的向量是 global-packages。
+#   故在打包前解析目标版本（-Version 参数优先，否则读 Directory.Build.props），
+#   对 $ExpectedPackages 逐包探测全局缓存：同版本已存在即拒绝打包（-ForceSameVersion 逃生）。
+# -------------------------------------------------------------------------
+function Get-NormalizedVersionForCache([string]$v) {
+    # 对齐 NuGet 版本规范化：去构建元数据、去前导零、4 段版本末尾 .0 收敛为 3 段（与 pack_debug.ps1 同口径）
+    $v = $v.Split('+')[0].ToLowerInvariant()
+    $parts = $v -split '-'
+    $numeric = @($parts[0] -split '\.' | ForEach-Object { [string][int]$_ })
+    while ($numeric.Count -gt 3 -and $numeric[-1] -eq '0') {
+        $numeric = $numeric[0..($numeric.Count - 2)]
+    }
+    $prerelease = if ($parts.Count -gt 1) { '-' + ($parts[1..($parts.Count - 1)] -join '-') } else { '' }
+    return ($numeric -join '.') + $prerelease
+}
+
+$targetVersion = $Version
+if ([string]::IsNullOrWhiteSpace($targetVersion)) {
+    $propsRaw = [System.IO.File]::ReadAllText((Join-Path $RootDir "Directory.Build.props"))
+    if ($propsRaw -match '<Version>([^<]+)</Version>') {
+        $targetVersion = $Matches[1]
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($targetVersion)) {
+    # 版本纪律告警：目标版本不高于 CHANGELOG 已发布的最新版本时提示（仅警告，不阻断）
+    $changelogPath = Join-Path $RootDir "CHANGELOG.md"
+    if (Test-Path $changelogPath) {
+        $changelogLines = [System.IO.File]::ReadAllLines($changelogPath)
+        $latestPublished = $null
+        foreach ($line in $changelogLines) {
+            if ($line -match '^##\s+(\d+\.\d+\.\d+)') {
+                $latestPublished = $Matches[1]
+                break   # 版本段自新到旧排列，首个数字版本号即最新发布版本
+            }
+        }
+        if ($latestPublished -and ([version]$targetVersion -le [version]$latestPublished)) {
+            Write-Host "!!! 版本纪律告警：目标版本 $targetVersion 不高于 CHANGELOG 最新发布版本 $latestPublished。" -ForegroundColor Yellow
+            Write-Host "    同版本重打包不会使下游 NuGet 缓存失效，请确认这是有意为之（否则请递增版本号）。" -ForegroundColor Yellow
+            Write-Host ""
+        }
+    }
+
+    $normalizedTarget = Get-NormalizedVersionForCache $targetVersion
+
+    # 解析全局缓存目录：NUGET_PACKAGES 环境变量优先（亦为测试注入点），其次 dotnet 配置，最后默认路径
+    $GlobalPackages = $env:NUGET_PACKAGES
+    if ([string]::IsNullOrWhiteSpace($GlobalPackages)) {
+        $localsOutput = (& dotnet nuget locals global-packages --list) -join "`n"
+        if ($LASTEXITCODE -eq 0 -and $localsOutput -match 'global-packages:\s*(.+)') {
+            $GlobalPackages = $Matches[1].Trim()
+        } else {
+            $GlobalPackages = Join-Path $env:USERPROFILE ".nuget\packages"
+        }
+    }
+
+    $cacheCollisions = @()
+    foreach ($id in $ExpectedPackages) {
+        $cacheDir = Join-Path $GlobalPackages ("{0}\{1}" -f $id.ToLowerInvariant(), $normalizedTarget)
+        if (Test-Path $cacheDir) {
+            $cacheCollisions += "$id $normalizedTarget"
+        }
+    }
+
+    if ($cacheCollisions.Count -gt 0) {
+        if (-not $ForceSameVersion) {
+            Write-Host "========================================" -ForegroundColor Red
+            Write-Host "  打包被拒绝（U-13 版本递增强制校验）：" -ForegroundColor Red
+            Write-Host "  目标版本 $normalizedTarget 已存在于 NuGet 全局缓存：" -ForegroundColor Red
+            foreach ($c in $cacheCollisions) {
+                Write-Host "    - $c" -ForegroundColor Red
+            }
+            Write-Host ""
+            Write-Host "  同版本重打包不会使下游缓存失效（NuGet 按 id+version 键控），将导致下游继续使用旧产物。" -ForegroundColor Yellow
+            Write-Host "  处置三步指引：" -ForegroundColor Yellow
+            Write-Host "    1) 递增 Directory.Build.props 中的版本号（推荐），或以 -Version 传入新版本；" -ForegroundColor Yellow
+            Write-Host "    2) 如确需同版本覆盖：清缓存 dotnet nuget locals global-packages --clear（或逐包删除上述目录）；" -ForegroundColor Yellow
+            Write-Host "    3) 确认必须同版本重打时，使用 -ForceSameVersion 逃生开关重跑本脚本。" -ForegroundColor Yellow
+            exit 1
+        }
+        Write-Host "版本递增校验：目标版本 $normalizedTarget 已存在于全局缓存，-ForceSameVersion 已放行（后果自负）。" -ForegroundColor DarkYellow
+        Write-Host ""
+    } else {
+        Write-Host "版本递增校验通过：全局缓存中不存在 $normalizedTarget 的同版本包。" -ForegroundColor DarkGray
+        Write-Host ""
+    }
+}
+
 
 if ($Configuration -ne "Release") {
     Write-Host "!!! 警告：以 $Configuration 配置打包。Debug 程序集未做优化，不得作为发布包（BC-1）！！！" -ForegroundColor Red

@@ -114,6 +114,38 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual int RefreshRetryDelayMilliseconds => 1000;
 
     /// <summary>
+    /// U-3：跨进程刷新去重租约（<b>默认 null = 未启用，行为与 3.0.9 逐位一致</b>）。
+    /// 子类可覆写以接入分布式租约（如 <c>RedisRefreshLease</c>，或自建去重器的薄包装）。
+    /// 多实例部署下，同一归属键的并发刷新经租约去重：未抢到租约的实例限时轮询读穿透
+    /// （等持有方写入的新令牌），超时后 fail-open 放行本机刷新（租约持有方崩溃时不得死锁；
+    /// fail-open 仅退化为"重复刷新一次"，与未启用时等价，不产生错误令牌）。
+    /// </summary>
+    protected virtual ITokenRefreshLease? RefreshLease => null;
+
+    /// <summary>
+    /// U-3：刷新租约 TTL，默认 30 秒。必须显著大于一次真实刷新的耗时上界；
+    /// 持有方崩溃时租约到点自动过期，不产生永久死锁。
+    /// </summary>
+    protected virtual TimeSpan RefreshLeaseTime => TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// U-3：未抢到租约时的限时等待上界（毫秒），默认 10000ms。超时后 fail-open 放行本机刷新。
+    /// </summary>
+    protected virtual int RefreshLeaseWaitTimeoutMilliseconds => 10_000;
+
+    /// <summary>
+    /// U-3：未抢到租约时的读穿透轮询间隔（毫秒），默认 250ms。
+    /// </summary>
+    protected virtual int RefreshLeasePollIntervalMilliseconds => 250;
+
+    /// <summary>
+    /// U-3：构建刷新租约键（默认 <c>{管理器可观测键}:{scopeKey}</c>，实现方可在其上追加命名空间前缀）。
+    /// </summary>
+    /// <param name="scopeKey">作用域缓存键。</param>
+    /// <returns>租约键。</returns>
+    protected virtual string BuildRefreshLeaseKey(string scopeKey) => $"{MetricsKey}:{scopeKey}";
+
+    /// <summary>
     /// 令牌过期提前量的默认值（秒）。<c>UserTokenCacheOptions.DefaultExpireThresholdSeconds</c> 引用此常量以保持跨层一致。
     /// </summary>
     public const int DefaultExpireThresholdSeconds = 300;
@@ -317,29 +349,82 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     failed.Exception);
             }
 
-            CredentialToken token;
+            // U-3：跨进程刷新去重租约（可选；RefreshLease 默认 null = 零行为变化）。
+            // 进程内键控锁已保证单实例内去重；租约补多实例维度 —— 未抢到的实例限时轮询读穿透，
+            // 超时 fail-open 放行本机刷新（租约持有方崩溃时不得死锁；fail-open 仅退化为重复刷新一次）。
+            ITokenRefreshLeaseHandle? refreshLeaseHandle = null;
+            var leaseAcquired = false;
             try
             {
-                token = await RefreshTokenWithRetryCoreAsync(
-                    scopes == null || scopes.Length == 0
-                        ? ct => RefreshTokenCoreAsync(ct)
-                        : ct => RefreshTokenWithScopesAsync(scopes, ct),
-                    cancellationToken).ConfigureAwait(false);
-                if (negativeCacheSeconds > 0) _recentFailures.TryRemove(scopeKey, out _);
+                var lease = RefreshLease;
+                if (lease != null)
+                {
+                    refreshLeaseHandle = await lease.TryAcquireAsync(
+                        BuildRefreshLeaseKey(scopeKey), RefreshLeaseTime, cancellationToken).ConfigureAwait(false);
+                    leaseAcquired = refreshLeaseHandle != null;
+
+                    if (!leaseAcquired)
+                    {
+                        var waitDeadlineMs = nowMs + RefreshLeaseWaitTimeoutMilliseconds;
+                        var pollIntervalMs = RefreshLeasePollIntervalMilliseconds;
+                        while (UtcNow.ToUnixTimeMilliseconds() < waitDeadlineMs)
+                        {
+                            await Task.Delay(pollIntervalMs, cancellationToken).ConfigureAwait(false);
+
+                            // 等待期间持有方大概率已完成刷新并写入：读穿透直接命中则免本机刷新
+                            var waitedToken = await TryGetValidTokenThroughAsync(scopeKey, cancellationToken).ConfigureAwait(false);
+                            if (waitedToken != null)
+                            {
+                                return waitedToken.AccessToken!;
+                            }
+                            if (TryGetValidToken(scopeKey, out var waitedLocalToken))
+                            {
+                                return waitedLocalToken!.AccessToken!;
+                            }
+                        }
+                        // fail-open：等待超时（持有方崩溃 / 租约 TTL 过短），放行本机刷新。
+                    }
+                }
+
+                CredentialToken token;
+                try
+                {
+                    token = await RefreshTokenWithRetryCoreAsync(
+                        scopes == null || scopes.Length == 0
+                            ? ct => RefreshTokenCoreAsync(ct)
+                            : ct => RefreshTokenWithScopesAsync(scopes, ct),
+                        cancellationToken).ConfigureAwait(false);
+                    if (negativeCacheSeconds > 0) _recentFailures.TryRemove(scopeKey, out _);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)   // 取消不是"刷新失败"
+                {
+                    if (negativeCacheSeconds > 0)
+                        _recentFailures[scopeKey] = new FailedRefresh(ex, nowMs + negativeCacheSeconds * 1000L);
+                    throw;
+                }
+
+                if (token == null || string.IsNullOrEmpty(token.AccessToken))
+                    throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
+
+                UpdateToken(scopeKey, token);
+                // TM-05 修复：token 已是有效凭证，无需再次字典查找，直接返回。
+                return token.AccessToken!;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)   // 取消不是"刷新失败"
+            finally
             {
-                if (negativeCacheSeconds > 0)
-                    _recentFailures[scopeKey] = new FailedRefresh(ex, nowMs + negativeCacheSeconds * 1000L);
-                throw;
+                // U-3：租约释放按所有权校验（compare-and-del），失败吞异常（不得掩盖刷新结果 / 阻断主路径）
+                if (leaseAcquired && refreshLeaseHandle != null)
+                {
+                    try
+                    {
+                        await refreshLeaseHandle.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // 释放失败仅意味着租约等 TTL 自动过期，语义安全（compare-and-del 契约兜底）。
+                    }
+                }
             }
-
-            if (token == null || string.IsNullOrEmpty(token.AccessToken))
-                throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
-
-            UpdateToken(scopeKey, token);
-            // TM-05 修复：token 已是有效凭证，无需再次字典查找，直接返回。
-            return token.AccessToken!;
         }
     }
 

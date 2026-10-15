@@ -31,3 +31,12 @@ Mud.HttpUtils.Redis.RedisTokenStore.ClearAsync(System.Threading.CancellationToke
 Mud.HttpUtils.Redis.ServiceCollectionExtensions
 static Mud.HttpUtils.Redis.ServiceCollectionExtensions.AddMudHttpRedisTokenStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, StackExchange.Redis.IConnectionMultiplexer! connection, System.Action<Mud.HttpUtils.Redis.RedisTokenStoreOptions!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Mud.HttpUtils.Redis.ServiceCollectionExtensions.AddMudHttpRedisTokenStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! connectionString, System.Action<Mud.HttpUtils.Redis.RedisTokenStoreOptions!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+Mud.HttpUtils.Redis.RedisRefreshLease
+Mud.HttpUtils.Redis.RedisRefreshLease.RedisRefreshLease(StackExchange.Redis.IConnectionMultiplexer! connection, Mud.HttpUtils.Redis.RedisRefreshLeaseOptions? options = null) -> void
+Mud.HttpUtils.Redis.RedisRefreshLease.TryAcquireAsync(string! leaseKey, System.TimeSpan leaseTime, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.ITokenRefreshLeaseHandle?>!
+Mud.HttpUtils.Redis.RedisRefreshLeaseOptions
+Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.Database.get -> int
+Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.Database.set -> void
+Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.KeyPrefix.get -> string!
+Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.KeyPrefix.set -> void
+Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.RedisRefreshLeaseOptions() -> void
