@@ -208,7 +208,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 获取此令牌管理器在可观测性（指标 tag、Activity、健康检查）中使用的键。
-    /// P3.4（C4，TK-23）指标键可配置：默认回落到 CLR 类型名 <see cref="object.GetType"/>().Name。
+    /// 指标键可配置：默认回落到 CLR 类型名 <see cref="object.GetType"/>().Name。
     /// 当多个逻辑上不同的管理器共享同一实现类型、或同一类型多实例需要区隔维度时，
     /// 子类可覆写本属性返回可区分（且稳定）的键，例如 DI 注册名、配置区段名或业务键。
     /// 覆写时应保证返回值稳定且不含敏感信息，因为它会作为指标维度/日志维度被持久化。
@@ -228,7 +228,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected TokenManagerBase(ITokenCache<CredentialToken> tokenCache)
     {
         _tokenCache = tokenCache ?? throw new ArgumentNullException(nameof(tokenCache));
-        // SR-L9（P3.10，D14-V5）仅当管理器声明支持租户维护时才启动两个 Timer；
+        // 仅当管理器声明支持租户维护时才启动两个 Timer；
         // 用户令牌管理器覆写 SupportsTenantMaintenance=false 跳过（其令牌经 IMemoryCache 自带过期）。
         if (SupportsTenantMaintenance)
         {
@@ -248,7 +248,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <remarks>
     /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/> 一致），
     /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>
-    /// （MT-11：否则调用方会静默拿到默认作用域令牌，构成 scope 错配 / 潜在越权风险；
+    /// （否则调用方会静默拿到默认作用域令牌，构成 scope 错配 / 潜在越权风险；
     /// 支持按作用域取令牌的子类<b>必须覆写本重载</b>，<c>StandardOAuth2TokenManager</c>（Client 程序集）已覆写）。
     /// </remarks>
     public virtual Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
@@ -268,7 +268,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 会传入锁内刷新操作。若该调用方取消，则正在进行的共享刷新将被中止，其余等待者将在各自重试时发起新的刷新。
     /// 此行为是"尊重调用方取消"的有意设计，并非缺陷。</para>
     /// <para>401 恢复路径已做取消隔离（<c>TokenRecoveryExecutor</c> 使用独立 CT），不受此语义影响。</para>
-    /// <para><b>MT-27 实现约定（子类必读）</b>：</para>
+    /// <para><b>实现约定（子类必读）</b>：</para>
     /// <list type="bullet">
     /// <item><description>本方法在<b>持有作用域键控锁（<see cref="KeyedLockTable"/>）期间</b>调用
     /// <see cref="RefreshTokenCoreAsync"/> / <see cref="RefreshTokenWithScopesAsync"/>。</description></item>
@@ -297,13 +297,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             return probedToken.AccessToken!;
         }
 
-        // TM-02 修复：使用 TryGetValidToken 合并 IsTokenValid + TryGet 为单次查找，避免冗余的双字典访问
+        // 修复：使用 TryGetValidToken 合并 IsTokenValid + TryGet 为单次查找，避免冗余的双字典访问
         if (TryGetValidToken(scopeKey, out var fastToken))
         {
             return fastToken!.AccessToken!;
         }
 
-        // P2.2（TK-05/09/24）从键控锁表获取作用域锁
+        // 从键控锁表获取作用域锁
         using (var releaser = await _keyedLockTable.AcquireAsync(scopeKey, cancellationToken).ConfigureAwait(false))
         {
             if (_disposed)
@@ -329,7 +329,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 && _recentFailures.TryGetValue(scopeKey, out var failed)
                 && failed.UntilMs > nowMs)
             {
-                // R-P3-03：抑制同样计入标准刷新指标（outcome=failure），
+                // 抑制同样计入标准刷新指标（outcome=failure），
                 // 使"被负缓存吞掉的失败"在通用监控视图（失败率/刷新次数）中可见 ——
                 // 此前仅增专用抑制计数器，聚合面板看不到这部分失败。
                 RecordTokenRefresh(success: false, MetricsKey, elapsedMs: 0, isFallback: false);
@@ -337,7 +337,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 MudHttpMeter.TokenRefreshSuppressedCounter.Add(1,
                     MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[] { new("token_manager_key", MetricsKey) }));
 
-                // R-P3-03：**不复用同一异常实例**。原实现用 ExceptionDispatchInfo 重抛缓存中的同一对象，
+                // **不复用同一异常实例**。原实现用 ExceptionDispatchInfo 重抛缓存中的同一对象，
                 // 并发等待者会共享一个 Exception：其 StackTrace / Data / 内部可变状态被多方同时读写，
                 // 且栈信息指向"首次抛出的位置"，无法区分"真正失败点"与"被负缓存抑制的复用点"。
                 // 改为每次构造新异常、把原异常作为 InnerException 保留完整因果链。
@@ -346,7 +346,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     failed.Exception);
             }
 
-            // U-3：跨进程刷新去重租约（可选；RefreshLease 默认 null = 零行为变化）。
+            // 跨进程刷新去重租约（可选；RefreshLease 默认 null = 零行为变化）。
             // 进程内键控锁已保证单实例内去重；租约补多实例维度 —— 未抢到的实例限时轮询读穿透，
             // 超时 fail-open 放行本机刷新（租约持有方崩溃时不得死锁；fail-open 仅退化为重复刷新一次）。
             ITokenRefreshLeaseHandle? refreshLeaseHandle = null;
@@ -404,12 +404,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
 
                 UpdateToken(scopeKey, token);
-                // TM-05 修复：token 已是有效凭证，无需再次字典查找，直接返回。
+                // 修复：token 已是有效凭证，无需再次字典查找，直接返回。
                 return token.AccessToken!;
             }
             finally
             {
-                // U-3：租约释放按所有权校验（compare-and-del），失败吞异常（不得掩盖刷新结果 / 阻断主路径）
+                // 租约释放按所有权校验（compare-and-del），失败吞异常（不得掩盖刷新结果 / 阻断主路径）
                 if (leaseAcquired && refreshLeaseHandle != null)
                 {
                     try
@@ -452,7 +452,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 ? TokenResult.Empty
                 : new TokenResult(removed.AccessToken!, removed.Expire, scopeKey);
 
-            // F-7：失效通知 + 级联传播（独立开关，默认关；事件恒触发，不受开关影响）。
+            // 失效通知 + 级联传播（独立开关，默认关；事件恒触发，不受开关影响）。
             NotifyAndCascadeInvalidated(scopes, result, cancellationToken);
 
             return result;
@@ -460,7 +460,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// F-7：<see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 的收尾钩子 ——
+    /// <see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 的收尾钩子 ——
     /// ① 触发 <see cref="TokenInvalidated"/>（订阅者异常隔离，不阻断返回）；
     /// ② 若 <see cref="EnableTokenDependencyCascade"/> 且 <see cref="DependencyGraph"/> 非空，
     /// 把失效沿依赖图传播到依赖令牌的管理器（<see cref="ResolveTokenManagerForType(string)"/>）。
@@ -516,12 +516,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
     }
 
-    // F-2：以下两个 TokenScopeKey 重载刻意携带与既有重载同形的可选 CancellationToken（保持调用形态一致，
+    // 以下两个 TokenScopeKey 重载刻意携带与既有重载同形的可选 CancellationToken（保持调用形态一致，
     // 且不得改动既有 string[] scopes 签名）。RS0026 建议"去掉可选参数"反而会造成新旧重载调用形态分裂，
     // 与 Mud.HttpUtils.Client 对同一权衡的登记口径一致，此处局部豁免。
-#pragma warning disable RS0026 // 请勿添加具有可选参数的多个重载：F-2 定位符重载刻意保留可选 CancellationToken
+#pragma warning disable RS0026 // 请勿添加具有可选参数的多个重载：定位符重载刻意保留可选 CancellationToken
     /// <summary>
-    /// F-2（TK-1）按<b>定位符形态</b>的 <see cref="TokenScopeKey"/> 获取有效令牌（未命中则刷新）。
+    /// 按<b>定位符形态</b>的 <see cref="TokenScopeKey"/> 获取有效令牌（未命中则刷新）。
     /// 与既有 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/> <b>单缓存互通</b>：
     /// 按段映射到旧路径（<c>ForScope(t,a,s)</c> → <c>scopes = [s]</c>；<c>ForApp(t,a)</c> /
     /// <c>ForShared(t)</c> → <c>scopes = null</c>），同一归属键命中同一缓存条目。
@@ -541,7 +541,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// F-2（TK-1）按<b>定位符形态</b>的 <see cref="TokenScopeKey"/> 使缓存令牌失效。
+    /// 按<b>定位符形态</b>的 <see cref="TokenScopeKey"/> 使缓存令牌失效。
     /// 与既有 <see cref="InvalidateTokenAsync(string[], CancellationToken)"/> <b>单缓存互通</b>（段映射规则同上）。
     /// </summary>
     /// <param name="scopeKey">归属键（tokenType / appKey 段仅做一致性校验，绝不参与缓存键）。</param>
@@ -556,7 +556,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 #pragma warning restore RS0026
 
     /// <summary>
-    /// F-2：定位符形态的一致性校验——<c>tokenType</c> 段对照本管理器声明的
+    /// 定位符形态的一致性校验——<c>tokenType</c> 段对照本管理器声明的
     /// <see cref="TokenType"/>（未声明则跳过）；<c>appKey</c> 段对照上下文 AppKey（即
     /// <see cref="BindTenantGuard(string, string?)"/> 绑定的租户键；尚未绑定 / 该段为空则跳过）。
     /// 两段<b>只做校验</b>：不绑定、不参与缓存键（缓存键仍由 scopeKey 段经既有路径生成）。
@@ -596,7 +596,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>刷新后的凭证令牌。</returns>
     /// <remarks>
-    /// <para><b>MT-27 实现约定（子类必读）</b>：</para>
+    /// <para><b>实现约定（子类必读）</b>：</para>
     /// <list type="bullet">
     /// <item><description>本方法在<b>持有作用域键控锁（<see cref="KeyedLockTable"/>）期间</b>被调用
     /// （<c>RefreshTokenWithScopesAsync</c> 的默认实现亦然）。</description></item>
@@ -626,7 +626,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 生成作用域缓存键。null 或空数组返回 "default"。
-    /// SR-M5（P3.3，D11）规范化统一委托 <see cref="ScopeKeyBuilder"/>（Distinct/Ordinal/排序）单一实现。
+    /// 规范化统一委托 <see cref="ScopeKeyBuilder"/>（Distinct/Ordinal/排序）单一实现。
     /// 行为差异（{"a","a"} 从 "a,a" 变 "a"、大小写不同 scope 不再分裂）属键规范化，记入变更说明。
     /// </summary>
     /// <param name="scopes">令牌作用域数组。</param>
@@ -662,7 +662,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 从缓存中获取默认作用域的令牌信息，如果不存在或已过期则返回 null。
-    /// P2.3（TK-02）保留兼容层：委托 <see cref="GetCachedCredentialToken(string)"/> 读取默认作用域。
+    /// 保留兼容层：委托 <see cref="GetCachedCredentialToken(string)"/> 读取默认作用域。
     /// </summary>
     /// <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
     protected CredentialToken? GetCachedCredentialToken()
@@ -671,7 +671,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// P2.3（TK-02）从缓存中获取指定作用域的令牌信息，如果不存在或已过期则返回 null。
+    /// 从缓存中获取指定作用域的令牌信息，如果不存在或已过期则返回 null。
     /// 按 scopeKey 隔离刷新链路，避免用默认作用域的 refresh_token 去刷新任意 scope（跨作用域污染）。
     /// </summary>
     /// <param name="scopeKey">作用域缓存键（由 <see cref="GetScopeKey(string[])"/> 生成）。</param>
@@ -684,7 +684,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// SR-M2（P2.3，D8）仅失效缓存条目的 refresh_token，其余字段（AccessToken 等）保留。
+    /// 仅失效缓存条目的 refresh_token，其余字段（AccessToken 等）保留。
     /// 供 invalid_grant 清除回退使用：可疑 refresh_token 被消费后不得继续滞留缓存被后续请求复用。
     /// </summary>
     /// <param name="scopeKey">作用域缓存键。</param>
@@ -692,7 +692,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     {
         if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
         {
-            // R-P1-07：写时复制 —— 不得原地改写已分发的实例（并发读取方可能看到 RefreshToken == null）。
+            // 写时复制 —— 不得原地改写已分发的实例（并发读取方可能看到 RefreshToken == null）。
             _tokenCache.Set(scopeKey, existing.WithRefreshTokenInvalidated());
         }
     }
@@ -709,7 +709,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     {
         if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
         {
-            // R-P1-07：写时复制（字段级保留 refresh_token），避免与锁内刷新交错时
+            // 写时复制（字段级保留 refresh_token），避免与锁内刷新交错时
             // 让派生类读到 RefreshToken == null 而静默降级为 client_credentials。
             _tokenCache.Set(scopeKey, existing.WithAccessTokenInvalidated());
         }
@@ -721,15 +721,15 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         => InvalidateCachedAccessToken(GetScopeKey(scopes));
 
     /// <summary>
-    /// SR-H5（P2.1，D6）租户绑定键（bind-once）。null = 尚未绑定。
+    /// 租户绑定键（bind-once）。null = 尚未绑定。
     /// 绑定键 = <c>IMudAppContext.AppKey</c>（多租户在本框架的投影即多 App）。
-    /// F-2：<c>PerScope</c> 档的绑定键为「AppKey + ScopeKey」归属对，故绑定记录携带两段；
+    /// <c>PerScope</c> 档的绑定键为「AppKey + ScopeKey」归属对，故绑定记录携带两段；
     /// <c>PerApp</c> 档只比对 AppKey 段（行为与既有实现逐位一致）。
     /// </summary>
     private TenantBindingRecord? _tenantBinding;
 
     /// <summary>
-    /// F-2：租户绑定记录（不可变，单字段 CAS 保证 bind-once 的原子性）。
+    /// 租户绑定记录（不可变，单字段 CAS 保证 bind-once 的原子性）。
     /// </summary>
     private sealed class TenantBindingRecord
     {
@@ -761,13 +761,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 
     /// <summary>
-    /// SR-H5（P2.1，D6）是否启用租户绑定守卫（防止单实例跨租户共享导致凭据错配）。
-    /// 默认 true；派生类实现 <see cref="ISharedTokenManager"/>（WX-02：全租户共享凭据标记，
+    /// 是否启用租户绑定守卫（防止单实例跨租户共享导致凭据错配）。
+    /// 默认 true；派生类实现 <see cref="ISharedTokenManager"/>（全租户共享凭据标记，
     /// 如服务商 / 套件令牌）时默认 false。其余特殊场景可覆写为 false（需自证凭据无租户属性）；
     /// 显式覆写优先于接口标记。
     /// </summary>
     /// <remarks>
-    /// F-2 后本属性为 <see cref="BindingMode"/> 默认值的<b>推导来源</b>（不再直接驱动守卫）：
+    /// 后本属性为 <see cref="BindingMode"/> 默认值的<b>推导来源</b>（不再直接驱动守卫）：
     /// 未覆写 <see cref="BindingMode"/> 时，false ⇒ <see cref="TokenBindingMode.Shared"/>、
     /// true ⇒ <see cref="TokenBindingMode.PerApp"/>，守卫行为与此前逐位一致。
     /// 归属语义请以覆写 <see cref="BindingMode"/> 为准（单一真源），勿双向覆写。
@@ -775,7 +775,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual bool EnforceTenantBinding => this is not ISharedTokenManager;
 
     /// <summary>
-    /// F-2（TK-1）令牌归属绑定模式（归属语义的<b>单一真源</b>），驱动租户绑定守卫分档：
+    /// 令牌归属绑定模式（归属语义的<b>单一真源</b>），驱动租户绑定守卫分档：
     /// <see cref="TokenBindingMode.Shared"/> 跳过绑定；<see cref="TokenBindingMode.PerScope"/>
     /// 以 AppKey + ScopeKey 归属对绑定；<see cref="TokenBindingMode.PerApp"/> 维持既有按 AppKey 绑定行为。
     /// </summary>
@@ -793,7 +793,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         EnforceTenantBinding ? TokenBindingMode.PerApp : TokenBindingMode.Shared;
 
     /// <summary>
-    /// F-2（TK-1）本管理器声明的令牌类型标识（与 <c>IMudAppContext.GetTokenManager(tokenType)</c>
+    /// 本管理器声明的令牌类型标识（与 <c>IMudAppContext.GetTokenManager(tokenType)</c>
     /// 注册键同口径）。默认 null = 未声明：此时 <see cref="TokenScopeKey"/> 定位符形态跳过
     /// tokenType 段的一致性校验。该段<b>绝不参与缓存键</b>，仅供定位符校验。
     /// </summary>
@@ -817,16 +817,16 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     public bool IsTenantBindingEnforced => BindingMode != TokenBindingMode.Shared;
 
     /// <summary>
-    /// SR-H5（P2.1，D6）bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
+    /// bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
     /// 同键重复绑定幂等通过。internal：仅框架调用点（<c>DefaultTokenProvider</c>）触发，不进公共 API。
-    /// F-2：按 <see cref="BindingMode"/> 分档（本重载无 scopeKey，PerScope 档以「AppKey + 空归属键」绑定）。
+    /// 按 <see cref="BindingMode"/> 分档（本重载无 scopeKey，PerScope 档以「AppKey + 空归属键」绑定）。
     /// </summary>
     /// <param name="tenantKey">租户键（AppKey）。</param>
     /// <exception cref="InvalidOperationException">已绑定其他租户且守卫启用时抛出。</exception>
     internal void BindTenantGuard(string tenantKey) => BindTenantGuard(tenantKey, scopeKey: null);
 
     /// <summary>
-    /// SR-H5 + F-2：bind-once 租户绑定守卫（带归属键）。按 <see cref="BindingMode"/> 分档：
+    /// bind-once 租户绑定守卫（带归属键）。按 <see cref="BindingMode"/> 分档：
     /// <see cref="TokenBindingMode.Shared"/> 跳过绑定；<see cref="TokenBindingMode.PerScope"/>
     /// 以 AppKey + ScopeKey 归属对绑定（同对幂等、任一段不同即拒绝）；
     /// <see cref="TokenBindingMode.PerApp"/> 只以 AppKey 绑定（与既有行为逐位一致，scopeKey 不参与）。
@@ -889,12 +889,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// L-1：当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
-    /// F-2：PerScope 档绑定记录含归属键，此处仍只回传 AppKey 段（告警口径不变）。
+    /// PerScope 档绑定记录含归属键，此处仍只回传 AppKey 段（告警口径不变）。
     /// </summary>
     internal string? BoundTenant => Volatile.Read(ref _tenantBinding)?.AppKey;
 
     /// <summary>
-    /// SR-L9（P3.10，D14-V5）是否启动租户层维护 Timer（过期清理 300s / 锁清理 600s）。默认 true。
+    /// 是否启动租户层维护 Timer（过期清理 300s / 锁清理 600s）。默认 true。
     /// 用户令牌管理器覆写 false 以跳过其永不使用的租户层 Timer 资源。
     /// <para>注意：仅跳过 Timer 分配；<c>_tokenCache</c> / <c>_keyedLockTable</c> 仍保留分配（避免基类
     /// 公共路径解引用空字段的 NRE 面，见 §0.3-V5 评审修订）。</para>
@@ -903,7 +903,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 触发令牌刷新失败事件。
-    /// NEW-TM-04 修复：捕获订阅者异常，避免掩盖原始令牌刷新失败的根因。
+    /// 修复：捕获订阅者异常，避免掩盖原始令牌刷新失败的根因。
     /// </summary>
     /// <param name="e">事件参数。</param>
     private void OnRefreshFailed(TokenRefreshFailedEventArgs e)
@@ -919,7 +919,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
     }
 
-    // P1.1（TK-01）凭据字段级合并：刷新响应缺省字段时保留既有凭据，避免静默降级到错误授权流程。
+    // 凭据字段级合并：刷新响应缺省字段时保留既有凭据，避免静默降级到错误授权流程。
     // 语义与 UserTokenInfo.UpdateFromCredentialToken 对齐（仅当新值缺失/无效时保留旧值，服务端返回的新值必须优先）。
     private void UpdateToken(string scopeKey, CredentialToken? token)
     {
@@ -955,9 +955,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         _tokenCache.Set(scopeKey, token);
 
-        // SR-M5（P3.3，D11）硬上限 LRU 收敛：阻断攻击者/失控代码以海量 scope 组合
+        // 硬上限 LRU 收敛：阻断攻击者/失控代码以海量 scope 组合
         // 制造无界缓存+锁表膨胀（有效期内 CleanupExpiredTokens 清不掉未过期条目）。
-        // R-P2-03：常态收敛<b>移出锁内</b> —— 本方法处于【持有 scope 锁】的关键区内，而
+        // 常态收敛<b>移出锁内</b> —— 本方法处于【持有 scope 锁】的关键区内，而
         // CleanupExpiredTokens（全表遍历）与 Compact（OrderBy 全排序）在条目多时是 O(n log n)，
         // 会把锁持有时间放大到与缓存规模成正比，进而放大其它等待者的排队时间。
         // 现在：常态只置脏标记（O(1)），由维护定时器在锁外完成；
@@ -981,7 +981,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// R-P2-03：把缓存条目按 LRU 压缩到 <paramref name="limit"/> 以下。
+    /// 把缓存条目按 LRU 压缩到 <paramref name="limit"/> 以下。
     /// </summary>
     /// <param name="limit">目标条目上限（须 &gt; 0）。</param>
     private void CompactTo(int limit)
@@ -1004,7 +1004,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         // 可观测性：记录刷新开始时间戳
         var startTimestamp = Stopwatch.GetTimestamp();
         var timestampToMs = 1000.0 / Stopwatch.Frequency;
-        // P3.4（C4，TK-23）：使用可覆写的 MetricsKey 而非 GetType().Name，使多管理器/多实例维度可区分。
+        // 使用可覆写的 MetricsKey 而非 GetType().Name，使多管理器/多实例维度可区分。
         string? tokenManagerKey = MetricsKey;
 
         while (retryCount <= MaxRefreshRetryCount)
@@ -1013,14 +1013,14 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             {
                 var token = await refreshFunc(cancellationToken).ConfigureAwait(false);
 
-                // 成功路径：复位降级退避计数，记录指标（P1.3：服务恢复后尽快回到正常令牌）
+                // 成功路径：复位降级退避计数，记录指标（服务恢复后尽快回到正常令牌）
                 Interlocked.Exchange(ref _consecutiveFallbacks, 0);
                 var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
                 RecordTokenRefresh(success: true, tokenManagerKey, elapsedMs, isFallback: false);
 
                 return token;
             }
-            // NEW-TM-12 修复：取消操作必须立即传播，不进入重试/降级逻辑。
+            // 修复：取消操作必须立即传播，不进入重试/降级逻辑。
             // 原实现将 OperationCanceledException 视为普通刷新失败，可能错误返回 FallbackToken，
             // 违背 .NET 异步编程规范（取消应立即传播，不应被业务逻辑拦截）。
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1040,7 +1040,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
                     RecordTokenRefresh(success: true, tokenManagerKey, elapsedMs, isFallback: true);
 
-                    // P1.3（TK-04）降级令牌有效期 = ExpireThresholdSeconds + 指数退避增量，
+                    // 降级令牌有效期 = ExpireThresholdSeconds + 指数退避增量，
                     // 保证降级条目在缓存层必然判定为可用（严格 > 成立），避免刷新风暴；
                     // 同时退避使服务恢复后能快速回到正常令牌。
                     var backoff = NextFallbackLifetimeSeconds();
@@ -1053,7 +1053,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     };
                 }
 
-                // TK-20（P2.10）重试语义显式化：
+                // 重试语义显式化：
                 // MaxRefreshRetryCount 是重试的唯一主控门（默认 0 = 不重试），
                 // ShouldRetry 仅用于事件处理器提前取消剩余重试，不能启用重试。
                 if (retryCount >= MaxRefreshRetryCount || !eventArgs.ShouldRetry)
@@ -1070,14 +1070,14 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             }
         }
 
-        // NEW-TM-05 修复：移除不可达的死代码。
+        // 修复：移除不可达的死代码。
         // while 循环内 catch 块在达到最大重试次数时必然 throw，循环永不自然退出。
         // 此处通过 throw 确保编译器控制流分析通过，且语义清晰。
         throw new InvalidOperationException("令牌刷新失败：达到最大重试次数。");
     }
 
     /// <summary>
-    /// 计算降级令牌的"退避增量"（秒）。P1.3（TK-04）修复：
+    /// 计算降级令牌的"退避增量"（秒）。修复：
     /// 从 <c>FallbackGraceSeconds</c>（默认 60s）开始指数翻倍，命中 <see cref="MaxFallbackLifetimeSeconds"/> 后封顶。
     /// 返回值为"增量"，实际有效期 = <see cref="ExpireThresholdSeconds"/> + 增量，保证缓存层严格判定为可用。
     /// </summary>
@@ -1132,7 +1132,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// 尝试获取有效的缓存令牌。TM-02 修复：合并 IsTokenValid + TryGet 为单次查找，
+    /// 尝试获取有效的缓存令牌。修复：合并 IsTokenValid + TryGet 为单次查找，
     /// 避免在 GetOrRefreshTokenAsync 中对缓存进行两次独立的 TryGet 调用。
     /// </summary>
     /// <param name="scopeKey">作用域缓存键。</param>
@@ -1155,7 +1155,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// S2-2（治理方案）：异步读穿透探测 —— 当缓存实现 <see cref="IAsyncTokenCache{T}"/> 时，
     /// 经 <see cref="IAsyncTokenCache{T}.GetAsync"/> 读取（桥接器实现下：镜像未命中直达 store），
     /// 有效则返回；否则返回 null。非异步缓存同步返回 null（ValueTask 同步完成路径，无分配）。
-    /// 有效性判定与 <see cref="TryGetValidToken"/> 严格同源（P1.3/P2.4：TokenExpiryPolicy + TTL 感知阈值）。
+    /// 有效性判定与 <see cref="TryGetValidToken"/> 严格同源（TokenExpiryPolicy + TTL 感知阈值）。
     /// </summary>
     private async ValueTask<CredentialToken?> TryGetValidTokenThroughAsync(string scopeKey, CancellationToken cancellationToken)
     {
@@ -1168,7 +1168,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 凭据令牌可用性判定（TryGetValidToken 与 S2 异步探测共用的单一实现）。
-    /// P1.3（TK-04）有效期判定委托 TokenExpiryPolicy；P2.4 TTL 感知阈值钳位。
+    /// 有效期判定委托 TokenExpiryPolicy；TTL 感知阈值钳位。
     /// </summary>
     private bool IsCredentialTokenUsable(CredentialToken? entry)
     {
@@ -1184,7 +1184,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (_disposed)
             return;
 
-        // NEW-TM-02 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
+        // 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
         try
         {
             lock (_cleanupLock)
@@ -1200,14 +1200,14 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
                     // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
 
-                    // P1.3（TK-04）收敛：过期判定统一委托 TokenExpiryPolicy，与 TryGetValidToken 严格一致
-                    // P2.4（TK-04）TTL 感知阈值
+                    // 收敛：过期判定统一委托 TokenExpiryPolicy，与 TryGetValidToken 严格一致
+                    // TTL 感知阈值
                     if (_tokenCache.TryGet(key, out var entry)
                         && entry != null
                         && TokenExpiryPolicy.IsExpired(entry.IssuedAt, entry.Expire, now, ExpireThresholdSeconds))
                     {
                         _tokenCache.TryRemove(key, out _);
-                        _keyedLockTable.TryRetire(key);   // P2.2（TK-05/09/24）经 retire 协议统一回收
+                        _keyedLockTable.TryRetire(key);   // 经 retire 协议统一回收
                     }
                 }
 
@@ -1218,7 +1218,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                         _recentFailures.TryRemove(kv.Key, out _);
                 }
 
-                // R-P2-03：消费 UpdateToken 置下的 LRU 收敛脏标记。
+                // 消费 UpdateToken 置下的 LRU 收敛脏标记。
                 // 此处由维护定时器驱动（不持有任何 scope 锁）⇒ 全表遍历与 Compact 的开销不再落在请求关键区。
                 if (Interlocked.Exchange(ref _compactRequested, 0) == 1 && _tokenCache.Count > MaxScopeCacheSize)
                 {
@@ -1237,7 +1237,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (_disposed)
             return;
 
-        // NEW-TM-02 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
+        // 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
         try
         {
             lock (_cleanupLock)
@@ -1250,7 +1250,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     if (key == DefaultScopeKey)
                         continue;
 
-                    // P2.2（TK-05/09/24）仅当缓存中已无该作用域令牌时才退休对应的锁。
+                    // 仅当缓存中已无该作用域令牌时才退休对应的锁。
                     // TryRetire 内部以 retire 协议保证：若锁正被占用则仅标记退休，由最后一个 Releaser 完成移除。
                     if (!_tokenCache.TryGet(key, out _))
                     {
@@ -1266,17 +1266,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <inheritdoc />
-    // P1.5（TK-08）Dispose 补充缓存释放，且不再 Dispose SemaphoreSlim。
+    // Dispose 补充缓存释放，且不再 Dispose SemaphoreSlim。
     // 1. 补上 _tokenCache.Dispose()（原实现仅 Clear()，未释放缓存底层资源）。
-    // 2. P2.2（TK-05/09/24）_keyedLockTable.Dispose() 与 KeyedLockTable 内部"不 Dispose SemaphoreSlim"决策一致：
+    // 2. _keyedLockTable.Dispose() 与 KeyedLockTable 内部"不 Dispose SemaphoreSlim"决策一致：
     //    SemaphoreSlim.Dispose 与在途 WaitAsync/Release 并存会抛 ObjectDisposedException，
     //    破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
-    // SR-H1（P1.3，D3）Dispose 链重构：可重入 + 每步幂等。
+    // Dispose 链重构：可重入 + 每步幂等。
     // 原实现第一行 if (_disposed) return; 在派生类（如 UserTokenManagerBase）先行置位 _disposed 后
-    // 调 base.Dispose 时直接早退，导致基类维护 Timer / 锁表 / 缓存永不释放（/ NEW-TM-11 修复引入的回归）。
+    // 调 base.Dispose 时直接早退，导致基类维护 Timer / 锁表 / 缓存永不释放（修复引入的回归）。
     // 新契约（写入基类 XML 文档，见本类 remarks）：
     //   1) Dispose(bool) 可重入、幂等；不以 _disposed 早退（派生类置位后仍须执行基类释放）。
-    //   2) 派生类覆写时应在开头自行检查/置位 _disposed（保留 NEW-TM-11 快速感知语义），
+    //   2) 派生类覆写时应在开头自行检查/置位 _disposed，
     //      且无论标志状态如何都必须调用 base.Dispose(disposing)。
     //   3) 各释放步骤自身幂等。
     protected virtual void Dispose(bool disposing)
@@ -1294,7 +1294,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private bool _timersStopped;
 
     /// <summary>
-    /// SR-H1（P1.3）停止两个租户维护 Timer。与 Timer 回调共用 _cleanupLock，天然互斥；
+    /// 停止两个租户维护 Timer。与 Timer 回调共用 _cleanupLock，天然互斥；
     /// _timersStopped 一次性标志保证可重入幂等。
     /// </summary>
     private void StopMaintenanceTimers()
@@ -1312,28 +1312,28 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// SR-H1（P1.3）测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
+    /// 测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
     /// </summary>
     internal bool TimersActive => !_timersStopped;
 
     /// <summary>
-    /// MT-15：是否已释放。供 <c>TokenRefreshHelper</c>（Client 程序集）区分
+    /// 是否已释放。供 <c>TokenRefreshHelper</c>（Client 程序集）区分
     /// 「管理器已被释放（应反注册）」与「管理器<b>暂时</b>不可用（不应永久反注册）」。
     /// </summary>
     internal bool IsDisposed => _disposed;
 
     /// <summary>
-    /// SR-M5（P3.3）测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。
+    /// 测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。
     /// </summary>
     internal int CacheCountInternal => _tokenCache.Count;
 
     /// <summary>
-    /// R-P2-03 测试观测钩子：当前是否已置下"待 LRU 收敛"脏标记（常态超限应置位、锁内不应已收敛）。
+    /// 测试观测钩子：当前是否已置下"待 LRU 收敛"脏标记（常态超限应置位、锁内不应已收敛）。
     /// </summary>
     internal bool CompactRequestedForTest => Volatile.Read(ref _compactRequested) == 1;
 
     /// <summary>
-    /// R-P2-03 测试观测钩子：在<b>测试线程</b>上同步执行一次维护回调（等价于定时器触发一次），
+    /// 测试观测钩子：在<b>测试线程</b>上同步执行一次维护回调（等价于定时器触发一次），
     /// 使"锁外收敛"可被确定性断言，而不必等待真实定时器周期。
     /// </summary>
     internal void RunMaintenanceForTest() => CleanupExpiredTokens(null);
