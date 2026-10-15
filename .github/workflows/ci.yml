@@ -130,7 +130,7 @@ jobs:
 
       - name: Check package version consistency
         shell: pwsh
-        run: ./tools/check-package-version-consistency.ps1
+        run: ./Tools/check-package-version-consistency.ps1
 
   # ──────────────────────────────────────────────
   # PublicAPI 契约门禁（H-4）
@@ -138,7 +138,7 @@ jobs:
   # 以 -p:PublicApiStrictMode=true 构建全部发布库 × 各自 TFM。
   # PublicApiAnalyzers 将 RS0016（代码含基线未登记的公共符号）/RS0017（基线含代码已删除的符号）
   # 升级为 error —— 任何公共 API 变更未同步基线（PublicAPI/<tfm>/PublicAPI.*.txt）即构建失败。
-  # 基线重建：tools/rebuild-publicapi.ps1（勿在 CI 伪造基线）。
+  # 基线重建：Tools/rebuild-publicapi.ps1（勿在 CI 伪造基线）。
   publicapi-gate:
     name: PublicAPI 契约门禁
     runs-on: ubuntu-latest
@@ -730,6 +730,13 @@ jobs:
 
       # [T-1] 脚手架在真实 PackageRef 消费方端到端激活验证（正常 restore，非 --no-restore）
       # [T-1 勘误] 版本从本作业 artifacts 实际 nupkg 提取注入（勿用 Version="*"，与 §4 风险注记一致）
+      # [T-1 勘误 2] 工具接入方式改为「全局工具安装」：
+      #   SDK 并不存在 DotNetToolReference 这一 MSBuild 项 —— NuGet 对未知项静默忽略
+      #   （SDK 内与之相近的 DotNetCliToolReference 自 .NET Core 3.0 起已废弃），故包内 targets 的
+      #   「工具引用路径」分支恒为空，工具只能按 PATH 解析 `mud-jsonctx`；
+      #   历史上本步骤未安装工具，于是构建成功却零产物，由末尾断言兜住（历史报错：exit code 127）。
+      #   同时把 NuGet 源显式收敛到本作业 artifacts：否则会命中全局包缓存 / nuget.org 上的同名同版本包，
+      #   变成「验证已发布包」而非「验证本次构建产物」。
       - name: End-to-end scaffolder activation (PackageRef)
         shell: bash
         env:
@@ -737,6 +744,17 @@ jobs:
         run: |
           TEST_DIR="$WORKSPACE/.tmp-scaffolder-e2e"
           rm -rf "$TEST_DIR"; mkdir -p "$TEST_DIR"
+          # 注意：heredoc 保留行首缩进，故此处不写 XML 声明（声明必须位于文档首字节），
+          # 无声明即为合法 XML，NuGet 可正常解析。
+          cat > "$TEST_DIR/nuget.config" << EOF
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$WORKSPACE/artifacts" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          EOF
           ATTRS_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.Attributes.*.nupkg | head -1 | sed 's/.*Attributes\.\(.*\)\.nupkg/\1/')"
           GEN_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.Generator.*.nupkg | head -1 | sed 's/.*Generator\.\(.*\)\.nupkg/\1/')"
           TOOL_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.JsonContextScaffolder.*.nupkg | head -1 | sed 's/.*Scaffolder\.\(.*\)\.nupkg/\1/')"
@@ -752,7 +770,6 @@ jobs:
                    包内 build props 自动接线分析器，勿用 OutputItemType="Analyzer" -->
               <PackageReference Include="Mud.HttpUtils.Attributes" Version="$ATTRS_VERSION" />
               <PackageReference Include="Mud.HttpUtils.Generator" Version="$GEN_VERSION" />
-              <DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="$TOOL_VERSION" />
             </ItemGroup>
           </Project>
           EOF
@@ -762,8 +779,16 @@ jobs:
           public class ProbeDto { public string Name { get; set; } = ""; }
           internal static class Program { private static void Main() { } }
           EOF
-          dotnet restore "$TEST_DIR/E2E.csproj"
-          dotnet build "$TEST_DIR/E2E.csproj" -c Release
+          # 安装本作业产出的脚手架工具（cwd 位于 TEST_DIR，故用上面收敛后的 nuget.config，
+          # local 源优先，确保装入的是本次 nupkg 而非 nuget.org 同名版本）。
+          # 全局工具落在 $HOME/.dotnet/tools，runner 默认不在 PATH 上，须显式前置 ——
+          # targets 正是按 PATH 解析 `mud-jsonctx`。
+          cd "$TEST_DIR"
+          dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder --version "$TOOL_VERSION" --ignore-failed-sources
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          command -v mud-jsonctx || { echo "::error::mud-jsonctx 未进入 PATH，脚手架无法执行"; exit 1; }
+          dotnet restore E2E.csproj
+          dotnet build E2E.csproj -c Release
           # 产物路径 obj/{conf}/GeneratedJsonContext/*.g.cs；targets 内工具 Exec 为 ContinueOnError=true 软失败，
           # 故「断言产物存在且包含探测类型」是必要检查（软失败不得静默通过）
           GCS=$(find "$TEST_DIR/obj" -name "*.g.cs" -path "*GeneratedJsonContext*")

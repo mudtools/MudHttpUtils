@@ -154,17 +154,24 @@ internal partial class FeishuAIJsonContext;
 - `MudAotRuntimeMode=aot` 或 `PublishAot=true` → **默认自动开启**；
 - 显式 `MudEnableJsonContextScaffolder=false` 或无任何 AOT 属性 → 关闭（仅 `IsAotCompatible=true` 的库项目不激活）。
 
-1. 安装脚手架工具（三选一）：
+1. 安装脚手架工具（二选一）：
 
 ```bash
-# a) 全局
+# a) 全局安装（推荐：命令落在 ~/.dotnet/tools，MSBuild 目标按 PATH 即可解析）
 dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder
 # b) 本地工具（需先 dotnet new tool-manifest）
 dotnet tool install Mud.HttpUtils.JsonContextScaffolder
-# c) .NET 8+ SDK 项目引用（推荐，可复现）
-dotnet add package Mud.HttpUtils.JsonContextScaffolder   # 仅用于 DotNetToolReference 解析
-# 然后在 .csproj 中：<DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="x.y.z" />
 ```
+
+> **b) 需额外一步**：本地工具不会出现在 PATH 上，须在消费方工程中覆盖工具命令：
+>
+> ```xml
+> <MudJsonContextToolCommand>dotnet tool run mud-jsonctx</MudJsonContextToolCommand>
+> ```
+>
+> **勿使用 `<DotNetToolReference>` 接入**：SDK 中不存在该 MSBuild 项（NuGet 对未知项静默忽略；与之相近的
+> `DotNetCliToolReference` 自 .NET Core 3.0 起已废弃）。写上它不会解析出任何工具路径，目标只会回退到 PATH 上的
+> `mud-jsonctx` —— 工具实际未安装时，表现就是「构建成功但未产出 Context」。
 
 2. 在标注了 `[HttpJsonSerializable]` 的实体项目 `.csproj` 中开启：
 
@@ -173,6 +180,8 @@ dotnet add package Mud.HttpUtils.JsonContextScaffolder   # 仅用于 DotNetToolR
   <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder>
   <!-- 可选：自定义生成输出目录，默认 obj/<tfm>/GeneratedJsonContext -->
   <!-- <MudJsonContextOutputPath>$(IntermediateOutputPath)GeneratedJsonContext</MudJsonContextOutputPath> -->
+  <!-- 可选：工具命令，默认 mud-jsonctx（按 PATH 解析）；本地工具清单场景改为 dotnet tool run mud-jsonctx -->
+  <!-- <MudJsonContextToolCommand>mud-jsonctx</MudJsonContextToolCommand> -->
 </PropertyGroup>
 ```
 

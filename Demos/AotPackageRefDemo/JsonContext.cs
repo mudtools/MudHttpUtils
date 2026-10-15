@@ -6,8 +6,9 @@ namespace AotPackageRefDemo;
 // 手动 JsonSerializerContext — 为 AOT 序列化声明类型元数据。
 //
 // 本 Demo 有意使用手动 context，不依赖 JsonContextScaffolder：
-//   CI（aot-packageref 作业）在 publish --no-restore 下 DotNetToolReference
-//   解析出的 mud-jsonctx 不在 PATH，脚手架退出码 127 并清理产物，导致
+//   脚手架工具须安装在 PATH 上（MSBuild 目标按 PATH 解析 mud-jsonctx；
+//   SDK 并不存在 DotNetToolReference 这一工具引用项），而 CI（aot-packageref 作业）
+//   的 publish 步骤未安装该工具，脚手架退出码 127 并清理产物，导致
 //   DemoJsonContext 缺失（CS0103）与 AOT006。
 //
 // 已在 AotPackageRefDemo.csproj 显式设置 MudEnableJsonContextScaffolder=false
