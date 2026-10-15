@@ -78,6 +78,9 @@
 /Test/Mud.HttpUtils.Testing/obj
 /Test/Mud.HttpUtils.Testing/bin
 /Test/Mud.HttpUtils.Testing/TestResults
+/Tests/Mud.HttpUtils.Redis.Tests/bin
+/Tests/Mud.HttpUtils.Redis.Tests/obj
+/Tests/Mud.HttpUtils.Redis.Tests/TestResults
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/HttpClientDemo/bin

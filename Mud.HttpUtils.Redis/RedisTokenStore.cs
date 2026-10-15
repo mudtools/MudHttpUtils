@@ -91,7 +91,7 @@ public sealed class RedisTokenStore : ITokenStore
         }
 
         var ttl = expiresInSeconds > 0 ? TimeSpan.FromSeconds(expiresInSeconds) : _options.DefaultTtl;
-        await Database.StringSetAsync(key, encoded, ttl).ConfigureAwait(false);
+        await Database.StringSetAsync(key, encoded, ttl!.Value).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -121,7 +121,7 @@ public sealed class RedisTokenStore : ITokenStore
             return;
         }
 
-        await Database.StringSetAsync(key, encoded, _options.DefaultTtl).ConfigureAwait(false);
+        await Database.StringSetAsync(key, encoded, _options.DefaultTtl!.Value).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

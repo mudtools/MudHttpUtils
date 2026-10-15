@@ -33,8 +33,7 @@
 		<ProjectReference Include="..\..\Mud.HttpUtils\Mud.HttpUtils.csproj" />
 		<!-- F-9：元包不再传递 Resilience；本工程的 DI 歧义守卫测试直接使用 PollyResiliencePolicyProvider 等类型，需显式引用。 -->
 		<ProjectReference Include="..\..\Mud.HttpUtils.Resilience\Mud.HttpUtils.Resilience.csproj" />
-		<!-- F-3：官方分布式令牌存储（Redis）—— 键布局/写穿/TTL/桥接注册测试在此工程。 -->
-		<ProjectReference Include="..\..\Mud.HttpUtils.Redis\Mud.HttpUtils.Redis.csproj" />
+		<!-- F-3：Redis 令牌存储测试已拆分至独立工程 Mud.HttpUtils.Redis.Tests。 -->
 	</ItemGroup>
 
 </Project>
