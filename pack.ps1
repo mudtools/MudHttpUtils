@@ -180,6 +180,26 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "还原完成" -ForegroundColor Green
 Write-Host ""
 
+# -------------------------------------------------------------------------
+# 打包前**显式构建一次**（下游反馈①根因修复）
+#   原实现每个 `dotnet pack` 各自触发增量构建：排在被引用方（如 Client）之后的引用方工程
+#   打包时若触发重建，会改写 bin\<Configuration> 中**已被打进包**的同名 DLL，
+#   使「包内 DLL ↔ 校验时现场读取的 bin 产物」比对失配 —— 是否重建由增量 up-to-date 判定，
+#   故为**非确定性误报**（下游连续两次复现）。
+#   现改为：构建一次定型 → pack 全程 --no-build（打包期间不再改动 bin）→ 校验基准取构建后快照，
+#   使「包内容 = 本次 <Configuration> 构建输出」这一命题与打包循环的执行顺序解耦。
+#   原防线（BC-1「以 Debug 产物冒充 Release」/ 陈旧错版打包）不削弱：
+#   非本次 <Configuration> 构建输出的 DLL 不会进入快照，仍会被校验拦下。
+# -------------------------------------------------------------------------
+Write-Host "构建 ($Configuration)..." -ForegroundColor Yellow
+dotnet build $RootDir\Mud.HttpUtils.slnx -c $Configuration
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "构建失败！" -ForegroundColor Red
+    exit 1
+}
+Write-Host "构建完成" -ForegroundColor Green
+Write-Host ""
+
 # 逐项目打包
 $FailedProjects = @()
 
@@ -195,7 +215,8 @@ foreach ($project in $Projects) {
 
     Write-Host "打包: $project" -ForegroundColor Yellow
 
-    dotnet pack $csproj -c $Configuration -o $ArtifactsDir --no-restore
+    # --no-build：打包期间不得再触发构建（否则会改写 bin 内已被打进包的产物，造成校验基准漂移）
+    dotnet pack $csproj -c $Configuration -o $ArtifactsDir --no-restore --no-build
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  失败: $project" -ForegroundColor Red
@@ -219,7 +240,7 @@ $nupkgs = @(Get-ChildItem $ArtifactsDir -Filter "*.nupkg" -File -ErrorAction Sil
 $producedPackages = @($nupkgs | ForEach-Object { ($_.BaseName -replace '\.\d+\.\d+\.\d+(-[^.]+)?$', '') })
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  打包后校验（配置=$Configuration）" -ForegroundColor Cyan
+Write-Host "  打包后校验（配置=$Configuration；基准=打包前构建产物快照，与打包循环时序解耦）" -ForegroundColor Cyan
 
 foreach ($expected in $ExpectedPackages) {
     if ($producedPackages -notcontains $expected) {
@@ -238,6 +259,29 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $configBinRoot = Join-Path $RootDir "bin\$Configuration"
 $checkedDllCount = 0
 
+# 校验基准 = **打包前构建完成后的一次性快照**（而非打包循环内现场读取 bin）：
+#   下游反馈①实证——循环内 `dotnet pack` 的增量重建会改写 bin 中已被打进包的产物，
+#   现场读取必然产生非确定性误报。快照令校验与打包循环的时序/并行解耦。
+$binSnapshot = @{}          # key: 文件名（小写） → 候选列表（Directory=TFM 目录名 / Hash / LastWrite）
+if (Test-Path $configBinRoot) {
+    $snapshotFiles = @(Get-ChildItem -Path $configBinRoot -Recurse -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(obj|ref)\\' })
+    foreach ($snapshotFile in $snapshotFiles) {
+        $key = $snapshotFile.Name.ToLowerInvariant()
+        if (-not $binSnapshot.ContainsKey($key)) {
+            $binSnapshot[$key] = New-Object System.Collections.ArrayList
+        }
+        [void]$binSnapshot[$key].Add([pscustomobject]@{
+                Directory = $snapshotFile.Directory.Name
+                Hash      = (Get-FileHash -LiteralPath $snapshotFile.FullName -Algorithm SHA256).Hash
+                LastWrite = $snapshotFile.LastWriteTime
+            })
+    }
+    Write-Host "  校验基准快照：bin\$Configuration 下 $($snapshotFiles.Count) 个 DLL（打包前构建产物）" -ForegroundColor DarkGray
+} else {
+    Write-Host "  [WARN] 未找到 bin\$Configuration（快照为空，后续比对将全部报缺）" -ForegroundColor Yellow
+}
+
 foreach ($pkg in $nupkgs) {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($pkg.FullName)
     try {
@@ -249,10 +293,13 @@ foreach ($pkg in $nupkgs) {
             # 包内 TFM 段（lib/net8.0/x.dll → net8.0；analyzers 无 TFM 段）
             $tfmSegment = if ($entry.FullName -match '^lib/([^/]+)/') { $Matches[1] } else { $null }
 
-            $candidates = @(Get-ChildItem -Path $configBinRoot -Recurse -Filter $fileName -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '\\(obj|ref)\\' })
+            $candidates = @()
+            $snapshotKey = $fileName.ToLowerInvariant()
+            if ($binSnapshot.ContainsKey($snapshotKey)) {
+                $candidates = @($binSnapshot[$snapshotKey])
+            }
             if ($tfmSegment) {
-                $tfmMatched = @($candidates | Where-Object { $_.Directory.Name -eq $tfmSegment })
+                $tfmMatched = @($candidates | Where-Object { $_.Directory -eq $tfmSegment })
                 if ($tfmMatched.Count -gt 0) { $candidates = $tfmMatched }
             }
 
@@ -271,14 +318,17 @@ foreach ($pkg in $nupkgs) {
             # 同一程序集可能被多个 TFM 的构建输出目录同时包含（例如 Generator 作为分析器被 CopyLocal 进
             # 各 TFM 的输出目录），故只要有**任一**候选与包内条目字节一致即通过 ——
             # 语义是「包内容确实来自本次 <Configuration> 的构建输出」，而不是「等于某一条特定路径」。
-            $matched = @($candidates | Where-Object {
-                    (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq $entryHash
-                })
-            $candidateNames = ($candidates | ForEach-Object { $_.Directory.Name } | Select-Object -Unique) -join '/'
+            $matched = @($candidates | Where-Object { $_.Hash -eq $entryHash })
+            $candidateNames = ($candidates | ForEach-Object { $_.Directory } | Select-Object -Unique) -join '/'
             $checkedDllCount++
             if ($matched.Count -eq 0) {
-                $ValidationFailures += "$($pkg.Name) 的 $fileName 与 bin\$Configuration 下同名产物均不一致（[$candidateNames]）：疑似错版/陈旧打包"
-                Write-Host "  [FAIL] $($pkg.Name) → $fileName 与 bin\$Configuration\[$candidateNames] 均不一致" -ForegroundColor Red
+                # 诊断增强（下游反馈①）：列出候选的 TFM/哈希前缀/写入时刻，便于区分
+                # 「错版・陈旧打包」（哈希全不同且时刻早于本次构建）与「基准被外部构建污染」（时刻晚于本次构建）。
+                $candidateDetail = ($candidates |
+                    ForEach-Object { "$($_.Directory):$($_.Hash.Substring(0, 8))@$($_.LastWrite.ToString('HH:mm:ss'))" } |
+                    Select-Object -Unique) -join ', '
+                $ValidationFailures += "$($pkg.Name) 的 $fileName 与 bin\$Configuration 快照产物均不一致（包内 $($entryHash.Substring(0, 8))；候选 $candidateDetail）：疑似错版/陈旧打包或基准被外部构建污染"
+                Write-Host "  [FAIL] $($pkg.Name) → $fileName 不一致（包内 $($entryHash.Substring(0, 8)) vs 快照 $candidateDetail）" -ForegroundColor Red
             }
         }
     }
@@ -288,7 +338,7 @@ foreach ($pkg in $nupkgs) {
 }
 
 if ($ValidationFailures.Count -eq 0) {
-    Write-Host "  [ OK ] 包集合 $($producedPackages.Count) 个，DLL 与 bin\$Configuration 逐字节一致（校验 $checkedDllCount 个）" -ForegroundColor Green
+    Write-Host "  [ OK ] 包集合 $($producedPackages.Count) 个，DLL 与 bin\$Configuration 构建快照逐字节一致（校验 $checkedDllCount 个）" -ForegroundColor Green
 }
 Write-Host ""
 

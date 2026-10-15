@@ -41,7 +41,7 @@ namespace Mud.HttpUtils;
 /// var token = await store.GetAccessTokenAsync("user123", "UserAccessToken");
 /// </code>
 /// </example>
-public class MemoryUserTokenStore : IUserTokenStore
+public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExchange
 {
     // SR-H4（P1.5，D5）userId 外层比较器改 Ordinal：
     // 原实现 OrdinalIgnoreCase 令 "User1"/"user1"/大小写不同的邮箱型 ID 共享同一令牌桶（跨用户读取令牌），
@@ -123,6 +123,106 @@ public class MemoryUserTokenStore : IUserTokenStore
             .Distinct()
             .ToList();
         return Task.FromResult<IEnumerable<string>>(allTypes);
+    }
+
+    /// <summary>
+    /// U-7（用户维度扩展）：CAS 引用比较重试上限 —— 并发替换会令 TryUpdate 的引用比较失败，
+    /// 重读重试以吸收短促竞争；超过上限即视为「不确定」，返回 false（不改写，宁可让调用方重试）。
+    /// </summary>
+    private const int CompareExchangeMaxAttempts = 8;
+
+    /// <summary>原子移除「键 + 期望条目」：值比较删除，防误删并发替换后的新条目。</summary>
+    private bool TryRemoveEntry(
+        ConcurrentDictionary<string, MemoryTokenStore.TokenEntry> userTokens, string tokenType,
+        MemoryTokenStore.TokenEntry entry, string userId)
+    {
+#if NET5_0_OR_GREATER
+        var removed = userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
+#else
+        // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除（弱一致：误删会被下次 Set 恢复，与既有实现同口径）
+        var removed = userTokens.TryRemove(tokenType, out _);
+#endif
+
+        // SR-L5 同口径：删除后空桶顺带清理，避免空内层字典壳滞留
+        if (removed && userTokens.IsEmpty)
+            _userStore.TryRemove(userId, out _);
+
+        return removed;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// U-7（用户维度扩展）：内存实现的 CAS 是<b>真原子</b> —— 比对用引用相等（<c>TryUpdate</c> 的值比较重载），
+    /// 删除用值比较移除；并发替换导致的引用变更经有界重试吸收。
+    /// 匹配口径为<b>存储中的原始令牌值</b>（与应用维度契约一致：不做过期判定，过期策略由读取路径负责）。
+    /// </remarks>
+    public Task<bool> CompareExchangeAccessTokenAsync(string userId, string tokenType, string expectedToken, string? newToken, long expiresInSeconds = 0, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(expectedToken))
+            throw new ArgumentException("期望的旧令牌值不得为空。", nameof(expectedToken));
+
+        if (!_userStore.TryGetValue(userId, out var userTokens))
+            return Task.FromResult(false);
+
+        for (var attempt = 0; attempt < CompareExchangeMaxAttempts; attempt++)
+        {
+            if (!userTokens.TryGetValue(tokenType, out var entry))
+                return Task.FromResult(false);
+            if (!string.Equals(entry.AccessToken, expectedToken, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            if (string.IsNullOrEmpty(newToken))
+            {
+                // compare-and-delete：仅清空本维度（与应用维度契约「删对应键」对齐，不误伤另一维度）；
+                // 双维度皆空则整条移除（等价于两键皆删）。
+                var cleared = entry.WithoutAccessToken();
+                return Task.FromResult(string.IsNullOrEmpty(cleared.RefreshToken)
+                    ? TryRemoveEntry(userTokens, tokenType, entry, userId)
+                    : userTokens.TryUpdate(tokenType, cleared, entry));
+            }
+
+            // ≤ 0 = 不设 TTL（宁缺勿滥）：以 MaxValue 表达「永不过期」
+            var expiresAt = expiresInSeconds > 0
+                ? DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
+                : DateTimeOffset.MaxValue;
+            if (userTokens.TryUpdate(tokenType, entry.WithAccessToken(newToken!, expiresAt), entry))
+                return Task.FromResult(true);
+            // 引用已被并发替换 → 重读重试
+        }
+
+        return Task.FromResult(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>U-7（用户维度扩展）：语义与访问令牌维度一致；刷新令牌无 TTL（<c>WithRefreshToken</c> 保留既有有效期字段）。</remarks>
+    public Task<bool> CompareExchangeRefreshTokenAsync(string userId, string tokenType, string expectedToken, string? newToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(expectedToken))
+            throw new ArgumentException("期望的旧令牌值不得为空。", nameof(expectedToken));
+
+        if (!_userStore.TryGetValue(userId, out var userTokens))
+            return Task.FromResult(false);
+
+        for (var attempt = 0; attempt < CompareExchangeMaxAttempts; attempt++)
+        {
+            if (!userTokens.TryGetValue(tokenType, out var entry))
+                return Task.FromResult(false);
+            if (!string.Equals(entry.RefreshToken, expectedToken, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            if (string.IsNullOrEmpty(newToken))
+            {
+                var cleared = entry.WithoutRefreshToken();
+                return Task.FromResult(string.IsNullOrEmpty(cleared.AccessToken)
+                    ? TryRemoveEntry(userTokens, tokenType, entry, userId)
+                    : userTokens.TryUpdate(tokenType, cleared, entry));
+            }
+
+            if (userTokens.TryUpdate(tokenType, entry.WithRefreshToken(newToken!), entry))
+                return Task.FromResult(true);
+        }
+
+        return Task.FromResult(false);
     }
 
     /// <summary>

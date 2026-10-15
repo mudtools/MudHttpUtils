@@ -128,6 +128,13 @@
 - **打包同版本重打防护（方案 U-13）**：`pack.ps1` 打包前探测 NuGet 全局缓存同版本包（真实污染向量——按 id+version 键控，同版本重打不失效下游缓存），存在即拒绝（`-ForceSameVersion` 逃生 + 三步清缓存指引）；目标版本不高于 CHANGELOG 最新版本段时输出版本纪律告警。依赖「同版本重打覆盖缓存」的本地调试流程请走 `pack_debug.ps1`（默认转发 `-ForceSameVersion`）。
 - **刷新租约接入**：多实例部署的下游可经 `TokenManagerBase` 派生类覆写 `RefreshLease` 接入 `RedisRefreshLease`（租约键命名空间 `mud:httputils:lease:{管理器键}:{scopeKey}`，与令牌键并列、可 SCAN）；未配置时令牌管线行为与旧版逐位一致。
 - **旧格式存储值迁移**：存量 `{expireMs}|{token}` 旧形态存储值的下游配置 `MigrationTokenStoreCodec` 即可双读兼容；旧数据按条目自然过期收敛（最长一个令牌 TTL 周期）后切回默认 codec。
+- **用户维度令牌轮换（下游反馈）**：用户维度 CAS 为**可选能力**——`IUserTokenStoreCompareExchange` 由存储实现（内存 `MemoryUserTokenStore` 已提供真原子实现），
+  未实现者经 `UserTokenStoreCompareExchangeExtensions.CompareExchangeAccessTokenAsync/CompareExchangeRefreshTokenAsync` 统一入口按「读取 → 比较 → 写入」**非原子**回退；
+  对原子性有硬要求的宿主应为其 store 实现该能力接口。
+- **事件面迁移（下游反馈）**：继承/包装 `DefaultAppManager<TAppContext>` 的宿主升级前请阅读
+  《[AppManager 事件面迁移指引](.docs/AppManager事件面迁移指引.md)》——派生类同名事件遮蔽基类事件（`new` 静默遮蔽）会造成通知丢失，覆写发布点漏 `base.` 调用同理会整体失效。
+- **打包校验基准（下游反馈）**：`pack.ps1` 改为「打包前显式构建一次 → `pack --no-build` → 以构建后快照为校验基准」，
+  修复「引用方在被引用包之后打包时触发增量重建、改写 bin 产物」导致的**非确定性校验误报**；校验断言未变（包内容仍须与本次 `Configuration` 构建输出逐字节一致）。
 
 ### 测试
 

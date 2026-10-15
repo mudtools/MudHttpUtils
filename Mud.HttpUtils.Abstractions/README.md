@@ -193,6 +193,8 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 
 > `IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析已注册的 DI 服务（如 `IApiKeyProvider`、`IHmacSignatureProvider` 等）。`IAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。
 >
+> **事件面（3.0.7）**：`DefaultAppManager<TAppContext>` 提供两个事件 —— `ConfigurationChanged`（注册面 `Added`/`Updated`/`Removed`）与 `AppInstantiated`（**仅**惰性工厂首滚成功，严格后于注册表并入、同一次实例化恰好一次）。**继承既有管理器或自研管理器迁移时务必阅读《[AppManager 事件面迁移指引](.docs/AppManager事件面迁移指引.md)》** —— 派生类同名事件会**遮蔽**基类事件（`new` 更会静默遮蔽）导致订阅者收不到通知；覆写 `OnConfigurationChanged`/`OnAppInstantiated` 若漏 `base.` 调用会使基类事件整体失效。
+>
 > **注册约定**：`IAppManager<IMudAppContext>` 不由库自动注册（宿主需显式注册 `DefaultAppManager<IMudAppContext>` 或自定义实现）。`IAppContextHolder` 由 `AddMudHttpAppContextHolder()` 或配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐。
 >
 > **`IAppAccessAuthorizer` 为必注册项（MT-02 / BC-18）**：生成代码的 `UseApp(appKey)` / `BeginScope(appKey)` / `UseAppScope(appKey)` 在**未注册授权器时直接抛 `InvalidOperationException`**（默认拒绝，取代此前的静默放行——后者允许调用方凭请求参数中的 `appKey` 切换到任意租户应用并读取其令牌）。多租户宿主请注册业务授权器；单应用 / 完全受信 / 迁移过渡场景请**显式**注册 `AllowAllAppAccessAuthorizer` 以表明放行意图。可用 `AddMudHttpAppManagementStartupValidation()` 把该检查前移到启动期（`MudHttpAppManagementOptions.RequireAppAccessAuthorizer = true` 时缺失即阻断启动）。

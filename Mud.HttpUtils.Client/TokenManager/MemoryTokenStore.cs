@@ -199,5 +199,13 @@ public class MemoryTokenStore : ITokenStore
         /// <summary>派生新条目：更新刷新令牌，保留访问令牌与过期时间。</summary>
         public TokenEntry WithRefreshToken(string refreshToken) =>
             new TokenEntry(AccessToken, refreshToken, ExpiresAt);
+
+        /// <summary>派生新条目：清空访问令牌（U-7 CAS 的 compare-and-delete 用），保留刷新令牌与过期时间。</summary>
+        public TokenEntry WithoutAccessToken() =>
+            new TokenEntry(null, RefreshToken, ExpiresAt);
+
+        /// <summary>派生新条目：清空刷新令牌（U-7 CAS 的 compare-and-delete 用），保留访问令牌与过期时间。</summary>
+        public TokenEntry WithoutRefreshToken() =>
+            new TokenEntry(AccessToken, null, ExpiresAt);
     }
 }
