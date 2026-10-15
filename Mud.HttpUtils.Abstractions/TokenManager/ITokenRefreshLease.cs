@@ -8,17 +8,13 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// U-3：跨进程<b>令牌刷新去重租约</b>契约 —— 多实例部署下，同一归属键（scopeKey）的并发刷新
-/// 经分布式租约去重，避免各实例各自发起一次真实刷新请求（3.0.8 F-3 登记的增强项）。
+/// 跨进程<b>令牌刷新去重租约</b>契约 —— 多实例部署下，同一归属键（scopeKey）的并发刷新
+/// 经分布式租约去重，避免各实例各自发起一次真实刷新请求。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>分层定位</b>：本契约定义在抽象层（<see cref="TokenManagerBase"/> 消费），<b>不得</b>感知具体存储实现；
-/// Redis 实现（<c>RedisRefreshLease</c>，<c>SET NX PX</c> + Lua compare-and-del 释放）随
-/// <c>Mud.HttpUtils.Redis</c> 包提供。下游自建去重器（如飞书侧）可经本契约薄包装接入。
-/// </para>
-/// <para>
-/// <b>语义约定</b>：
+/// <para><b>分层定位</b>：本契约定义在抽象层（<see cref="TokenManagerBase"/> 消费），<b>不得</b>感知具体存储实现；
+/// Redis 实现随 <c>Mud.HttpUtils.Redis</c> 包提供。下游自建去重器可经本契约薄包装接入。</para>
+/// <para><b>语义约定</b>：
 /// <list type="bullet">
 /// <item><description><paramref name="leaseKey"/> 由调用方保证在刷新归属维度唯一
 /// （<see cref="TokenManagerBase"/> 默认以 <c>{管理器键}:{scopeKey}</c> 构建）；实现方可追加命名空间前缀。</description></item>
@@ -28,8 +24,7 @@ namespace Mud.HttpUtils;
 /// 租约过期后被其他实例重新获取时，前一持有方的迟到释放<b>不得</b>误删新持有方的租约。</description></item>
 /// <item><description>实现须容忍 Redis/存储不可用：获取失败应返回 <c>null</c>（fail-open 语义由
 /// <see cref="TokenManagerBase"/> 承接：等待超时后放行本机刷新），<b>不得抛出异常</b>阻断令牌获取主路径。</description></item>
-/// </list>
-/// </para>
+/// </list></para>
 /// </remarks>
 public interface ITokenRefreshLease
 {
@@ -45,7 +40,7 @@ public interface ITokenRefreshLease
 }
 
 /// <summary>
-/// U-3：刷新租约句柄 —— 携带所有权凭据（实现方内部持有，如 Redis 租约值 GUID），
+/// 刷新租约句柄 —— 携带所有权凭据（实现方内部持有，如 Redis 租约值 GUID），
 /// 释放时按所有权校验删除（compare-and-del），防止迟到释放误删他人的租约。
 /// </summary>
 public interface ITokenRefreshLeaseHandle

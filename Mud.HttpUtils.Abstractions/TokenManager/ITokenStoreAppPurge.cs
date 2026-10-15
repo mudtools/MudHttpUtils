@@ -8,31 +8,23 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// U-4：令牌存储的<b>按应用清库</b>能力探测式可选接口（组件级可选接口，<b>不进</b>
-/// <see cref="ITokenStore"/> 最小 SPI —— A-5 裁决预留路线的正式落地）。
+/// 令牌存储的<b>按应用清库</b>能力探测式可选接口（组件级可选接口，不进
+/// <see cref="ITokenStore"/> 最小 SPI）。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>动机（双下游证据）</b>：凭据（appSecret）变更时须按 appKey 级联清空该应用全部令牌 ——
-/// 飞书已私有实现整套（<c>CredentialPurgePlan</c> + <c>TokenStorePurgeGate</c>），微信被迫复制键解析
-/// 做 SCAN 枚举（<c>RedisWechatTokenStore.cs:123-176/225-259</c>）。本接口把键解析与枚举内聚到实现方
-/// （键布局单一事实源），终结下游复制。
-/// </para>
-/// <para>
-/// <b>语义约定</b>：
+/// <para><b>动机（双下游证据）</b>：凭据（appSecret）变更时须按 appKey 级联清空该应用全部令牌 ——
+/// 飞书已私有实现整套，微信被迫复制键解析做 SCAN 枚举。本接口把键解析与枚举内聚到实现方
+/// （键布局单一事实源），终结下游复制。</para>
+/// <para><b>语义约定</b>：
 /// <list type="bullet">
-/// <item><description><see cref="EnumerateKeysAsync"/> 为<b>快照语义</b>：返回集合是枚举时刻的完整快照
-/// （评审偏差：原稿 <c>IAsyncEnumerable</c> 流式形态改为快照集合 —— 快照本即契约，且规避
-/// netstandard2.0 TFM 的异步迭代器兼容面）。</description></item>
+/// <item><description><see cref="EnumerateKeysAsync"/> 为<b>快照语义</b>：返回集合是枚举时刻的完整快照。</description></item>
 /// <item><description><see cref="PurgeAppAsync"/> 返回实际删除键数；<b>不得静默半删</b>——
 /// 部分失败时抛出聚合异常（实现方自行保证失败语义）。</description></item>
-/// <item><description><paramref name="appKey"/> 为 null/空白时按实现方的「共享命名空间」约定处置
-/// （如 <see cref="RedisTokenStore"/> 的 <c>shared</c> 段）。</description></item>
+/// <item><description><paramref name="appKey"/> 为 null/空白时按实现方的「共享命名空间」约定处置。</description></item>
 /// <item><description>未实现本接口的 store：<see cref="TokenStorePurgeExtensions.PurgeAppTokensAsync"/>
 /// 回退路径按「<see cref="ITokenStore.GetTokenTypesAsync"/> 枚举 → 逐类型 <see cref="ITokenStore.RemoveAsync"/>」
 /// 等价清库（仅实例自身命名空间内，无跨 appKey 维度）。</description></item>
-/// </list>
-/// </para>
+/// </list></para>
 /// </remarks>
 public interface ITokenStoreAppPurge
 {
