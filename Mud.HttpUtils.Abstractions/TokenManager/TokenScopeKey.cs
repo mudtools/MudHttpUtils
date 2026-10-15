@@ -8,18 +8,14 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// F-2（TK-1）令牌归属键的公开契约：<b>tokenType + appKey + scopeKey</b> 三段式归属模型，
+/// 令牌归属键的公开契约：<b>tokenType + appKey + scopeKey</b> 三段式归属模型，
 /// 把下游自拼 <c>{tokenType}:{appKey}:{scopeKey}</c> 的需求收敛为一等类型。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>段语义</b>：<c>tokenType</c> = 令牌类型标识（与 <c>IMudAppContext.GetTokenManager(tokenType)</c>
+/// <para><b>段语义</b>：<c>tokenType</c> = 令牌类型标识（与 <c>IMudAppContext.GetTokenManager(tokenType)</c>
 /// 注册键同口径）；<c>appKey</c> = 应用归属；<c>scopeKey</c> = <b>归属键</b>（如企业微信
-/// <c>authCorpId</c>，「一企一份」的路由键）——<b>不是 OAuth scope</b>。
-/// </para>
-/// <para>
-/// <b>双形态（评审修订 #2，关键）</b>：
-/// </para>
+/// <c>authCorpId</c>，「一企一份」的路由键）——<b>不是 OAuth scope</b>。</para>
+/// <para><b>双形态</b>：
 /// <list type="number">
 /// <item><description><b>定位符形态</b>（驱动缓存互通）：作为
 /// <see cref="TokenManagerBase.GetOrRefreshTokenAsync(TokenScopeKey, CancellationToken)"/> /
@@ -32,12 +28,10 @@ namespace Mud.HttpUtils;
 /// <item><description><b>编码键形态</b>（替换下游自拼键）：<see cref="ToCompositeKey"/> /
 /// <see cref="ToString"/> 输出长度前缀三段式文本（编码委托既有 internal <c>CompositeKey</c>，保持内部实现），
 /// 仅供下游当字典键 / 分布式键用，<b>不进</b> <see cref="TokenManagerBase"/> 缓存键。</description></item>
-/// </list>
-/// <para>
-/// 三种归属形态经命名工厂构造：<see cref="ForShared"/>（全租户共享）、<see cref="ForApp"/>（每应用一份）、
+/// </list></para>
+/// <para>三种归属形态经命名工厂构造：<see cref="ForShared"/>（全租户共享）、<see cref="ForApp"/>（每应用一份）、
 /// <see cref="ForScope"/>（按归属键细分，如一企一份）。工厂为唯一构造入口，保证段取值合法；
-/// <c>default(TokenScopeKey)</c> 为未构造形态，仅作字段默认值，不应参与比较或编码。
-/// </para>
+/// <c>default(TokenScopeKey)</c> 为未构造形态，仅作字段默认值，不应参与比较或编码。</para>
 /// </remarks>
 public readonly struct TokenScopeKey : IEquatable<TokenScopeKey>
 {
@@ -130,16 +124,14 @@ public readonly struct TokenScopeKey : IEquatable<TokenScopeKey>
     }
 
     /// <summary>
-    /// U-6：分隔符编码键形态 —— 纯拼接的 <c>{tokenType}{sep}{appKey}{sep}{scopeKey}</c> 三段式文本
+    /// 分隔符编码键形态 —— 纯拼接的 <c>{tokenType}{sep}{appKey}{sep}{scopeKey}</c> 三段式文本
     /// （缺段省略：<see cref="ForShared"/> 单段、<see cref="ForApp"/> 两段、<see cref="ForScope"/> 三段）。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <b>双形态适用矩阵（U-6，与 <see cref="ToCompositeKey"/> <b>不互通</b>）</b>：
+    /// <para><b>双形态适用矩阵</b>：
     /// <see cref="ToCompositeKey"/>（长度前缀，对任一分段内容单射、免分隔符约束，适合进程内字典键）；
     /// 本形态（人类可读、SCAN 友好、可经 <see cref="TryParseDelimited"/> 反解，适合 Redis/分布式键）
-    /// —— <b>代价是段内容不得包含分隔符</b>（如下游微信的「AppKey 禁 <c>:</c>」形状约束），违例 fail-fast 抛异常。
-    /// </para>
+    /// —— <b>代价是段内容不得包含分隔符</b>，违例 fail-fast 抛异常。</para>
     /// </remarks>
     /// <param name="separator">段分隔符（默认 <c>:</c>，与两下游存量 <c>{a}:{b}</c> 布局同构）。</param>
     /// <returns>分隔符编码后的归属键文本。</returns>
@@ -165,10 +157,10 @@ public readonly struct TokenScopeKey : IEquatable<TokenScopeKey>
     }
 
     /// <summary>
-    /// U-6：<see cref="ToDelimitedKey"/> 的反向解析（按段数裁断归属形态：3 段 = <see cref="ForScope"/>、
+    /// <see cref="ToDelimitedKey"/> 的反向解析（按段数裁断归属形态：3 段 = <see cref="ForScope"/>、
     /// 2 段 = <see cref="ForApp"/>、1 段 = <see cref="ForShared"/>）。
     /// </summary>
-    /// <remarks>解析失败（null/空串/空段/超过 3 段）返回 <c>false</c>，不抛异常（与 <see cref="ITokenStoreCodec.Decode"/> miss 契约同风格）。</remarks>
+    /// <remarks>解析失败（null/空串/空段/超过 3 段）返回 <c>false</c>，不抛异常。</remarks>
     /// <param name="value">分隔符编码键文本。</param>
     /// <param name="separator">段分隔符（须与编码时一致）。</param>
     /// <param name="result">解析成功时为归属键；失败时为 <c>default</c>。</param>
