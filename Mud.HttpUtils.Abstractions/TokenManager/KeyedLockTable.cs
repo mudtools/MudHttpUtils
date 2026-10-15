@@ -10,29 +10,26 @@ using System.Collections.Concurrent;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 键控锁表：锁生命周期的单一实现（Single Source of Truth）。
-/// P2.2（TK-05/09/24）修复：以 retire 协议 + 引用计数替代原先分散在
-/// <c>TokenManagerBase._scopeLocks</c> 与 <c>UserTokenManagerBase._userLocks</c> 中的
-/// <c>Lazy&gt;SemaphoreSlim&lt;</c> + 各自不相等的回收入口判据。
+/// 键控锁表：锁生命周期的单一实现。
 /// </summary>
 /// <remarks>
 /// 设计要点：
 /// <list type="bullet">
 /// <item><description><c>Retired</c> <b>先于</b>移除设置：使 <c>AcquireAsync</c> 取到"已退休条目"的窗口无害（递减计数后重试）。</description></item>
-/// <item><description><c>Waiters == 0</c> 才允许从字典移除，消除 <c>RemoveUserTokenFromCache</c> 类"移除在途锁"缺陷。</description></item>
+/// <item><description><c>Waiters == 0</c> 才允许从字典移除，消除"移除在途锁"缺陷。</description></item>
 /// <item><description><b>不 Dispose <c>SemaphoreSlim</c></b> 是刻意决策：在途 <c>Dispose</c> 与 <c>Release</c> 并存会抛
-/// <c>ObjectDisposedException</c>，破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约（修复 的 Release 竞态）。</description></item>
+/// <c>ObjectDisposedException</c>，破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。</description></item>
 /// <item><description>删除 <c>Lazy</c> 后不再需要 <c>LazyThreadSafetyMode</c> 论证；
 /// <c>GetOrAdd</c> 的工厂多执行安全（仅多分配临时 <c>Entry</c> 实例，互斥不受影响）。</description></item>
 /// </list>
 /// </remarks>
 internal sealed class KeyedLockTable : IDisposable
 {
-    /// <summary>退休分支异步退避基数（毫秒）。SR-C1（P1.1）：消除无让步忙等自旋。</summary>
+    /// <summary>退休分支异步退避基数（毫秒）。</summary>
     private const int RetryBackoffMilliseconds = 1;
 
     /// <summary>
-    /// R-P2-02：退休分支退避上限（毫秒）。
+    /// 退休分支退避上限（毫秒）。
     /// </summary>
     /// <remarks>
     /// 缺陷（现状）：固定 1ms 退避在"清理 Timer 对<b>在途刷新</b>调用 <see cref="TryRetire"/>"
@@ -40,8 +37,7 @@ internal sealed class KeyedLockTable : IDisposable
     /// <c>RefreshTimeoutSeconds</c>（默认 30s），期间<b>每个</b>等待者约产生 3 万次
     /// <see cref="Task.Delay(int, CancellationToken)"/> 分配与线程池唤醒。
     /// 指数退避（1→2→4→8→16→32→50ms）把该量级压到约 <b>600 次</b>（降幅 ≈ 98%），
-    /// 而<b>不改动 retire 协议与互斥不变式</b>（原"进入等待 + 取后校验"方案因会在
-    /// <c>Waiters &gt; 0</c> 时反复取到同一 retired 条目而形成比 1ms 退避更忙的紧循环，已评审否决）。
+    /// 而<b>不改动 retire 协议与互斥不变式</b>。
     /// </remarks>
     private const int MaxRetryBackoffMilliseconds = 50;
 
@@ -55,8 +51,7 @@ internal sealed class KeyedLockTable : IDisposable
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// 当前锁条目的数量（近似值）。internal 暴露给测试（经 <c>InternalsVisibleTo</c>）读取，
-    /// 避免测试依赖反射访问内部字典（评审 0.4 消除反射脆弱性）。
+    /// 当前锁条目的数量（近似值）。internal 暴露给测试读取，避免测试依赖反射访问内部字典。
     /// </summary>
     internal int Count => _entries.Count;
 
@@ -64,8 +59,8 @@ internal sealed class KeyedLockTable : IDisposable
     internal IEnumerable<string> Keys => _entries.Keys;
 
     /// <summary>
-    /// SR-C1（P1.1）测试观测钩子：退休分支进入异步退避的累计次数（Interlocked 计数）。
-    /// 供并发用例断言"等待期间重试次数有界"（对照修复前的时间复杂度不可控紧循环）。
+    /// 测试观测钩子：退休分支进入异步退避的累计次数（Interlocked 计数）。
+    /// 供并发用例断言"等待期间重试次数有界"。
     /// </summary>
     internal long SpinRetries;
 
