@@ -169,7 +169,7 @@ public readonly struct TokenResult
     /// </example>
     public bool IsExpiringSoon(int thresholdSeconds = 300)
     {
-        // TMX-15-10 (A6)：委托 TokenExpiryPolicy.IsExpired，消除第三份过期判定逻辑
+        // 委托 TokenExpiryPolicy.IsExpired，消除第三份过期判定逻辑
         return TokenExpiryPolicy.IsExpired(ExpireTime, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), thresholdSeconds);
     }
 }

@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// 「比对旧令牌相等才写入/删除」的原子原语（组件级可选接口，不进 <see cref="ITokenStore"/> 最小 SPI）。
 /// </summary>
 /// <remarks>
-/// <para><b>动机（飞书 TMF-05）</b>：refresh token 轮换需「比对旧 refresh token 相等才删除/替换」——
+/// <para><b>动机</b>：refresh token 轮换需「比对旧 refresh token 相等才删除/替换」——
 /// 因相对秒编码值随时刻漂移，整串比较必失配，下游被迫解码明文比较后再 <see cref="ITokenStore.RemoveAsync"/>，
 /// 两步之间存在竞态窗口（并发轮换可双删或漏删）。本契约把比较与写入合并为一次原子操作。</para>
 /// <para><b>语义约定</b>：

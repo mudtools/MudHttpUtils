@@ -55,7 +55,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 
         if (_cache.TryGetValue(key, out var entry))
         {
-            // TMX-15-8 (D3)：LRU 时间戳降采样——距上次更新 < 1s 跳过 Interlocked.Exchange
+            // LRU 时间戳降采样——距上次更新 < 1s 跳过 Interlocked.Exchange
             var nowTicks = DateTime.UtcNow.Ticks;
             var last = entry.LastAccessTicks;
             if (nowTicks - last >= TimeSpan.TicksPerSecond)
@@ -137,7 +137,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
         if (targetRemoval <= 0)
             return;
 
-        // TM-1 修复：按最后访问时间升序（最久未使用优先）选取并驱逐，实现 LRU 语义
+        // 修复：按最后访问时间升序（最久未使用优先）选取并驱逐，实现 LRU 语义
         var keysToRemove = _cache
             .OrderBy(kvp => Interlocked.Read(ref kvp.Value.LastAccessTicks))
             .Take(targetRemoval)

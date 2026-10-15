@@ -41,7 +41,7 @@ public class TokenRecoveryOptions
     }
 
     /// <summary>
-    /// P1.4（TK-15）令牌刷新的超时兜底（秒），默认 30。
+    /// 令牌刷新的超时兜底（秒），默认 30。
     /// 取消隔离后刷新任务不再受单一调用方取消影响，本超时防止远端挂起导致恢复流程无限期阻塞；
     /// 超时后抛出 <see cref="TimeoutException"/>，恢复流程按刷新失败处理并返回 401。
     /// </summary>
@@ -54,7 +54,7 @@ public class TokenRecoveryOptions
     private double _refreshTimeoutSeconds = 30;
 
     /// <summary>
-    /// I3（R-P0-02）等待令牌刷新的硬墙钟（秒）。默认 <c>0</c> 表示<b>自动</b>：取
+    /// 等待令牌刷新的硬墙钟（秒）。默认 <c>0</c> 表示<b>自动</b>：取
     /// <see cref="RefreshTimeoutSeconds"/> + 5 秒余量（保证协作式超时先于硬墙钟生效）。
     /// <para>
     /// 语义：单个等待者对共享刷新的最长等待时间（超时抛 <see cref="TimeoutException"/>）；
@@ -100,7 +100,7 @@ public class TokenRecoveryOptions
     private long _maxCachedRequestBodyBytes = 1 * 1024 * 1024;
 
     /// <summary>
-    /// R-P1-03：401 恢复链路的请求体缓冲策略，默认 <see cref="RequestBodyBufferingMode.Auto"/>。
+    /// 401 恢复链路的请求体缓冲策略，默认 <see cref="RequestBodyBufferingMode.Auto"/>。
     /// </summary>
     /// <remarks>
     /// <para>"不缓冲"由 <see cref="MaxCachedRequestBodyBytes"/> = 0 表达（该值下本属性无实际作用）。</para>
@@ -112,7 +112,7 @@ public class TokenRecoveryOptions
     public RequestBodyBufferingMode BufferingMode { get; set; } = RequestBodyBufferingMode.Auto;
 
     /// <summary>
-    /// R-P1-04：是否允许对<b>非幂等</b>方法（POST/PATCH 等）执行 401 重放。默认 <c>false</c>。
+    /// 是否允许对<b>非幂等</b>方法（POST/PATCH 等）执行 401 重放。默认 <c>false</c>。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -147,7 +147,7 @@ public class TokenRecoveryOptions
     private double _refreshDedupWindowSeconds = 2;
 
     /// <summary>
-    /// MT-06：刷新去重表的条目数上限，默认 1024。
+    /// 刷新去重表的条目数上限，默认 1024。
     /// <para>
     /// 去重键为 <c>managerKey + US + [userId + US +] scopeKey</c>。用户级恢复时键中含 userId，
     /// 在用户基数大 + 401 风暴的场景下若无上限会构成无界内存增长。
@@ -164,7 +164,7 @@ public class TokenRecoveryOptions
     private int _maxDedupEntries = 1024;
 
     /// <summary>
-    /// WX-01（Phase A，errcode 令牌失效恢复）：令牌失效判定器（可选，默认 null）。
+    /// 令牌失效判定器（可选，默认 null）。
     /// <para>
     /// 注册后，恢复执行器在「HTTP 401」默认语义之外，按判定器识别以业务错误码表达令牌失效的
     /// 平台响应（如企业微信恒返 HTTP 200 + <c>errcode</c> ∈ {40014, 42001, 42007, 42009, 42011}），
@@ -183,7 +183,7 @@ public class TokenRecoveryOptions
     public ITokenInvalidationDetector? TokenInvalidationDetector { get; set; }
 
     /// <summary>
-    /// B5（WX-01 扩展）：<b>追加式</b>令牌失效判定器集合（编程式注入；与
+    /// <b>追加式</b>令牌失效判定器集合（编程式注入；与
     /// <see cref="TokenInvalidationDetector"/> 为<b>并集</b>语义，任一命中即判定为失效）。
     /// </summary>
     /// <remarks>
@@ -210,7 +210,7 @@ public class TokenRecoveryOptions
         = new List<ITokenInvalidationDetector>();
 
     /// <summary>
-    /// WX-01（Phase A）：判定器检查响应时可捕获的响应体最大字节数，默认 4096（4KB）。
+    /// 判定器检查响应时可捕获的响应体最大字节数，默认 4096（4KB）。
     /// <para>
     /// 仅当响应声明 Content-Length 且 ≤ 本上限时才会读流捕获（读毕以等价可读内容替换原内容，
     /// 调用方无感）；声明超限 / 未知长度（chunked）/ 空体一律不读流，此时判定器收到

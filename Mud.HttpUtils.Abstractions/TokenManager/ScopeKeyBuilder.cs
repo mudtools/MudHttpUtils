@@ -85,12 +85,12 @@ internal static class ScopeKeyBuilder
         if (scopes == null || scopes.Length == 0)
             return DefaultKey;
 
-        // TMX-15-7：只做一次 Distinct/OrderBy，复用排序结果构建 memoKey 和值（MT-16：memoKey 使用可逆转义）
+        // 只做一次 Distinct/OrderBy，复用排序结果构建 memoKey 和值（memoKey 使用可逆转义）
         var sorted = scopes.Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal).ToArray();
         var memoKey = BuildMemoKey(sorted);
 
         // 无界保护：超限时清空重建（廉价清空，不逐条枚举）
-        // TMX-15-7：用 Count 检查移到 GetOrAdd 外面，避免命中路径的额外 volatile read
+        // 用 Count 检查移到 GetOrAdd 外面，避免命中路径的额外 volatile read
         if (s_memoCache.Count >= MemoCacheLimit)
             s_memoCache.Clear();
 

@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// F-7：令牌失效通知事件参数（<c>TokenManagerBase.TokenInvalidated</c>）。
+/// 令牌失效通知事件参数（<c>TokenManagerBase.TokenInvalidated</c>）。
 /// </summary>
 public sealed class TokenInvalidatedEventArgs : EventArgs
 {

@@ -42,7 +42,7 @@ public interface ITokenStoreAppPurge
 }
 
 /// <summary>
-/// U-4：按应用清库的统一入口与回退路径 —— 能力探测（<see cref="ITokenStoreAppPurge"/>）优先，
+/// 按应用清库的统一入口与回退路径 —— 能力探测（<see cref="ITokenStoreAppPurge"/>）优先，
 /// 未实现时按「枚举 tokenType → 逐类型 RemoveAsync」回退（与微信 <c>IWechatTokenStoreBatchRemove</c>
 /// 的 is 探测模式同构，下游接口可做适配委托）。
 /// </summary>
