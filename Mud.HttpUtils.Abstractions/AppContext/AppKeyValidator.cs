@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 应用标识 / 命名客户端名称的格式校验器（零正则、AOT 安全，见 ADR-4）。
+/// 应用标识 / 命名客户端名称的格式校验器（零正则、AOT 安全）。
 /// </summary>
 /// <remarks>
 /// 标识会被用于：<c>ConcurrentDictionary</c> 键、.NET 8+ Keyed Service 键、日志与异常消息插值。
