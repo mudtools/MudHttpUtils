@@ -8,24 +8,18 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// G10：按 <b>appKey 白名单</b>授权应用切换的 <see cref="IAppAccessAuthorizer"/> 内建实现。
+/// 按 <b>appKey 白名单</b>授权应用切换的 <see cref="IAppAccessAuthorizer"/> 内建实现。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>MT-02（BC-18）</b>把"未注册 <see cref="IAppAccessAuthorizer"/> 即静默放行"改为<b>默认拒绝</b>后，
+/// <para><b>MT-02（BC-18）</b>把"未注册 <see cref="IAppAccessAuthorizer"/> 即静默放行"改为<b>默认拒绝</b>后，
 /// 多租户宿主必须显式提供授权器。此前库内<b>没有任何</b>内建实现，各下游 SDK 只能各自自建
-/// （放行器或白名单器），本类型补齐这一"应有而未有"的缺口。
-/// </para>
-/// <para>
-/// <b>安全边界</b>：本实现只做"appKey 是否在名单内"的静态判定，<b>不</b>感知当前调用主体。
+/// （放行器或白名单器），本类型补齐这一"应有而未有"的缺口。</para>
+/// <para><b>安全边界</b>：本实现只做"appKey 是否在名单内"的静态判定，<b>不</b>感知当前调用主体。
 /// 适用于"appKey 来自服务端可信配置（非请求参数）"的场景；
 /// 若 appKey 可能来自请求参数，必须实现与当前调用主体（租户 / 用户）绑定的授权器 ——
-/// 名单式授权无法阻止"A 租户传入 B 租户的 appKey"。
-/// </para>
-/// <para>
-/// 未提供的形态：本库<b>刻意不提供</b>"无条件放行"实现（会重新引入 BC-18 修复前的越权面）。
-/// 单应用 / 完全受信场景若确需放行，请在宿主内自行实现一个语义明确、命名体现风险的授权器。
-/// </para>
+/// 名单式授权无法阻止"A 租户传入 B 租户的 appKey"。</para>
+/// <para>未提供的形态：本库<b>刻意不提供</b>"无条件放行"实现（会重新引入 BC-18 修复前的越权面）。
+/// 单应用 / 完全受信场景若确需放行，请在宿主内自行实现一个语义明确、命名体现风险的授权器。</para>
 /// </remarks>
 public sealed class AppKeyAllowListAuthorizer : IAppAccessAuthorizer
 {
@@ -36,10 +30,8 @@ public sealed class AppKeyAllowListAuthorizer : IAppAccessAuthorizer
     /// 以 appKey 集合初始化白名单。
     /// </summary>
     /// <param name="allowedAppKeys">允许切换到的 appKey 集合；为 <c>null</c> 时等价于空名单（一律拒绝）。</param>
-    /// <remarks>
-    /// appKey 大小写<b>区分</b>（与 <see cref="IAppManager{TAppContext}"/> 的既有契约一致）；
-    /// 空项与 <c>null</c> 项被忽略；重复项去重。
-    /// </remarks>
+    /// <remarks>appKey 大小写<b>区分</b>（与 <see cref="IAppManager{TAppContext}"/> 的既有契约一致）；
+    /// 空项与 <c>null</c> 项被忽略；重复项去重。</remarks>
     public AppKeyAllowListAuthorizer(IEnumerable<string>? allowedAppKeys)
     {
         if (allowedAppKeys is null)
