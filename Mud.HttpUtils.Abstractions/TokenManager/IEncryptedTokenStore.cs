@@ -20,7 +20,7 @@ namespace Mud.HttpUtils;
 /// 与组合校验观测，声明"存储介质上的数据已加密"。它与缓存层加密（<c>EncryptedTokenCache&lt;T&gt;</c>）
 /// 是两个层次，**同一读写链路只允许其中一层加密**：持久化场景经桥接器
 /// <c>TokenStoreBackedTokenCache&lt;T&gt;</c> 接入管理器时，桥接器会在构造期检测加密叠加并告警，
-/// 防止"密文套密文"（见 .docs/token-store-cache-architecture-review.md §5.4）。
+/// 防止"密文套密文"。
 /// </para>
 /// </remarks>
 public interface IEncryptedTokenStore : ITokenStore

@@ -10,7 +10,7 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 令牌缓存的<b>异步</b>扩展契约：为能执行真正异步 I/O 的缓存实现（如经
 /// <see cref="TokenStoreBackedTokenCache{T}"/> 桥接的 Redis / 数据库 store）提供读穿透 / 写穿透能力，
-/// 消除方案 B"内存镜像 + 异步写穿"的多实例镜像滞后（治理方案 §5.3 方案 C / S2）。
+/// 消除"内存镜像 + 异步写穿"的多实例镜像滞后。
 /// </summary>
 /// <typeparam name="T">缓存值类型。</typeparam>
 /// <remarks>
@@ -18,7 +18,7 @@ namespace Mud.HttpUtils;
 /// <b>为什么是派生接口而不是给 <see cref="ITokenCache{T}"/> 加异步成员</b>：
 /// <c>netstandard2.0</c> 不支持默认接口实现（DIM）—— 给既有接口加成员会破坏所有现有实现
 /// （本仓 3 个 + 下游自定义实现）。派生接口 + 能力探测（<c>is IAsyncTokenCache&lt;T&gt;</c>）
-/// 与本仓已确立的 <c>IFeishuUserTokenStorePurge</c> 式探测手法同构，对既有实现零破坏（纯加法）。
+/// 与本仓已确立的探测手法同构，对既有实现零破坏（纯加法）。
 /// </para>
 /// <para>
 /// <b>消费方式</b>：管理器在<b>本就是异步</b>的 <c>GetOrRefreshTokenAsync</c> /
@@ -29,7 +29,7 @@ namespace Mud.HttpUtils;
 /// <b>语义约束</b>：
 /// <list type="bullet">
 /// <item><see cref="GetAsync"/> 返回 null 表示未命中（异步方法不能携带 <c>out</c> 参数，故与
-/// <see cref="ITokenCache{T}.TryGet"/> 的 bool + out 形态不同）；命中值的有效性判定仍归管理器管线（不变量 #4 的延续）。</item>
+/// <see cref="ITokenCache{T}.TryGet"/> 的 bool + out 形态不同）；命中值的有效性判定仍归管理器管线。</item>
 /// <item>实现必须同时保证 <see cref="ITokenCache{T}"/> 同步成员的可用性（管理器在非异步路径仍会调用它们）。</item>
 /// <item>同步实现（<see cref="ConcurrentDictionaryTokenCache{T}"/> / <see cref="MemoryCacheTokenCache{T}"/>）
 /// <b>无需</b>实现本接口 —— 其同步成员已是最优路径。</item>

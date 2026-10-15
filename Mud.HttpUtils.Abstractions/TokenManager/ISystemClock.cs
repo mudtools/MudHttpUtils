@@ -8,14 +8,14 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// G1：可替换的<b>系统时钟接缝</b>——使令牌过期判定、刷新失败退避、去重窗口等
+/// 可替换的<b>系统时钟接缝</b>——使令牌过期判定、刷新失败退避、去重窗口等
 /// 时间相关逻辑可被确定性测试（无需 <c>Thread.Sleep</c> / 真实等待）。
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>为何自建而不直接用 <c>System.TimeProvider</c></b>：<c>TimeProvider</c> 仅 net8.0+ 原生，
 /// 而本库覆盖 <c>netstandard2.0</c> / <c>net6.0</c>；引入 <c>Microsoft.Bcl.TimeProvider</c>
-/// 会新增<b>传递依赖</b>（与 F7 的依赖治理目标冲突）。故以 3 行接口做 TFM 中立兜底，
+/// 会新增<b>传递依赖</b>。故以 3 行接口做 TFM 中立兜底，
 /// 语义与 <c>TimeProvider.GetUtcNow()</c> 对齐，未来可无痛迁移。
 /// </para>
 /// <para>
@@ -29,7 +29,7 @@ public interface ISystemClock
 }
 
 /// <summary>
-/// G1：<see cref="ISystemClock"/> 的默认实现（真实系统时钟）。
+/// 默认实现（真实系统时钟）。
 /// </summary>
 public sealed class SystemClock : ISystemClock
 {

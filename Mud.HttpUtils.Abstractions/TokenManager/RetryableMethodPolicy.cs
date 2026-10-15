@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// R-P1-04：可安全重放的 HTTP 方法白名单（幂等语义）。
+/// 可安全重放的 HTTP 方法白名单（幂等语义）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,7 +19,7 @@ namespace Mud.HttpUtils;
 /// <b>与 Resilience 侧的关系</b>：<c>Resilience/RetryGuard.cs</c> 存在同一份白名单。评审已确认
 /// Client↔Resilience 双向引用会引入跨程序集关注点、收益低于回归成本，故两份白名单在 P1 阶段
 /// <b>刻意并存</b>（行为必须一致：GET/HEAD/OPTIONS/TRACE/PUT/DELETE 放行，POST/PATCH/CONNECT 拒绝）。
-/// 后续如需合一，由 Resilience 侧改为委托调用本类型（列为 P3 可选项）。
+/// 后续如需合一，由 Resilience 侧改为委托调用本类型（列为可选项）。
 /// </para>
 /// <para>
 /// <b>逃生门</b>：① 全局 <see cref="TokenRecoveryOptions.AllowNonIdempotentRecovery"/>；

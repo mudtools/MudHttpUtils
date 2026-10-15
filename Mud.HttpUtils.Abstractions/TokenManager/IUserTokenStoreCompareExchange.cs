@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// U-7（用户维度扩展）：<b>用户维度</b>令牌存储的原生 CAS（Compare-And-Swap）能力探测式可选接口 ——
+/// <b>用户维度</b>令牌存储的原生 CAS（Compare-And-Swap）能力探测式可选接口 ——
 /// 与 <see cref="ITokenStoreCompareExchange"/>（应用维度）同形态，方法名与语义逐条对齐，
 /// 仅多一层 <c>userId</c> 维度（与 <see cref="IUserTokenStore"/> 之于 <see cref="ITokenStore"/> 的扩展方式一致）。
 /// </summary>
@@ -53,7 +53,7 @@ public interface IUserTokenStoreCompareExchange
 }
 
 /// <summary>
-/// U-7（用户维度扩展）：用户维度 CAS 的统一入口与回退路径 —— 能力探测（<see cref="IUserTokenStoreCompareExchange"/>）
+/// 用户维度 CAS 的统一入口与回退路径 —— 能力探测（<see cref="IUserTokenStoreCompareExchange"/>）
 /// 优先，未实现时按「读取 → 明文比较 → 写入/删除」<b>非原子</b>回退（与
 /// <see cref="TokenStorePurgeExtensions.PurgeAppTokensAsync"/> 的能力探测模式同构）。
 /// </summary>

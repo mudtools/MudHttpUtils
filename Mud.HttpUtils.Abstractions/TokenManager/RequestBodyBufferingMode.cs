@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// R-P1-03：401 恢复链路对请求体的缓冲策略。
+/// 401 恢复链路对请求体的缓冲策略。
 /// </summary>
 /// <remarks>
 /// <para>

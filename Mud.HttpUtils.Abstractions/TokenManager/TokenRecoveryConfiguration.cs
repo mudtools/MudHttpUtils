@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// B6：<see cref="TokenRecoveryOptions"/> 的<b>纯 DTO 投影</b>——只含可被配置绑定源生成器
+/// <see cref="TokenRecoveryOptions"/> 的<b>纯 DTO 投影</b>——只含可被配置绑定源生成器
 /// （<c>EnableConfigurationBindingGenerator=true</c>）完整支持的成员（基元 / 字符串 / 枚举）。
 /// </summary>
 /// <remarks>

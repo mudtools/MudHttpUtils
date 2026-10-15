@@ -33,7 +33,7 @@ public interface ILegacyFormatProbe
 }
 
 /// <summary>
-/// U-1：官方<b>迁移期</b>双读编解码器 —— 供从「绝对毫秒戳」旧形态（两下游私有 codec 各自发明的
+/// 官方<b>迁移期</b>双读编解码器 —— 供从「绝对毫秒戳」旧形态（两下游私有 codec 各自发明的
 /// <c>{expireMs}|{token}</c> 存量数据）迁移到官方默认形态 <c>{expiresInSeconds}|{token}</c> 的下游使用。
 /// </summary>
 /// <remarks>
@@ -43,7 +43,7 @@ public interface ILegacyFormatProbe
 /// 「迁移期配置 → 收敛验证（SCAN 抽样值形态）→ 切回默认」三步指引。
 /// </para>
 /// <para>
-/// <b>C-2 裁决对表</b>：<see cref="Encode"/> 与 <see cref="DefaultTokenStoreCodec"/> 逐字节一致
+/// <b>对表裁决</b>：<see cref="Encode"/> 与 <see cref="DefaultTokenStoreCodec"/> 逐字节一致
 /// （单写相对秒，委托默认实例实现，杜绝复制粘贴漂移）——不违反「官方不提供绝对戳变体」裁决；
 /// 仅 <see cref="Decode"/> 做双读。
 /// </para>
@@ -112,7 +112,7 @@ public sealed class MigrationTokenStoreCodec : ITokenStoreCodec
     }
 
     /// <inheritdoc />
-    /// <remarks>与 <see cref="DefaultTokenStoreCodec"/> 逐字节一致（单写相对秒，C-2 裁决对表项）。</remarks>
+    /// <remarks>与 <see cref="DefaultTokenStoreCodec"/> 逐字节一致（单写相对秒）。</remarks>
     public string? Encode(string? token, long expiresInSeconds)
     {
         return _newFormatCodec.Encode(token, expiresInSeconds);
@@ -121,7 +121,7 @@ public sealed class MigrationTokenStoreCodec : ITokenStoreCodec
     /// <inheritdoc />
     /// <remarks>
     /// 双读判别规则见类型 remarks；非法格式返回 <c>null</c>（miss，不抛异常）。
-    /// U-2：v2 信封前缀形态<b>不参与</b>旧格式量级判别（自描述值不可能来自「旧绝对毫秒戳」旧形态），
+    /// v2 信封前缀形态<b>不参与</b>旧格式量级判别（自描述值不可能来自「旧绝对毫秒戳」旧形态），
     /// 直接由新格式 codec 解析，杜绝量级启发式误伤。
     /// </remarks>
     public (string? Token, long ExpiresInSeconds)? Decode(string? encoded)
