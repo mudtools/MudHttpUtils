@@ -14,23 +14,20 @@ namespace Mud.HttpUtils;
 /// 令牌管理器抽象基类，提供并发安全的令牌刷新实现。
 /// </summary>
 /// <remarks>
-/// <para><b>Dispose(bool) 契约（SR-H1，P1.3）</b>：</para>
+/// <para><b>Dispose(bool) 契约</b>：</para>
 /// <list type="number">
 /// <item><description><see cref="Dispose(bool)"/> 可重入、幂等；不以 <c>_disposed</c> 早退（派生类置位后仍须执行基类释放）。</description></item>
-/// <item><description>派生类覆写时应在开头自行检查/置位 <c>_disposed</c>（保留 NEW-TM-11 快速感知语义），且无论标志状态如何都必须调用 <c>base.Dispose(disposing)</c>。</description></item>
+/// <item><description>派生类覆写时应在开头自行检查/置位 <c>_disposed</c>，且无论标志状态如何都必须调用 <c>base.Dispose(disposing)</c>。</description></item>
 /// <item><description>各释放步骤自身幂等。</description></item>
 /// </list>
 /// </remarks>
 public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
     private readonly ITokenCache<CredentialToken> _tokenCache;
-    // P2.2（TK-05/09/24）键控锁表统一管理作用域锁，替代原有的 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>。
     private readonly KeyedLockTable _keyedLockTable = new();
-    // SR-L9（P3.10，D14-V5）：可空——仅 SupportsTenantMaintenance=true 时分配（用户管理器跳过，避免 NRE 面不置 null 释放路径）。
     private readonly Timer? _cleanupTimer;
     private readonly Timer? _lockCleanupTimer;
     private readonly object _cleanupLock = new();
-    // P1.3（TK-04）降级令牌连续命中的计数，用于指数退避；成功刷新时复位为 0。
     private int _consecutiveFallbacks;
 
     // TMX-04：刷新失败负缓存——窗口内同 scopeKey 的等待者直接重抛同一失败，不再发起刷新。
