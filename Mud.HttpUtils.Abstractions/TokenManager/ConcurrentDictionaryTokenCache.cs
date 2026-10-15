@@ -19,10 +19,6 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 {
-    // TM-01 修复：将 _cache 和 _lastAccess 合并为单个 ConcurrentDictionary，消除双字典非原子操作风险。
-    // 此前 _cache 和 _lastAccess 是两个独立的 ConcurrentDictionary，TryGet/TryRemove 等操作跨两个字典不是原子的，
-    // 可能导致 _lastAccess 残留已被移除的键（内存泄漏）或 Compact 驱逐错误的条目。
-    // 合并后，所有操作仅作用于单个字典，保证原子性。
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private volatile bool _disposed;
 
@@ -124,11 +120,9 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// m-2 修复：实现 Compact 方法，按指定百分比移除缓存条目。
-    /// TM-01 修复：基于 <c>CacheEntry.LastAccessTicks</c> 记录的最后访问时间，按 LRU（最久未使用）策略驱逐最旧条目，
-    /// 避免活跃令牌被误驱逐而过期令牌残留。合并后访问时间与值在同一字典条目中，不再有双字典同步问题。
-    /// </remarks>
+    /// <remarks>实现 Compact 方法，按指定百分比移除缓存条目。
+    /// 基于 <c>CacheEntry.LastAccessTicks</c> 记录的最后访问时间，按 LRU（最久未使用）策略驱逐最旧条目，
+    /// 避免活跃令牌被误驱逐而过期令牌残留。</remarks>
     public void Compact(double percentage)
     {
         if (percentage <= 0)
