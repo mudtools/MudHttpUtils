@@ -902,8 +902,10 @@ jobs:
       - name: Pack Redis (F-3, optional standalone package)
         run: dotnet pack Mud.HttpUtils.Redis/Mud.HttpUtils.Redis.csproj --no-build --configuration Release --output artifacts
 
-      - name: Pack Testing
-        run: dotnet pack Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj --no-build --configuration Release --output artifacts
+      # Mud.HttpUtils.Testing 为内部测试辅助库（Tests/Mud.HttpUtils.Client.Tests 用 ProjectReference 消费），
+      # 不对外发布（见根 README 包清单说明；pack.ps1 的 $ExpectedPackages 同样不含它）。
+      # 故此处不打包 —— 本作业的 artifacts 唯一的用途就是 publish-nuget 的上传源，
+      # 一旦产出即会被下面的 push 通配符一并推送到 nuget.org。
 
       - name: Pack Mud.HttpUtils (meta package)
         run: dotnet pack Mud.HttpUtils/Mud.HttpUtils.csproj --no-build --configuration Release --output artifacts
@@ -973,6 +975,20 @@ jobs:
             exit 1
           fi
           echo "✓ tag $GITHUB_REF_NAME 与打包版本 $pkg_version 一致"
+
+      # 发布集硬门禁：Testing 是测试辅助库，不得出现在 nuget.org（根 README 已声明"不随版本发布"）。
+      # build-and-pack 已移除其 Pack 步骤，此处再断言一次是防"后续误加回某个 pack 步骤/通配符改宽"
+      # 时静默发布 —— push 用的是 artifacts/*.nupkg，多一个包不会有任何报错。
+      # 位置在 login 之前：失败即止，不浪费一次性 OIDC 令牌。
+      - name: Exclude Mud.HttpUtils.Testing from publish set
+        shell: bash
+        run: |
+          if compgen -G "artifacts/Mud.HttpUtils.Testing.*.nupkg" > /dev/null; then
+            echo "::error::发布集出现 Mud.HttpUtils.Testing.*.nupkg —— 该包为内部测试辅助库，不应发布到 NuGet"
+            ls -1 artifacts/
+            exit 1
+          fi
+          echo "✓ 发布集不含 Mud.HttpUtils.Testing"
 
       # 临时密钥有效期 1 小时，紧邻 push 步骤请求；user 为 nuget.org 账户用户名
       # （非邮箱、非 GitHub 账号）—— 该输入在 NuGet/login@v1 中为必填且无默认值。
