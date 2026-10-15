@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// U-2：存储值信封（v2 形态）的<b>三种语义态</b> —— 把默认形态中被合并的「无 TTL 信息」与「已过期」分离。
+/// 存储值信封（v2 形态）的<b>三种语义态</b> —— 把默认形态中被合并的「无 TTL 信息」与「已过期」分离。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -39,14 +39,14 @@ public enum TokenStoreEnvelopeState
 }
 
 /// <summary>
-/// U-2：<b>可选</b>的 v2 版本化信封编解码器 —— 在默认形态之外提供自描述前缀（<c>v2:</c>）与
+/// <b>可选</b>的 v2 版本化信封编解码器 —— 在默认形态之外提供自描述前缀（<c>v2:</c>）与
 /// 显式过期态，供「过期态需要被表达 / 需要与缺失态区分」的下游显式启用。
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>默认形态零变化</b>：本 codec 不被任何默认路径使用 —— 未显式启用时（如
 /// <c>RedisTokenStoreOptions.UseVersionedEnvelope</c> 为 <c>false</c>），写入形态与
-/// <see cref="DefaultTokenStoreCodec"/> 逐字节一致（C-2 裁决：默认形态不得漂移）。
+/// <see cref="DefaultTokenStoreCodec"/> 逐字节一致（默认形态不得漂移）。
 /// </para>
 /// <para>
 /// <b>三态编码矩阵</b>：
@@ -58,7 +58,7 @@ public enum TokenStoreEnvelopeState
 /// </list>
 /// </para>
 /// <para>
-/// <b>两阶段切换纪律（U-2 混部署风险）</b>：<b>先升级全部读取方</b>（含 v2 前缀识别的库版本），再开启写入开关。
+/// <b>两阶段切换纪律（混部署风险）</b>：<b>先升级全部读取方</b>（含 v2 前缀识别的库版本），再开启写入开关。
 /// 原因是旧版本 reader 读到 v2 值必然解码失败 —— 前缀段 <c>v2:3600</c> / <c>v2:expired</c> 非数值，
 /// 旧实现的 <c>long.TryParse</c> 失败后返回 <c>null</c>（miss）。该方向<b>安全</b>（走刷新路径，不会把过期值误判为有效令牌），
 /// 但会让旧实例持续 miss 并重复刷新，故禁止「写入方先升级」的逆序切换。

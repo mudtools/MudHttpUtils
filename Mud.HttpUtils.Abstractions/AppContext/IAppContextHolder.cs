@@ -9,10 +9,6 @@ namespace Mud.HttpUtils;
 
 /// <summary>
 /// 应用上下文持有器接口，用于持有和传播当前应用上下文。
-/// <para>
-/// 此接口仅包含纯状态操作，不依赖任何外部服务（如 IAppManager 或 ITokenProvider）。
-/// 运行时实现完整实现此接口，无 NotSupportedException。
-/// </para>
 /// </summary>
 public interface IAppContextHolder
 {
@@ -20,10 +16,8 @@ public interface IAppContextHolder
     /// 获取当前的应用上下文。
     /// </summary>
     /// <remarks>
-    /// <b>写入约束（4.5/P3 收敛）</b>：本属性的 setter 已改为 <c>init</c>，
-    /// 仅允许在对象初始化阶段设置。运行时切换应用上下文请使用 
-    /// <see cref="SwitchTo"/> 或 <see cref="BeginScope"/> 方法，
-    /// 或生成代码中的 <c>UseAppScope</c>/<c>UseDefaultAppScope</c> 方法（推荐，自动归还上下文）。
+    /// 本属性的 setter 已改为 <c>init</c>，仅允许在对象初始化阶段设置。
+    /// 运行时切换应用上下文请使用 <see cref="SwitchTo"/> 或 <see cref="BeginScope"/> 方法。
     /// </remarks>
     IMudAppContext? Current { get; init; }
 
@@ -31,17 +25,6 @@ public interface IAppContextHolder
     /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。
     /// </summary>
     /// <param name="context">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>
-    /// <remarks>
-    /// <para>
-    /// 本方法取代了对 <see cref="Current"/> 的直接写入，是运行时切换应用上下文的推荐入口。
-    /// 与 <see cref="BeginScope"/> 的区别：本方法不返回 <see cref="IDisposable"/>，不自动恢复前值。
-    /// </para>
-    /// <para>
-    /// 适用于生成代码中的作用域式入口 <c>UseAppScope</c>/<c>UseDefaultAppScope</c>
-    /// （历史入口 <c>UseApp</c>/<c>UseDefaultApp</c> 已标记 <c>[Obsolete]</c>）。
-    /// 如需自动恢复，请使用 <see cref="BeginScope"/>。
-    /// </para>
-    /// </remarks>
     void SwitchTo(IMudAppContext? context);
 
     /// <summary>
@@ -49,10 +32,5 @@ public interface IAppContextHolder
     /// </summary>
     /// <param name="context">要切换到的应用上下文实例。</param>
     /// <returns>一个 <see cref="IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
-    /// <remarks>
-    /// <b>归属约束</b>：返回的 <see cref="IDisposable"/> 必须在其创建的异步流程内释放。
-    /// 跨执行上下文释放（例如在别的 <c>Task.Run</c> 中释放）不会被识别为本作用域的还原点，
-    /// 以免覆盖其它流程的合法上下文写入。
-    /// </remarks>
     IDisposable BeginScope(IMudAppContext context);
 }

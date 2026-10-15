@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// G2：令牌<b>存储值编解码</b>约定 —— 把"过期戳 + 令牌"这一事实契约从各下游的私有发明
+/// 令牌<b>存储值编解码</b>约定 —— 把"过期戳 + 令牌"这一事实契约从各下游的私有发明
 /// 上收为库内可替换的正式抽象。
 /// </summary>
 /// <remarks>
@@ -42,7 +42,7 @@ public interface ITokenStoreCodec
 }
 
 /// <summary>
-/// G2 内建默认编解码器：<c>{expiresInSeconds}|{token}</c>（与下游既有的"过期戳 + 令牌"形态等价，
+/// 内建默认编解码器：<c>{expiresInSeconds}|{token}</c>（与下游既有的"过期戳 + 令牌"形态等价，
 /// 但格式由库定义并文档化，可安全替换）。
 /// </summary>
 /// <remarks>
@@ -51,9 +51,9 @@ public interface ITokenStoreCodec
 /// 而相对秒数由写入方按当前时钟推导，与 <see cref="TokenStoreValue.ExpiresInSeconds"/> 语义一致。
 /// </para>
 /// <para>
-/// <b>U-2 读取面扩展</b>：<see cref="Decode"/> 识别 <see cref="VersionedTokenStoreCodec.VersionPrefix"/>
+/// 读取面扩展：<see cref="Decode"/> 识别 <see cref="VersionedTokenStoreCodec.VersionPrefix"/>
 /// 前缀（v2 信封）——即读取方升级本库即可读 v2 值，<b>无需</b>改配置；<see cref="Encode"/> 输出形态不变
-/// （C-2 裁决：默认形态不得漂移，写入侧是否改 v2 由显式开关决定）。
+/// （写入侧是否改 v2 由显式开关决定）。
 /// </para>
 /// </remarks>
 public sealed class DefaultTokenStoreCodec : ITokenStoreCodec
