@@ -12,31 +12,22 @@ namespace Mud.HttpUtils;
 /// （如企业微信恒返 HTTP 200 + <c>errcode</c> ∈ {40014, 42001, 42007, 42009, 42011}）。
 /// </summary>
 /// <remarks>
-/// <para>
-/// WX-01（Phase A，errcode 令牌失效恢复）扩展点。经
-/// <see cref="TokenRecoveryOptions.TokenInvalidationDetector"/> 注册后，
+/// <para>扩展点。经 <see cref="TokenRecoveryOptions.TokenInvalidationDetector"/> 注册后，
 /// 恢复执行器的两处失效判定点（首次响应 / 重试响应）收敛为同一判定语义：
-/// <c>HTTP 401（默认语义，短路在前）|| 判定器判定为失效</c>。
-/// </para>
-/// <para>
-/// errcode 失效码集合、响应体解析等平台知识全部归属各平台 SDK（如 Mud.Wechat 的
-/// <c>WechatWorkTokenInvalidationDetector</c>），不进入通用框架。
-/// </para>
-/// <para>
-/// 实现必须幂等且无副作用：判定器不得消费 <paramref name="response"/> 的内容流
+/// <c>HTTP 401（默认语义，短路在前）|| 判定器判定为失效</c>。</para>
+/// <para>errcode 失效码集合、响应体解析等平台知识全部归属各平台 SDK（如 Mud.Wechat 的
+/// <c>WechatWorkTokenInvalidationDetector</c>），不进入通用框架。</para>
+/// <para>实现必须幂等且无副作用：判定器不得消费 <paramref name="response"/> 的内容流
 /// （调用方拿到的响应必须保持可读），不应抛出异常——除取消外的异常会被恢复执行器
-/// 降级为「未失效」处理并记 Warning。
-/// </para>
+/// 降级为「未失效」处理并记 Warning。</para>
 /// </remarks>
 public interface ITokenInvalidationDetector
 {
     /// <summary>
     /// 同步预过滤：该请求的响应是否需要失效判定检查。
-    /// <para>
-    /// 在任何响应体读取之前调用；返回 <c>false</c> 可完全跳过响应体捕获开销。
+    /// <para>在任何响应体读取之前调用；返回 <c>false</c> 可完全跳过响应体捕获开销。
     /// 实现方借此按接口 / 客户端声明式启用（如按 host 白名单、请求 URI 路径或
-    /// <see cref="TokenRecoveryContext"/> 存在性自查），满足"仅对确会走令牌的接口启用"的开销约束。
-    /// </para>
+    /// <see cref="TokenRecoveryContext"/> 存在性自查），满足"仅对确会走令牌的接口启用"的开销约束。</para>
     /// </summary>
     /// <param name="request">即将判定其响应的原始请求（重试轮为重建后的重试请求）。</param>
     /// <returns><c>true</c> = 需要检查（进入响应体捕获 + <see cref="IsTokenInvalidAsync"/>）；<c>false</c> = 跳过。</returns>
