@@ -76,9 +76,9 @@ internal sealed class KeyedLockTable : IDisposable
         {
             var entry = _entries.GetOrAdd(key, _ => new Entry());
             Interlocked.Increment(ref entry.Waiters);
-            // SR-C1（P1.1）：Retired 声明为 volatile，直接读取即具备 volatile 语义。
+            // Retired 声明为 volatile，直接读取即具备 volatile 语义。
             // 此处刻意不写 Volatile.Read(ref entry.Retired)：对 volatile 字段取 ref 会触发 CS0420
-            // （“对 volatile 字段的引用不被视为 volatile”），而语义与直接读取完全等价。
+            // （”对 volatile 字段的引用不被视为 volatile”），而语义与直接读取完全等价。
             if (!entry.Retired)
             {
                 try
@@ -93,7 +93,7 @@ internal sealed class KeyedLockTable : IDisposable
                 }
             }
             Interlocked.Decrement(ref entry.Waiters);   // 已 retire，重试
-            // P2.2（TK-05/09/24）尽力移除：若该退休条目已无任何等待者（含在途持有者），
+            // 尽力移除：若该退休条目已无任何等待者（含在途持有者），
             // 由本调用方帮助物理移除，避免"自旋者 + 最后持有者已释放"导致退休条目永久滞留、
             // 后续 GetOrAdd 反复返回同一退休条目而无法复用（消除 Waiters 泄漏死锁）。
             if (Volatile.Read(ref entry.Waiters) == 0)
@@ -102,7 +102,7 @@ internal sealed class KeyedLockTable : IDisposable
                 continue;   // 本方已帮助移除，下一轮必得新条目，立即重试
             }
 
-            // SR-C1（P1.1）修复：退休条目仍被持有/等待时，异步退避后重试。
+            // 修复：退休条目仍被持有/等待时，异步退避后重试。
             // 原实现为无让步 while(true) 紧循环——持锁刷新可达 30s+（RefreshTimeoutSeconds），
             // 期间所有并发等待者持续烧 CPU（近似活锁）。retire 协议的正确性前提
             // （"取到退休条目必须放弃并重取新条目"，防孤儿竞态破坏互斥）不可移除，
@@ -113,7 +113,7 @@ internal sealed class KeyedLockTable : IDisposable
     }
 
     /// <summary>
-    /// R-P2-02：退休分支的指数退避时长（毫秒）：1, 2, 4, 8, 16, 32, 50, 50, ...
+    /// 退休分支的指数退避时长（毫秒）：1, 2, 4, 8, 16, 32, 50, 50, ...
     /// </summary>
     /// <param name="retryIndex">累计重试序号（由 <see cref="SpinRetries"/> 提供，恒 ≥ 1）。</param>
     /// <returns>本次退避毫秒数，上界为 <see cref="MaxRetryBackoffMilliseconds"/>。</returns>
@@ -131,7 +131,7 @@ internal sealed class KeyedLockTable : IDisposable
     }
 
     /// <summary>
-    /// R-P2-02 测试观测钩子：当前配置下的最大单次退避（毫秒），供测试断言"退避有界"而无需硬编码常量。
+    /// 测试观测钩子：当前配置下的最大单次退避（毫秒），供测试断言"退避有界"而无需硬编码常量。
     /// </summary>
     internal static int MaxBackoffMillisecondsForTest => MaxRetryBackoffMilliseconds;
 
@@ -188,7 +188,7 @@ internal sealed class KeyedLockTable : IDisposable
 
     /// <summary>
     /// 释放资源：将所有条目标记为已退休并清空字典。刻意不 Dispose <c>SemaphoreSlim</c>：
-    /// 在途 Releaser 的 Release 必须安全（修复 TK-08）。
+    /// 在途 Releaser 的 Release 必须安全。
     /// </summary>
     public void Dispose()
     {
