@@ -40,3 +40,7 @@ Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.Database.set -> void
 Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.KeyPrefix.get -> string!
 Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.KeyPrefix.set -> void
 Mud.HttpUtils.Redis.RedisRefreshLeaseOptions.RedisRefreshLeaseOptions() -> void
+Mud.HttpUtils.Redis.RedisTokenStore.CompareExchangeAccessTokenAsync(string! tokenType, string! expectedToken, string? newToken, long expiresInSeconds = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.Redis.RedisTokenStore.CompareExchangeRefreshTokenAsync(string! tokenType, string! expectedToken, string? newToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.Redis.RedisTokenStore.EnumerateKeysAsync(string! appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<string!>!>!
+Mud.HttpUtils.Redis.RedisTokenStore.PurgeAppAsync(string! appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!

@@ -201,3 +201,22 @@ virtual Mud.HttpUtils.TokenManagerBase.RefreshLease.get -> Mud.HttpUtils.ITokenR
 virtual Mud.HttpUtils.TokenManagerBase.RefreshLeasePollIntervalMilliseconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.RefreshLeaseTime.get -> System.TimeSpan
 virtual Mud.HttpUtils.TokenManagerBase.RefreshLeaseWaitTimeoutMilliseconds.get -> int
+Mud.HttpUtils.AppInstantiatedEventArgs
+Mud.HttpUtils.AppInstantiatedEventArgs.AppInstantiatedEventArgs(string! appKey, Mud.HttpUtils.IMudAppContext! context) -> void
+Mud.HttpUtils.AppInstantiatedEventArgs.AppKey.get -> string!
+Mud.HttpUtils.AppInstantiatedEventArgs.Context.get -> Mud.HttpUtils.IMudAppContext!
+Mud.HttpUtils.DefaultAppManager<TAppContext>.AppInstantiated -> System.EventHandler<Mud.HttpUtils.AppInstantiatedEventArgs!>?
+Mud.HttpUtils.IMultiAppLookupProvider
+Mud.HttpUtils.IMultiAppLookupProvider.ResolveAllAppKeys(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! externalIds) -> System.Collections.Generic.IEnumerable<string!>!
+Mud.HttpUtils.ITokenStoreAppPurge
+Mud.HttpUtils.ITokenStoreAppPurge.EnumerateKeysAsync(string! appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<string!>!>!
+Mud.HttpUtils.ITokenStoreAppPurge.PurgeAppAsync(string! appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Mud.HttpUtils.ITokenStoreCompareExchange
+Mud.HttpUtils.ITokenStoreCompareExchange.CompareExchangeAccessTokenAsync(string! tokenType, string! expectedToken, string? newToken, long expiresInSeconds = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.ITokenStoreCompareExchange.CompareExchangeRefreshTokenAsync(string! tokenType, string! expectedToken, string? newToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.TokenScopeKey.ToDelimitedKey(char separator = ':') -> string!
+Mud.HttpUtils.TokenStorePurgeExtensions
+static Mud.HttpUtils.TokenScopeKey.TryParseDelimited(string? value, char separator, out Mud.HttpUtils.TokenScopeKey result) -> bool
+static Mud.HttpUtils.TokenStorePurgeExtensions.PurgeAppTokensAsync(this Mud.HttpUtils.ITokenStore! store, string? appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.OnAppInstantiated(string! appKey, TAppContext context) -> void
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.TryResolveAllAppKeys(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! externalIds) -> System.Collections.Generic.IEnumerable<string!>!

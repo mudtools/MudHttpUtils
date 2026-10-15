@@ -130,6 +130,83 @@ public readonly struct TokenScopeKey : IEquatable<TokenScopeKey>
     }
 
     /// <summary>
+    /// U-6：分隔符编码键形态 —— 纯拼接的 <c>{tokenType}{sep}{appKey}{sep}{scopeKey}</c> 三段式文本
+    /// （缺段省略：<see cref="ForShared"/> 单段、<see cref="ForApp"/> 两段、<see cref="ForScope"/> 三段）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>双形态适用矩阵（U-6，与 <see cref="ToCompositeKey"/> <b>不互通</b>）</b>：
+    /// <see cref="ToCompositeKey"/>（长度前缀，对任一分段内容单射、免分隔符约束，适合进程内字典键）；
+    /// 本形态（人类可读、SCAN 友好、可经 <see cref="TryParseDelimited"/> 反解，适合 Redis/分布式键）
+    /// —— <b>代价是段内容不得包含分隔符</b>（如下游微信的「AppKey 禁 <c>:</c>」形状约束），违例 fail-fast 抛异常。
+    /// </para>
+    /// </remarks>
+    /// <param name="separator">段分隔符（默认 <c>:</c>，与两下游存量 <c>{a}:{b}</c> 布局同构）。</param>
+    /// <returns>分隔符编码后的归属键文本。</returns>
+    /// <exception cref="ArgumentException">分隔符为空字符。</exception>
+    /// <exception cref="InvalidOperationException">任一非空段包含分隔符（编码不可逆，fail-fast）。</exception>
+    public string ToDelimitedKey(char separator = ':')
+    {
+        if (separator == '\0')
+            throw new ArgumentException("分隔符不得为空字符。", nameof(separator));
+
+        if (_tokenType.Contains(separator))
+            throw new InvalidOperationException($"TokenType 段包含分隔符 '{separator}'，分隔符编码不可逆（fail-fast）：{_tokenType}");
+        if (_appKey != null && _appKey.Contains(separator))
+            throw new InvalidOperationException($"AppKey 段包含分隔符 '{separator}'，分隔符编码不可逆（fail-fast）：{_appKey}");
+        if (_scopeKey != null && _scopeKey.Contains(separator))
+            throw new InvalidOperationException($"ScopeKey 段包含分隔符 '{separator}'，分隔符编码不可逆（fail-fast）：{_scopeKey}");
+
+        if (_scopeKey != null)
+            return string.Concat(_tokenType, separator, _appKey, separator, _scopeKey);
+        if (_appKey != null)
+            return string.Concat(_tokenType, separator, _appKey);
+        return _tokenType;
+    }
+
+    /// <summary>
+    /// U-6：<see cref="ToDelimitedKey"/> 的反向解析（按段数裁断归属形态：3 段 = <see cref="ForScope"/>、
+    /// 2 段 = <see cref="ForApp"/>、1 段 = <see cref="ForShared"/>）。
+    /// </summary>
+    /// <remarks>解析失败（null/空串/空段/超过 3 段）返回 <c>false</c>，不抛异常（与 <see cref="ITokenStoreCodec.Decode"/> miss 契约同风格）。</remarks>
+    /// <param name="value">分隔符编码键文本。</param>
+    /// <param name="separator">段分隔符（须与编码时一致）。</param>
+    /// <param name="result">解析成功时为归属键；失败时为 <c>default</c>。</param>
+    /// <returns>解析成功返回 <c>true</c>。</returns>
+    public static bool TryParseDelimited(string? value, char separator, out TokenScopeKey result)
+    {
+        result = default;
+
+        if (string.IsNullOrEmpty(value) || separator == '\0')
+            return false;
+
+        var segments = value.Split(separator);
+        if (segments.Length == 0 || segments.Length > 3)
+            return false;
+
+        foreach (var segment in segments)
+        {
+            if (segment.Length == 0)
+                return false;   // 空段无归属语义（与 RequireSegment 同口径）
+        }
+
+        if (segments.Length == 1)
+        {
+            result = ForShared(segments[0]);
+            return true;
+        }
+
+        if (segments.Length == 2)
+        {
+            result = ForApp(segments[0], segments[1]);
+            return true;
+        }
+
+        result = ForScope(segments[0], segments[1], segments[2]);
+        return true;
+    }
+
+    /// <summary>
     /// 定位符形态内部映射：按段投影到既有 <c>string[] scopes</c> 路径的路由入参——
     /// <c>ForScope</c> → <c>[scopeKey]</c>；<c>ForApp</c> / <c>ForShared</c> → null（"default"）。
     /// tokenType / appKey 段不参与此映射（绝不进缓存键）。

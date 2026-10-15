@@ -43,7 +43,7 @@ namespace Mud.HttpUtils.Redis;
 /// （与 <c>Mud.HttpUtils.Xml</c> 同口径），定位为服务器端可选依赖。
 /// </para>
 /// </remarks>
-public sealed class RedisTokenStore : ITokenStore
+public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenStoreCompareExchange
 {
     private readonly IConnectionMultiplexer _connection;
     private readonly RedisTokenStoreOptions _options;
@@ -166,29 +166,190 @@ public sealed class RedisTokenStore : ITokenStore
     /// <remarks>
     /// 仅清理<b>本前缀 + 本 appKey 命名空间</b>下的键（<c>{prefix}:*:{appKey}:*</c>），
     /// 不触碰其他前缀/其他应用的数据（多应用隔离）。
+    /// U-4 起本方法为 <see cref="PurgeAppAsync"/> 的便捷形态（≡ <c>PurgeAppAsync(本实例 AppKey)</c>），
+    /// SCAN/删除逻辑单一事实源，杜绝双轨漂移。
     /// </remarks>
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeAppAsync(_options.AppKey, cancellationToken).ConfigureAwait(false);
+    }
 
-        var pattern = RedisTokenStoreKeyBuilder.BuildAccessPattern(_options.KeyPrefix, _options.AppKey);
-        var refreshPattern = _options.KeyPrefix + ":" + "*:" +
-            (string.IsNullOrWhiteSpace(_options.AppKey) ? RedisTokenStoreOptions.SharedAppKeySegment : _options.AppKey) +
-            ":" + RedisTokenStoreKeyBuilder.RefreshField;
+    /// <inheritdoc />
+    /// <remarks>
+    /// U-4：快照语义 —— 经 <c>SCAN</c>（<see cref="IServer.Keys(int, RedisValue, int, long, int, CommandFlags)"/>）
+    /// 枚举<b>指定 appKey</b> 名下的访问令牌键与刷新令牌键（键解析内聚在
+    /// <see cref="RedisTokenStoreKeyBuilder"/>，tokenType 可含 <c>:</c>）。
+    /// <paramref name="appKey"/> 为 null/空白时按 <see cref="RedisTokenStoreOptions.SharedAppKeySegment"/>
+    /// 共享命名空间处置。
+    /// </remarks>
+    public async Task<IReadOnlyCollection<string>> EnumerateKeysAsync(string appKey, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var keys = new List<RedisKey>();
-        foreach (var key in ScanKeys(pattern))
+        var segment = string.IsNullOrWhiteSpace(appKey)
+            ? RedisTokenStoreOptions.SharedAppKeySegment
+            : appKey;
+        var accessPattern = RedisTokenStoreKeyBuilder.BuildAccessPattern(_options.KeyPrefix, segment);
+        var refreshPattern = _options.KeyPrefix + ":" + "*:" + segment + ":" + RedisTokenStoreKeyBuilder.RefreshField;
+
+        var keys = new List<string>();
+        foreach (var key in ScanKeys(accessPattern))
             keys.Add(key);
         foreach (var key in ScanKeys(refreshPattern))
             keys.Add(key);
 
-        if (keys.Count == 0)
-            return;
+        return keys;
+    }
 
-        await Database.KeyDeleteAsync(keys.ToArray()).ConfigureAwait(false);
+    /// <inheritdoc />
+    /// <remarks>
+    /// U-4：按<b>参数给定的 appKey</b> 精确清库（与 <see cref="ClearAsync"/> 绑定实例配置不同，
+    /// 多应用单实例部署时无需为每个 appKey 建独立 store），不误伤其他 appKey 的键；
+    /// 单批 <c>DEL</c> 原子删除，键集为空时不发命令。
+    /// </remarks>
+    public async Task<int> PurgeAppAsync(string appKey, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var keys = await EnumerateKeysAsync(appKey, cancellationToken).ConfigureAwait(false);
+        if (keys.Count == 0)
+            return 0;
+
+        var redisKeys = new RedisKey[keys.Count];
+        var i = 0;
+        foreach (var key in keys)
+            redisKeys[i++] = key;
+
+        await Database.KeyDeleteAsync(redisKeys).ConfigureAwait(false);
+        return keys.Count;
     }
 
     private IDatabase Database => _connection.GetDatabase(_options.Database);
+
+    // ──────────────────────────────────────────────
+    //  U-7：原生 CAS（ITokenStoreCompareExchange）
+    // ──────────────────────────────────────────────
+
+    /// <summary>
+    /// U-7：CAS 原子脚本（默认 codec 家族形态 <c>{seconds}|{token}</c> 可在服务端拆分提取令牌段）：
+    /// GET 原值 → 拆出令牌明文与 expected 比较 → 匹配则按语义 SET（含/不含 PX）或 DEL → 不匹配不写入。
+    /// </summary>
+    private const string CompareExchangeScript =
+        "local raw = redis.call('GET', KEYS[1]) " +
+        "if not raw then return 0 end " +
+        "local sep = string.find(raw, '|', 1, true) " +
+        "local stored = '' " +
+        "if sep then stored = string.sub(raw, sep + 1) end " +
+        "if stored ~= ARGV[1] then return 0 end " +
+        "if ARGV[2] == '' then redis.call('DEL', KEYS[1]) return 1 end " +
+        "if ARGV[3] == '' then redis.call('SET', KEYS[1], ARGV[2]) else redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) end " +
+        "return 1";
+
+    /// <summary>默认 codec 家族判定：Encode 输出为 <c>{seconds}|{token}</c> 形态（Lua 可拆分），CAS 可原子。</summary>
+    private bool IsDefaultFamilyCodec => _codec is DefaultTokenStoreCodec or MigrationTokenStoreCodec;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// <b>原子性边界（U-7 契约）</b>：默认 codec 家族（<see cref="DefaultTokenStoreCodec"/> /
+    /// <see cref="MigrationTokenStoreCodec"/>，Encode 输出 <c>{seconds}|{token}</c>）经 Lua 脚本原子执行；
+    /// 自定义 codec 退化为「读取 → 明文比较 → 写入」<b>非原子</b>路径（服务端脚本无法执行任意 C# codec）。
+    /// </para>
+    /// <para><paramref name="expiresInSeconds"/> ≤ 0 时不设 TTL（C1 宁缺勿滥）。</para>
+    /// </remarks>
+    public async Task<bool> CompareExchangeAccessTokenAsync(string tokenType, string expectedToken, string? newToken, long expiresInSeconds = 0, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateTokenType(tokenType);
+        ValidateExpectedToken(expectedToken);
+
+        var key = (RedisKey)RedisTokenStoreKeyBuilder.BuildAccessKey(_options.KeyPrefix, tokenType, _options.AppKey);
+        var pxMilliseconds = expiresInSeconds > 0
+            ? (expiresInSeconds * 1000L).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+
+        if (IsDefaultFamilyCodec)
+        {
+            var encodedNew = string.IsNullOrEmpty(newToken) ? string.Empty : _codec.Encode(newToken, expiresInSeconds) ?? string.Empty;
+            var result = await Database.ScriptEvaluateAsync(
+                CompareExchangeScript,
+                new RedisKey[] { key },
+                new RedisValue[] { expectedToken, encodedNew, pxMilliseconds }).ConfigureAwait(false);
+            return ((long)result) == 1;
+        }
+
+        // 非默认 codec：非原子回退（读取 → 明文比较 → 写入/删除）。
+        return await CompareExchangeFallbackAsync(key, expectedToken, newToken, expiresInSeconds,
+            _ => expiresInSeconds > 0 ? TimeSpan.FromSeconds(expiresInSeconds) : null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// refresh 轮换主场景（飞书 TMF-05）：写入侧 TTL 与 <see cref="SetRefreshTokenAsync"/> 同源
+    /// （<see cref="RedisTokenStoreOptions.DefaultTtl"/>，未配置则不设 TTL）；compare-and-delete 时忽略 TTL。
+    /// 原子性边界同 <see cref="CompareExchangeAccessTokenAsync"/>。
+    /// </remarks>
+    public async Task<bool> CompareExchangeRefreshTokenAsync(string tokenType, string expectedToken, string? newToken, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateTokenType(tokenType);
+        ValidateExpectedToken(expectedToken);
+
+        var key = (RedisKey)RedisTokenStoreKeyBuilder.BuildRefreshKey(_options.KeyPrefix, tokenType, _options.AppKey);
+
+        if (IsDefaultFamilyCodec)
+        {
+            var encodedNew = string.IsNullOrEmpty(newToken) ? string.Empty : _codec.Encode(newToken, 0) ?? string.Empty;
+            var pxMilliseconds = _options.DefaultTtl is { } ttl
+                ? ((long)ttl.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : string.Empty;
+            var result = await Database.ScriptEvaluateAsync(
+                CompareExchangeScript,
+                new RedisKey[] { key },
+                new RedisValue[] { expectedToken, encodedNew, pxMilliseconds }).ConfigureAwait(false);
+            return ((long)result) == 1;
+        }
+
+        return await CompareExchangeFallbackAsync(key, expectedToken, newToken, 0, _ => _options.DefaultTtl, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>U-7 非默认 codec 的非原子回退：读取 → 明文比较 → 写入/删除（契约允许，须文档化）。</summary>
+    private async Task<bool> CompareExchangeFallbackAsync(
+        RedisKey key, string expectedToken, string? newToken, long expiresInSeconds,
+        Func<string, TimeSpan?> ttlSelector, CancellationToken cancellationToken)
+    {
+        var raw = await Database.StringGetAsync(key).ConfigureAwait(false);
+        if (raw.IsNull)
+            return false;
+
+        var decoded = _codec.Decode(raw);
+        if (decoded is null || !string.Equals(decoded.Value.Token, expectedToken, StringComparison.Ordinal))
+            return false;
+
+        if (string.IsNullOrEmpty(newToken))
+        {
+            await Database.KeyDeleteAsync(key).ConfigureAwait(false);
+            return true;
+        }
+
+        var encoded = _codec.Encode(newToken, expiresInSeconds);
+        if (encoded is null)
+        {
+            await Database.KeyDeleteAsync(key).ConfigureAwait(false);
+            return true;
+        }
+
+        await Database.StringSetAsync(key, encoded, ttlSelector(encoded)).ConfigureAwait(false);
+        return true;
+    }
+
+    private static void ValidateExpectedToken(string expectedToken)
+    {
+        if (string.IsNullOrEmpty(expectedToken))
+            throw new ArgumentException("期望的旧令牌明文不得为空。", nameof(expectedToken));
+    }
 
     /// <summary>解析存储值（codec 解析失败返回 null，符合 ITokenStoreCodec"不得抛异常"契约）。</summary>
     private string? DecodeToken(RedisValue raw)

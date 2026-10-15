@@ -97,8 +97,10 @@
 
 ---
 
-## 3.0.10（未发布：双下游反馈 Batch 1 —— 迁移 codec / 刷新租约 / 打包治理）
+## 3.0.7（未发布追加：双下游反馈 Batch 1 —— 迁移 codec / 刷新租约 / 打包治理）
 
+> 版本线口径（2026-10-15 裁决）：双下游反馈各批次统一随 **3.0.7** 发布；本段与下方「3.0.7（三大核心 Phase 0/1）」
+> 为同版本线的先后批次内容。
 > 对应《双下游反馈功能完善方案-MudFeishu与MudWechat-20261015.md》Batch 1（U-1/U-3/U-13）。
 
 ### 新增
@@ -116,6 +118,27 @@
   不构成向量），同版本已存在即拒绝打包（`-ForceSameVersion` 逃生 + 三步清缓存指引）；目标版本不高于
   CHANGELOG 最新版本段时输出版本纪律告警。`pack_debug.ps1` 默认转发 `-ForceSameVersion`（同版本覆盖缓存
   为其既定设计目的）。
+- **U-4 按应用清库能力面**（A-5 预留路线落地）：`ITokenStoreAppPurge`（`EnumerateKeysAsync` 快照枚举 +
+  `PurgeAppAsync` 按应用清库，组件级可选接口，不进最小 SPI）+ `TokenStorePurgeExtensions.PurgeAppTokensAsync`
+  统一入口（能力探测优先；未实现时按「GetTokenTypesAsync → 逐类型 RemoveAsync」回退）；
+  `RedisTokenStore` 实现（键解析内聚 `RedisTokenStoreKeyBuilder`，tokenType 含 `:` 免转义；`ClearAsync`
+  重构为 `PurgeAppAsync(本实例 AppKey)` 便捷形态，行为逐位不变）。
+- **U-5 多命中反查**：`IMultiAppLookupProvider`（独立可选接口——Abstractions 含 ns2.0 TFM，DIM 不可用）
+  + `DefaultAppManager.TryResolveAllAppKeys`（多命中提供者优先，HasApp 过滤含懒加载未实例化条目且不物化、
+  去重；仅单结果面提供者时回退 F-4 行为；内置索引歧义维持 fail-closed 口径）。多命中即歧义的显式表达，
+  供下游回调场景「全部处理并记录歧义」。
+- **U-6 `TokenScopeKey` 分隔符编码**：`ToDelimitedKey(char separator = ':')`（纯拼接，段含分隔符 fail-fast，
+  微信 AppKey 形状约束天然成立）+ `TryParseDelimited`（按段数裁断：3 段 = ForScope、2 段 = ForApp、
+  1 段 = ForShared）。与 `ToCompositeKey` 双形态适用矩阵钉死：**不互通**（CompositeKey 适合字典键、
+  DelimitedKey 适合 Redis/SCAN 键）。
+- **U-7 原生 CAS 原语**：`ITokenStoreCompareExchange`（明文比较契约；newToken 为空 = compare-and-delete）
+  + `RedisTokenStore` Lua 原子实现（默认 codec 家族 `{seconds}|{token}` 服务端可拆分）；自定义 codec
+  退化为非原子回退（服务端脚本无法执行任意 C# codec，契约明示原子性边界）。refresh 维度写入侧 TTL
+  与 `SetRefreshTokenAsync` 同源（DefaultTtl）。
+- **U-8 `AppInstantiated` 生命周期事件**（事件面收敛：仅补懒加载首滚这一真实缺口，Reconfigured/Removed
+  语义仍由 `ConfigurationChanged` 承载）：`DefaultAppManager.AppInstantiated` +
+  `AppInstantiatedEventArgs`——仅真实实例化成功时发布（严格后于注册表并入，处理器内可见）、
+  同一次实例化恰好一次、订阅者异常隔离、不触发额外懒加载。
 
 ### 升级注意
 

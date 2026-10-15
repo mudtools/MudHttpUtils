@@ -179,6 +179,9 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
             _registry.Add(appKey, materialized);
             // F-4：懒加载项实例化后，其外部标识（若实现 IAppExternalIds）才可见，需重建反查索引。
             RebuildExternalIndex();
+            // U-8：惰性工厂首滚事件（严格后于实例化成功；重注册同名键的新 Lazy 首滚同样发布——
+            // 语义为「该 appKey 的上下文新实例诞生」，与 ConfigurationChanged 的注册面事件互补）。
+            OnAppInstantiated(appKey, materialized);
             context = materialized;
             return true;
         }
@@ -591,6 +594,45 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         }
     }
 
+    /// <summary>
+    /// U-8：<see cref="AppInstantiated"/> 事件（U-8 评审收敛后的唯一新增生命周期事件）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>事件面收敛（U-8）</b>：Reconfigured/Removed 语义由既有 <see cref="ConfigurationChanged"/>
+    /// （Added/Updated/Removed）承载，本事件只补「惰性工厂首滚」这一现有事件面缺失的真实时机 ——
+    /// 避免双通道双发（下游迁移须维护两套订阅）。
+    /// </para>
+    /// <para>
+    /// <b>语义</b>：仅在懒加载项<b>真实实例化成功</b>时发布（严格后于 <c>_registry.Add</c>，
+    /// 保证处理器内可见已注册上下文；同一次实例化恰好发布一次）；不触发懒加载（本事件本就由
+    /// 实例化触发，无额外副作用）；处理器异常隔离（吞异常 + <see cref="AppManagerDiagnostics.SubscriberFailed"/>），
+    /// 不影响实例化结果与注册路径。
+    /// </para>
+    /// </remarks>
+    public event EventHandler<AppInstantiatedEventArgs>? AppInstantiated;
+
+    /// <summary>发布 <see cref="AppInstantiated"/>（订阅者异常隔离，不影响实例化路径）。</summary>
+    protected virtual void OnAppInstantiated(string appKey, TAppContext context)
+    {
+        var handlers = AppInstantiated;
+        if (handlers is null) return;
+
+        var e = new AppInstantiatedEventArgs(appKey, context);
+        foreach (var handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((EventHandler<AppInstantiatedEventArgs>)handler).Invoke(this, e);
+            }
+            catch (Exception ex)
+            {
+                // 订阅者故障不得影响实例化路径（与 OnConfigurationChanged 同口径）。
+                AppManagerDiagnostics.SubscriberFailed?.Invoke(ex, appKey, AppConfigurationChangeType.Added);
+            }
+        }
+    }
+
     /// <inheritdoc />
     /// <remarks>G3：改为 <c>virtual</c> —— 此前派生类无法拦截"默认键读取"，是影子注册表的另一半。</remarks>
     public virtual string? DefaultAppKey => Volatile.Read(ref _defaultAppKey);
@@ -765,6 +807,59 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
 
         appKey = externalResolved;
         return true;
+    }
+
+    /// <summary>
+    /// U-5：以一组外部标识反查<b>全部</b>匹配的应用标识（多命中枚举 + 歧义上抛，纯反查不物化）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>解析顺序（与 <see cref="TryResolveAppKey"/> 同构）</b>：
+    /// <list type="bullet">
+    /// <item><description>外部提供者实现 <see cref="IMultiAppLookupProvider"/> 时：委托其多命中枚举，
+    /// 结果经 <see cref="HasApp"/> 过滤（懒加载<b>未实例化</b>条目按「已声明即存在」口径保留，不触发实例化）
+    /// 并去重；<b>不</b>叠加内置索引（内置索引为单结果 fail-closed 形态——同一标识多应用注册时即歧义集，
+    /// 单结果语义无法表达，多命中统一由多命中提供者承接）。</description></item>
+    /// <item><description>仅实现 <see cref="IAppLookupProvider"/> 时：经静态回退辅助退化为单结果
+    /// （保持 F-4 行为：命中返回单元素，未命中/歧义返回空集）。</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 纯反查边界与 F-4 逐字继承：不做上下文物化副作用、不做授权判定；
+    /// 输入非法 / 零命中返回空集（不返回 null）。
+    /// </para>
+    /// </remarks>
+    /// <param name="externalIds">外部标识集合（如 <c>{"SuiteId": "ww123..."}</c>）。</param>
+    /// <returns>全部匹配的 appKey（去重、序数）；零命中或输入非法返回空集。</returns>
+    public virtual IEnumerable<string> TryResolveAllAppKeys(IReadOnlyDictionary<string, string> externalIds)
+    {
+        if (externalIds is null || externalIds.Count == 0)
+            return Array.Empty<string>();
+
+        if (_externalLookupProvider is IMultiAppLookupProvider multiProvider)
+        {
+            var results = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var appKey in multiProvider.ResolveAllAppKeys(externalIds))
+            {
+                // 防御：提供者契约约定不返回 null/空白，此处仍过滤（fail-safe，不抛异常）。
+                if (string.IsNullOrWhiteSpace(appKey))
+                    continue;
+
+                // 与 F-4 同口径：解析结果须落在已注册应用上（懒加载「已声明即存在」，不物化）。
+                if (!seen.Add(appKey) || !HasApp(appKey))
+                    continue;
+
+                results.Add(appKey);
+            }
+
+            return results;
+        }
+
+        // 回退：提供者仅实现单结果面 → 退化为单结果（保持 F-4 行为）。
+        return TryResolveAppKey(externalIds, out var resolved) && !string.IsNullOrEmpty(resolved)
+            ? new[] { resolved }
+            : (IEnumerable<string>)Array.Empty<string>();
     }
 
     /// <summary>
