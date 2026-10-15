@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// SR-M6（P2.4，D9）令牌管理器注册表：按查找键（<see cref="TokenRecoveryContext.TokenManagerKey"/>）
+/// 令牌管理器注册表：按查找键（<see cref="TokenRecoveryContext.TokenManagerKey"/>）
 /// 解析令牌管理器，支持 401 恢复执行器跨应用共享时按请求路由到正确的管理器实例。
 /// </summary>
 /// <remarks>
