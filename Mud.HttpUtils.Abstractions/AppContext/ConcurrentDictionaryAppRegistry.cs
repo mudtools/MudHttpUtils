@@ -10,13 +10,11 @@ using System.Collections.Concurrent;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// F-5：<see cref="IAppRegistry{TAppContext}"/> 的<b>默认实现</b> —— 基于
-/// <see cref="ConcurrentDictionary{TKey, TValue}"/>（序数键语义）。
+/// <see cref="IAppRegistry{TAppContext}"/> 的默认实现 —— 基于 <see cref="ConcurrentDictionary{TKey, TValue}"/>。
 /// </summary>
 /// <remarks>
-/// <c>DefaultAppManager{TAppContext}</c> 在未注入自定义注册表时使用本实现；
-/// 其行为即 <c>DefaultAppManager</c> 历史行为的<b>逐位基线</b>（大小写敏感、MT-08 CAS 更新语义
-/// 均由底层字典原生成语义保证），既有语义钉死测试在默认实现下应零变化通过。
+/// <c>DefaultAppManager{TAppContext}</c> 在未注入自定义注册表时使用本实现，
+/// 保持与历史行为一致（大小写敏感、CAS 更新语义由底层字典保证）。
 /// </remarks>
 /// <typeparam name="TAppContext">应用上下文类型。</typeparam>
 public sealed class ConcurrentDictionaryAppRegistry<TAppContext> : IAppRegistry<TAppContext>
@@ -42,5 +40,5 @@ public sealed class ConcurrentDictionaryAppRegistry<TAppContext> : IAppRegistry<
 
     /// <inheritdoc />
     public IEnumerable<string> EnumerateKeys()
-        => _apps.Keys.ToArray();   // 快照语义（B7 同口径：枚举期间视图稳定）
+        => _apps.Keys.ToArray();   // 快照语义：枚举期间视图稳定
 }
