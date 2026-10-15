@@ -17,8 +17,9 @@
 	<!-- AOT 严格模式清单定义在 Directory.Build.targets（全仓统一口径），此处不再重复定义。 -->
 
 	<!-- 关闭 Attributes 包自带的 JsonContextScaffolder（PublishAot=true 默认会启用）：
-	     CI aot-packageref 在 publish（no-restore）下 DotNetToolReference 解析的
-	     mud-jsonctx 不在 PATH（退出码 127），且脚手架产物会与 JsonContext.cs
+	     CI aot-packageref 未安装该工具，而目标只能按 PATH 解析 mud-jsonctx（SDK 并不存在
+	     DotNetToolReference 这类可解析工具路径的 MSBuild 项，详见 Attributes 包内 targets 说明），
+	     故 publish 下执行必然退出码 127；且脚手架产物会与 JsonContext.cs
 	     手写 DemoJsonContext 冲突（CS0579/CS8785）。本 Demo 固定用手写 context。 -->
 	<PropertyGroup>
 		<MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder>
@@ -37,8 +38,9 @@
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
 	</ItemGroup>
 
-	<!-- 脚手架已禁用（见上方 MudEnableJsonContextScaffolder=false），不引用 DotNetToolReference：
-	     CI publish（no-restore）下工具不在 PATH，引用只会造成恢复噪音且无法执行。 -->
+	<!-- 脚手架已禁用（见上方 MudEnableJsonContextScaffolder=false）。工具接入方式见 Attributes 包内
+	     targets 说明：不存在 DotNetToolReference 这类可解析工具路径的 MSBuild 项，工具必须以全局工具
+	     形式安装在 PATH 上；本 Demo 的 publish 步骤（no-restore）不安装工具，故不启用。 -->
 
 	<!-- [AOT v4 Phase 18.0 / D18] PackageReference 场景下 Generator 包内 build/*.props 会自动导入并注册
 	     CompilerVisibleProperty；此处显式声明以确保 AOT 上下文属性对分析器可见（幂等，重复声明无害）。 -->

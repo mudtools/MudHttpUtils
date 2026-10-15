@@ -10,11 +10,15 @@
 
     启用前提（任选其一安装脚手架工具）：
       a) 全局安装： dotnet tool install -g Mud.HttpUtils.JsonContextScaffolder
+                     （命令落在 $(UserProfile)/.dotnet/tools，需确保该目录在 PATH 上）
       b) 本地工具： dotnet tool install -l Mud.HttpUtils.JsonContextScaffolder
-                     （需先 dotnet new tool-manifest，并在 .config/dotnet-tools.json 中登记）
-      c) .NET 8+ SDK 项目引用工具：
-                     <DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="x.y.z" />
-        本目标会优先使用 DotNetToolReference 解析出的本地路径，否则回退到 PATH 上的 `mud-jsonctx`。
+                     （需先 dotnet new tool-manifest；本地工具不落 PATH，
+                       消费方须同时覆盖 <MudJsonContextToolCommand>dotnet tool run mud-jsonctx</MudJsonContextToolCommand>）
+
+    [注意] 不存在 DotNetToolReference 这一 MSBuild 项：NuGet 对未知项静默忽略（SDK 内与之相近的
+    DotNetCliToolReference 自 .NET Core 3.0 起已废弃）。在消费方工程里写它不会解析出任何工具路径，
+    本目标只会回退到 PATH 上的 `mud-jsonctx` —— 工具未安装时表现为「构建成功但未产出 Context」。
+    需要非 PATH 命令（绝对路径）或含参数的多 token 命令时，请用 <MudJsonContextToolCommand> 覆盖。
 
     工具未安装时，本目标以【警告】形式提示（不中断构建），消费方可选择手动运行并签入生成的 .g.cs。
 
@@ -47,8 +51,9 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
          —— 脚手架永远不会首次生成 Context。时间戳路径恒非空，同时让"工具成功但未产出任何文件"
          的工程也能正确命中增量（后续构建不重复执行）。 -->
     <MudJsonContextStampFile>$(MudJsonContextOutputPath)\MudJsonContextScaffolder.stamp</MudJsonContextStampFile>
-    <!-- 优先使用 DotNetToolReference 解析出的本地路径；否则回退到 PATH 上的命令名 -->
-    <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == '' AND '$(DotNetToolMud_HttpUtils_JsonContextScaffolder)' != ''">$(DotNetToolMud_HttpUtils_JsonContextScaffolder)mud-jsonctx$(ExeExtension)</MudJsonContextToolCommand>
+    <!-- 工具命令：默认按 PATH 解析（全局工具安装的落点即在 PATH 上）。
+         消费方可覆盖为绝对路径或 `dotnet tool run mud-jsonctx` 等多 token 命令；该值被原样拼进
+         Exec 命令行，故含空格的路径请自行加引号。 -->
     <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == ''">mud-jsonctx</MudJsonContextToolCommand>
   </PropertyGroup>
 
@@ -84,7 +89,7 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
     <Message Importance="high" Text="[Mud] 运行 JsonContextScaffolder 生成 JSON Context（pre-build）" />
     <!-- 脚手架内部使用 MSBuildWorkspace 重新评估本项目，需清除外层构建注入的 MSBuild 环境变量，
          否则嵌套评估会因 SDK/Exe 路径冲突而失败（独立运行正常）。 -->
-    <Exec Command="&quot;$(MudJsonContextToolCommand)&quot; --project &quot;$(MSBuildProjectFullPath)&quot; -o &quot;$(MudJsonContextOutputPath)&quot; --auto-derived-types"
+    <Exec Command="$(MudJsonContextToolCommand) --project &quot;$(MSBuildProjectFullPath)&quot; -o &quot;$(MudJsonContextOutputPath)&quot; --auto-derived-types"
           EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false;MudJsonContextScaffolderRunning=true"
           ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="_MudJsonCtxExitCode" />
