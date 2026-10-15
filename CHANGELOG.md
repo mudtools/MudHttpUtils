@@ -6,150 +6,67 @@
 
 ## 3.0.7（三大核心治理与工具面出清，2026-10-15）
 
-> 依据 `.docs/Bug修复与功能完善方案-三大核心-2026-10-13.md` 对三大核心（令牌 / 多应用 / 声明式客户端）集中治理：
-> 令牌存储自动桥接与官方分布式 Redis 存储、令牌归属键一等化、多应用注册表可继承可替换、令牌键冲突的启动期诊断；
-> 同时将工具面（ToolSurface）生成引擎整竖井出清，组件包回归纯 HTTP 定位；
-> 同时采纳双下游（MudFeishu / MudWechat）反馈驱动的上游功能完善：迁移双读编解码器、跨进程刷新去重租约、
-> 按应用清库能力面、多命中反查、分隔符键编码、原生 CAS、实例化生命周期事件、存储值 v2 版本化信封与打包版本治理
-> （详见 `.docs/双下游反馈功能完善方案-MudFeishu与MudWechat-20261015.md`）。
-> ⚠️ **含破坏性变更**：工具面引擎及引导契约公开 API 删除、元包移除 `Mud.HttpUtils.Resilience` 硬依赖——升级前请先阅读「破坏性变更」与「升级注意」。
->
-> **版本口径**：延续 3.0.x patch 发布线（`3.1.0` 已被占用不可复用，见 3.0.6 段「版本口径说明」）。
+> 本版对三大核心（令牌 / 多应用 / 声明式客户端）集中治理，并将工具面生成引擎移出组件包；
+> 同时采纳双下游（MudFeishu / MudWechat）反馈，完成一批上游能力补齐。
+> ⚠️ **含破坏性变更**：工具面引擎及引导契约公开 API 删除、元包移除 `Mud.HttpUtils.Resilience` 硬依赖——升级前请先阅读「破坏性变更」与「升级注意」。）。
 
 ### 破坏性变更（Breaking）
 
-**工具面（ToolSurface）生成引擎整竖井删除**：引擎已迁入飞书仓 `Mud.AI.Generator`，组件侧副本同批删除；`Mud.HttpUtils` 回归纯 HTTP 定位。**纯 HTTP 消费方行为零变化**（无 `[SdkToolProfile]` 时引擎本就短路）。
-
-| 删除范围 | 内容 |
-| --- | --- |
-| 生成器引擎 | `Mud.HttpUtils.Generator/ToolSurface/` 竖井 27 文件（剖面发现 / 扫描 / 发射器族 / Schema 渲染 / 守卫）；固定诊断 SDKT001/SDKT002（`PublicAPI`、`AnalyzerReleases` 台账同批摘除，RS0016/RS0017 = 0） |
-| 引导契约（公开 API） | `ISdkToolProfile` / `InterfaceIdentity` / `SdkTokenKind`（Abstractions）；`SdkToolProfileAttribute` / `TokenKindDerivationStrategy`（Attributes） |
-| 示例、测试与打包 | `Demos/ToolSurfaceDemo`、`Demos/Mud.Demo.Sdk`、Generator 侧 ToolSurface 测试与守卫；`pack.ps1` 生成器符号校验段 |
-
-- **不受影响**：HTTP 客户端生成族与共享底座（`TransitiveCodeGenerator`、`Helper/*` 等）原样保留。
-- **迁移目标**：见「升级注意」。
-
-**元包解耦**：`Mud.HttpUtils` 元包移除 `Mud.HttpUtils.Resilience` 硬依赖（迁移见「升级注意」）。
+- **工具面（ToolSurface）生成引擎整竖井删除**：引擎迁入飞书仓 `Mud.AI.Generator`，组件侧副本同批删除，`Mud.HttpUtils` 回归纯 HTTP 定位。删除范围含生成器引擎（`Generator/ToolSurface/` 竖井及 SDKT001/SDKT002 诊断、台账）、引导契约公开 API（`ISdkToolProfile`、`SdkTokenKind`、`InterfaceIdentity`、`SdkToolProfileAttribute`、`TokenKindDerivationStrategy`）、相关示例/测试与打包校验段。HTTP 客户端生成族与共享底座（`TransitiveCodeGenerator`、`Helper/*` 等）原样保留；**纯 HTTP 消费方行为零变化**。
+- **元包解耦**：`Mud.HttpUtils` 元包移除 `Mud.HttpUtils.Resilience` 硬依赖（迁移见「升级注意」）。
 
 ### 行为变更与迁移
 
-#### `ITokenStore` 自动桥接
-
-- **旧行为**：注册 `ITokenStore` 不产生任何效果——令牌管理器只消费 `ITokenCache<T>`，宿主须在管理器之外自建「cache + store 写穿」叠层。
-- **新行为**：`ITokenCache<T>` 改为 DI **回退注册**（TryAdd，显式注册优先、与顺序无关）——注册了 store 而未显式注册缓存时，自动桥接为 `TokenStoreBackedTokenCache<T>`（租户维度 `ITokenStore`/`IEncryptedTokenStore`、用户维度 `IUserTokenStore`，`IUserTokenStore` 实现不参与租户维度）；两者皆无则维持内建内存缓存。回退生命周期 **Transient**（防跨管理器令牌串扰）。
-- **迁移**：「自建叠层」不再是必需（可拆除）；不满意自动桥接行为时，显式注册 `ITokenCache<T>` 即完全屏蔽。EventId 191 由 Warning 降为 Information，新增 EventId 196（自动桥接信息）。
-
-  ```csharp
-  // 旧：宿主手动包装
-  // var cache = new MyStoreBackedCache(store, ...); services.AddSingleton<ITokenCache<CredentialToken>>(cache);
-
-  // 新：只注册 store，桥接自动发生
-  services.TryAddSingleton<ITokenStore, MyTokenStore>();
-  // 需要自定义值映射/键映射时仍显式注册（优先级高于自动桥接）：
-  // services.AddSingleton<ITokenCache<CredentialToken>>(new TokenStoreBackedTokenCache<CredentialToken>(...));
-  ```
-
-#### `DefaultAppManager` 可继承、注册表可替换
-
-- **旧行为**：查询入口 virtual、注册/写入入口**非** virtual——派生类覆写查询后 `RegisterApp` 仍写基类私有表，形成「影子注册表」（注册读不到）；存储写死在基类私有 `ConcurrentDictionary`，无法替换。下游因此整体弃用基类、自实现 `IAppManager`。
-- **新行为**：注册/写入入口全部 virtual（`RegisterApp`/`RegisterAppAsync`/`UpdateAppAsync`/`TrySetDefaultApp`/`DefaultAppKey`）；存储抽为 `IAppRegistry<TAppContext>` SPI（TryGet/Add/**TryUpdate CAS 引用比较**/TryRemove/EnumerateKeys），受保护构造注入，默认实现 `ConcurrentDictionaryAppRegistry`（行为逐位一致）。
-- **迁移**：「基类不可继承、必须自实现 `IAppManager`」不再成立；需跨进程/租户级注册表的下游可替换 SPI（契约要求：序数键、Add 幂等不覆盖、TryUpdate CAS、EnumerateKeys 快照）。
-
-  ```csharp
-  // 旧：整体自实现 IAppManager（数百行守卫复刻）
-  // 新：继承基类 + 可选注入自定义注册表
-  public sealed class WechatAppManager : DefaultAppManager<IWechatAppContext>
-  {
-      public WechatAppManager(IAppRegistry<IWechatAppContext>? registry = null, IServiceProvider? services = null)
-          : base(registry, services, null) { }
-  }
-  // 语义合规验证：继承 AppManagerCompliance<IWechatAppContext> 跑 VerifyAll()
-  ```
-
-#### 令牌归属键一等化
-
-- **旧行为**：下游自拼 `{tokenType}:{appKey}:{scopeKey}` 三段式作归属键（微信 `TokenKey`、飞书 `TokenKeyBuilder`），键构建契约不公开。
-- **新行为**：公开 `TokenScopeKey`（`ForApp`/`ForScope`/`ForShared`；定位符形态经 `TokenManagerBase` 新重载映射既有 `scopes` 路径，**单缓存互通**）与 `TokenBindingMode { PerApp, PerScope, Shared }`（`BindingMode` 虚属性，默认由 `EnforceTenantBinding` 推导，既有行为逐位一致）。
-- **迁移**：既存持久层键形态不变（旧键仍可读），为**增量**替换而非强制。
-
-  ```csharp
-  // 旧：var tokenKey = $"{tokenType}:{appKey}:{authCorpId}";
-  // 新（定位符，驱动缓存互通）：
-  await manager.GetOrRefreshTokenAsync(TokenScopeKey.ForScope(tokenType, appKey, authCorpId), ct);
-  // 新（编码键，供下游作字典/分布式键，替换自拼三段式）：
-  var distributedKey = TokenScopeKey.ForScope(tokenType, appKey, authCorpId).ToCompositeKey();
-  ```
+- **`ITokenStore` 自动桥接**：注册了 store 而未显式注册缓存时，`ITokenCache<T>` 自动桥接为 `TokenStoreBackedTokenCache<T>`（回退注册 TryAdd、显式注册优先、与顺序无关、生命周期 Transient），宿主自建「cache + store 写穿」叠层不再是必需；显式注册缓存即可完全屏蔽该行为。
+- **`DefaultAppManager` 可继承、注册表可替换**：注册/写入入口全部 virtual，存储抽为可注入的 `IAppRegistry<TAppContext>` SPI（默认实现行为逐位一致），下游不必再整体自实现 `IAppManager`。
+- **令牌归属键一等化**：公开 `TokenScopeKey`（`ForApp`/`ForScope`/`ForShared`）与 `TokenBindingMode { PerApp, PerScope, Shared }`，替换下游自拼 `{tokenType}:{appKey}:{scopeKey}` 键；既存持久层键形态不变（旧键仍可读），属增量替换。
 
 ### 新增
 
-- **链式令牌依赖图**：`TokenDependencyGraph` 声明「A 由 B 派生」，被依赖者失效经反向 BFS 连带失效依赖者（互依环终止）；`TokenManagerBase` 级联钩子默认关（`EnableTokenDependencyCascade`），覆盖 `42001 → suite_access_token → corp 重取` 场景。
-- **官方分布式令牌存储**：新增独立可选包 `Mud.HttpUtils.Redis`（**不进元包硬依赖**）：`RedisTokenStore : ITokenStore`，键形态 `{prefix}:{tokenType}:{appKey}:access|refresh`（默认前缀 `mud:httputils`），值经 `ITokenStoreCodec`（默认 `{expiresInSeconds}|{token}`，空令牌 → 墓碑删键），TTL 宁缺勿滥；注册后经「`ITokenStore` 自动桥接」接入管线。与下游 `Mud.Wechat.Redis` 的能力重复问题（吸收 / 分层共存）见对账清单。
-
-  ```csharp
-  services.AddMudHttpRedisTokenStore("localhost:6379", o =>
-  {
-      o.KeyPrefix = "mud:httputils";   // 可改命名空间
-      o.DefaultTtl = TimeSpan.FromDays(7);   // 生产建议显式配置
-  });
-  ```
-
-- **外部标识反查应用**：`IAppLookupProvider.TryResolveAppKey(externalIds, out appKey)` 纯反查（SuiteId → appKey），无上下文物化副作用。
-- **per-app 惰性工厂**：`RegisterLazy(appKey, Func<IServiceProvider, TAppContext>, isDefault)` 重载（工厂可拿 per-app scope），旧 `Func<TAppContext>` 重载保留。
-- **`[Token(Disabled = true)]` 方法级免令牌 opt-out**：显式阻断接口级 `[Token]` 继承——不取令牌、不注入、不参与恢复（MUD005 同步豁免）；方法级覆盖接口级（三态回退，可对单方法重新启用）。新诊断 **HTTPCLIENT039**（Disabled 与注入参数同用）、**HTTPCLIENT040**（参数级 `Disabled` 无意义）。
-- **官方迁移双读编解码器**（方案 U-1）：`MigrationTokenStoreCodec`——`Encode` 与 `DefaultTokenStoreCodec` 逐字节一致（单写相对秒）；`Decode` 双读（前导数 ≥ 阈值[默认 10^10] 判旧绝对毫秒戳并按 `expiresAtMs - now` floor 投影剩余秒，否则相对秒直读），内建判别失败经 `ILegacyFormatProbe` 钩子兜底，时钟可注入。供从 `{expireMs}|{token}` 旧形态迁移的下游拆除私有双读 codec。
-- **跨进程刷新去重租约**（方案 U-3）：`ITokenRefreshLease` / `ITokenRefreshLeaseHandle`（fail-open 契约）+ `TokenManagerBase` 可选钩子（`RefreshLease` 默认 null = 零行为变化；未抢到限时轮询读穿透、超时 fail-open 放行本机刷新）+ `RedisRefreshLease`（`SET NX PX` 原子获取 + Lua compare-and-del 释放防误删）。
-- **按应用清库能力面**（方案 U-4，A-5 预留路线落地）：`ITokenStoreAppPurge`（快照枚举 + 按应用清库，组件级可选接口不进最小 SPI）+ `TokenStorePurgeExtensions.PurgeAppTokensAsync` 统一入口（能力探测优先，未实现按「枚举 tokenType → 逐类型 RemoveAsync」回退）；`RedisTokenStore` 实现，键解析内聚单一事实源，`ClearAsync` 重构为其便捷形态（行为逐位不变）。
-- **多命中反查**（方案 U-5）：`IMultiAppLookupProvider`（独立可选接口，多命中即歧义的显式表达）+ `DefaultAppManager.TryResolveAllAppKeys`（HasApp 过滤含懒加载未实例化条目且不物化、去重；仅单结果面提供者时回退 F-4 行为；内置索引歧义维持 fail-closed）。
-- **归属键分隔符编码**（方案 U-6）：`TokenScopeKey.ToDelimitedKey(':')`（纯拼接三段式，段含分隔符 fail-fast）+ `TryParseDelimited`（按段数裁断 ForShared/ForApp/ForScope）；与 `ToCompositeKey` 双形态不互通（长度前缀适合作字典键、分隔符适合作 Redis/SCAN 键）。
-- **原生 CAS 原语**（方案 U-7）：`ITokenStoreCompareExchange`（解码明文比较契约；newToken 为空 = compare-and-delete）+ `RedisTokenStore` Lua 原子实现（仅默认 codec 家族；自定义 codec 退化为非原子回退，原子性边界契约明示）；refresh 维度写入侧 TTL 与 `SetRefreshTokenAsync` 同源。
-- **实例化生命周期事件**（方案 U-8，事件面收敛）：`DefaultAppManager.AppInstantiated`——仅补「惰性工厂首滚」这一现有事件面缺失时机（Reconfigured/Removed 语义仍由 `ConfigurationChanged` 承载，避免双通道双发）；发布严格后于注册表并入、同一次实例化恰好一次、订阅者异常隔离。
-- **存储值 v2 版本化信封**（方案 U-2，**可选形态**，C-2 裁决对表）：新增 `VersionedTokenStoreCodec`（写 `v2:{expiresInSeconds}|{token}`）与显式过期值 `v2:expired|`（读侧 = 无令牌/删键语义，写侧不再产生兜底 TTL 僵尸值）；`TokenStoreEnvelopeState` 三态枚举（有效 / 无 TTL 信息 / 已过期）+ `TryDecodeEnvelope`（**唯一**能观察第三态的公开面，二元组 `Decode` 契约无法承载）。`DefaultTokenStoreCodec.Decode` 增加 v2 前缀识别 —— **读取方只升级库版本即可读 v2 值**（无需改配置），旧版本 reader 读 v2 值必然 miss（安全方向）。`RedisTokenStoreOptions.UseVersionedEnvelope` 写入开关（默认 `false` = 形态逐字节不变）配两阶段切换强制确认（见「升级注意」）。**0 值语义不动**（`expiresInSeconds ≤ 0` 仍为「无 TTL 信息」，`SetRefreshTokenAsync` 依赖不变）。
+- **链式令牌依赖图** `TokenDependencyGraph`：声明「A 由 B 派生」，被依赖者失效连带失效依赖者（级联钩子默认关）。
+- **官方分布式令牌存储**：新增独立可选包 `Mud.HttpUtils.Redis`（不进元包硬依赖），`RedisTokenStore` 经「自动桥接」接入令牌管线。
+- **外部标识反查应用**：`IAppLookupProvider.TryResolveAppKey` 纯反查，无上下文物化副作用。
+- **per-app 惰性工厂**：`RegisterLazy` 新增可获取 per-app scope 的工厂重载，旧重载保留。
+- **`[Token(Disabled = true)]` 方法级免令牌**：显式阻断接口级 `[Token]` 继承，方法级可覆盖接口级。
+- **迁移双读编解码器** `MigrationTokenStoreCodec`：单写相对秒，双读兼容旧 `{expireMs}|{token}` 形态，便于从旧格式迁移的下游拆除私有双读 codec。
+- **跨进程刷新去重租约** `ITokenRefreshLease` / `RedisRefreshLease`：fail-open 契约、默认不启用，多实例部署可避免重复刷新。
+- **按应用清库能力面**：`ITokenStoreAppPurge` 与统一入口 `PurgeAppTokensAsync`（未实现时按「枚举 tokenType → 逐类型删除」回退）。
+- **多命中反查**：`IMultiAppLookupProvider` + `DefaultAppManager.TryResolveAllAppKeys`，多命中即歧义的显式表达。
+- **归属键分隔符编码**：`TokenScopeKey.ToDelimitedKey` / `TryParseDelimited`，适配 Redis/SCAN 等键场景（与 `ToCompositeKey` 双形态不互通）。
+- **原生 CAS 原语**：`ITokenStoreCompareExchange` 由 `RedisTokenStore` 提供 Lua 原子实现，自定义 codec 退化为非原子回退。
+- **实例化生命周期事件**：`DefaultAppManager.AppInstantiated`，补齐惰性工厂首次实例化这一事件面缺失时机。
+- **存储值 v2 版本化信封**（可选）：`VersionedTokenStoreCodec` 与 `TokenStoreEnvelopeState` 三态，支持显式过期值；默认不启用，读取方仅升级库版本即可兼容 v2 值。
 
 ### 修复
 
-- **令牌键冲突启动期诊断**：新增公开 `TokenManagerKeyRegistry`，两类注册期冲突——`ITokenManagerRegistry` 后注册被 TryAdd 忽略、`AddMudHttpTokenManager<T>` 同类型重复注册——由启动期校验输出（EventId 194/195 警告）；重复键默认按 **Error** 阻断启动，逃生开关 `MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys` 降级 Warning（后键覆盖）。
-- **打包清单修正**：`pack.ps1` 补登记 `Mud.HttpUtils.Redis`（预期包集合 10 → 11），防复发 2.0.5 同款「包集合校验缺一 / 漏发静默少包」缺陷。
+- **令牌键冲突启动期诊断**：新增公开 `TokenManagerKeyRegistry`，覆盖两类注册期重复键，默认按 **Error** 阻断启动，可用逃生开关 `MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys` 降级为 Warning（后键覆盖）。
+- **打包清单修正**：`pack.ps1` 补登记 `Mud.HttpUtils.Redis`（预期包集合 10 → 11）。
 
 ### 重构（纯移动，零语义变化）
 
-- **巨型类拆分**：`MudHttpClientLog`（按 EventId 拆 `.Resilience/.Config/.Cache`）、`EnhancedHttpClient`（装配 / Send / Download / Stream）、`TokenRecoveryExecutor`（状态机 + Detection / Request / Refresh）。PublicAPI 面零变化。
+- **巨型类拆分**：`MudHttpClientLog`、`EnhancedHttpClient`、`TokenRecoveryExecutor` 按职责拆分文件。PublicAPI 面零变化。
 
 ### 文档
 
-- 新增《[管线复用裁决指引-声明式vs手拼](.docs/管线复用裁决指引-声明式vs手拼.md)》：声明式 vs 手拼裁决表、`IHttpRequestExecutor` 官方手拼模板、迁移清单与反模式。
-- 新增《[下游约束对账清单](.docs/下游约束对账清单.md)》：逐条标注下游 workaround 的已失效 / 仍有效 / 待裁决状态。
+- 新增《[管线复用裁决指引-声明式vs手拼](.docs/管线复用裁决指引-声明式vs手拼.md)》：声明式 vs 手拼裁决表、官方手拼模板、迁移清单与反模式。
+- 新增《[下游约束对账清单](.docs/下游约束对账清单.md)》：逐条标注下游 workaround 的失效 / 有效 / 待裁决状态。
 
 ### 升级注意
 
-- **工具面消费方**：直接引用 `ISdkToolProfile` / `[SdkToolProfile]` / `SdkTokenKind` / `InterfaceIdentity` / `TokenKindDerivationStrategy` 的代码将无法编译，按《Mud.AI 包族详细设计》§三/§五 中立命名迁移至飞书仓 `Mud.AI.Abstractions` / `Mud.AI.Generator`。
+- **工具面消费方**：引用被删公开 API 的代码将无法编译，按《Mud.AI 包族详细设计》迁移至飞书仓 `Mud.AI.Abstractions` / `Mud.AI.Generator`。
 - **元包解耦**：依赖弹性策略（Retry/CircuitBreaker/Timeout）的消费方需显式安装 `Mud.HttpUtils.Resilience`；未使用弹性的消费方依赖面变小。
-- **弃用 API（3.x 编译告警，4.0 移除）**：
-  - `IAppContextSwitcher.GetTokenAsync` → `ITokenProvider.GetTokenAsync(...)`；
-  - `IAppManager<T>` 的 `GetWebApi` / `GetDefaultWebApi` / `RegisterSwitcherFactory` → DI 解析 `IAppContextSwitcher` + `UseAppScope` / `UseDefaultAppScope`（仅调用点告警，实现类无需改动）。
-- **打包同版本重打防护（方案 U-13）**：`pack.ps1` 打包前探测 NuGet 全局缓存同版本包（真实污染向量——按 id+version 键控，同版本重打不失效下游缓存），存在即拒绝（`-ForceSameVersion` 逃生 + 三步清缓存指引）；目标版本不高于 CHANGELOG 最新版本段时输出版本纪律告警。依赖「同版本重打覆盖缓存」的本地调试流程请走 `pack_debug.ps1`（默认转发 `-ForceSameVersion`）。
-- **刷新租约接入**：多实例部署的下游可经 `TokenManagerBase` 派生类覆写 `RefreshLease` 接入 `RedisRefreshLease`（租约键命名空间 `mud:httputils:lease:{管理器键}:{scopeKey}`，与令牌键并列、可 SCAN）；未配置时令牌管线行为与旧版逐位一致。
-- **旧格式存储值迁移**：存量 `{expireMs}|{token}` 旧形态存储值的下游配置 `MigrationTokenStoreCodec` 即可双读兼容；旧数据按条目自然过期收敛（最长一个令牌 TTL 周期）后切回默认 codec。
-- **v2 信封混部署（方案 U-2，两阶段切换）**：启用 `RedisTokenStoreOptions.UseVersionedEnvelope` 前必须**先升级并发布全部读取实例**（含 v2 前缀识别的库版本）——
-  旧版本 reader 读到 v2 值必然解码失败（前导段 `v2:3600` / `v2:expired` 非数值 ⇒ `null` = miss），方向安全（走刷新而非误判有效令牌），
-  但会造成旧实例持续 miss 与重复刷新。`UseVersionedEnvelope = true` 必须同时置 `AcknowledgeVersionedEnvelopeReadersUpgraded = true`
-  （声明「全部读取实例已升级」），否则注册（`AddMudHttpRedisTokenStore`）与构造 `RedisTokenStore` 均直接抛 `InvalidOperationException`（防逆序切换）。
-  **未启用该开关时存储值形态与旧版逐位一致**，无需任何改动。
-- **用户维度令牌轮换（下游反馈）**：用户维度 CAS 为**可选能力**——`IUserTokenStoreCompareExchange` 由存储实现（内存 `MemoryUserTokenStore` 已提供真原子实现），
-  未实现者经 `UserTokenStoreCompareExchangeExtensions.CompareExchangeAccessTokenAsync/CompareExchangeRefreshTokenAsync` 统一入口按「读取 → 比较 → 写入」**非原子**回退；
-  对原子性有硬要求的宿主应为其 store 实现该能力接口。
-- **事件面迁移（下游反馈）**：继承/包装 `DefaultAppManager<TAppContext>` 的宿主升级前请阅读
-  《[AppManager 事件面迁移指引](.docs/AppManager事件面迁移指引.md)》——派生类同名事件遮蔽基类事件（`new` 静默遮蔽）会造成通知丢失，覆写发布点漏 `base.` 调用同理会整体失效。
-- **打包校验基准（下游反馈）**：`pack.ps1` 改为「打包前显式构建一次 → `pack --no-build` → 以构建后快照为校验基准」，
-  修复「引用方在被引用包之后打包时触发增量重建、改写 bin 产物」导致的**非确定性校验误报**；校验断言未变（包内容仍须与本次 `Configuration` 构建输出逐字节一致）。
+- **弃用 API（3.x 编译告警，4.0 移除）**：`IAppContextSwitcher.GetTokenAsync` → `ITokenProvider.GetTokenAsync(...)`；`IAppManager<T>` 的 `GetWebApi` / `GetDefaultWebApi` / `RegisterSwitcherFactory` → DI 解析 `IAppContextSwitcher` + `UseAppScope` / `UseDefaultAppScope`（仅调用点告警，实现类无需改动）。
+- **刷新租约接入**：多实例部署的下游可经 `TokenManagerBase` 派生类覆写 `RefreshLease` 接入 `RedisRefreshLease`；未配置时令牌管线行为与旧版逐位一致。
+- **旧格式存储值迁移**：存量 `{expireMs}|{token}` 值配置 `MigrationTokenStoreCodec` 即可双读兼容，旧数据自然过期收敛后切回默认 codec。
+- **v2 信封混部署**：启用 `RedisTokenStoreOptions.UseVersionedEnvelope` 前须先升级并发布全部读取实例，并同时置 `AcknowledgeVersionedEnvelopeReadersUpgraded = true`，否则注册与构造 `RedisTokenStore` 均直接抛 `InvalidOperationException`；未启用时存储值形态与旧版逐位一致。
+- **用户维度令牌轮换**：用户维度 CAS 为可选能力，未实现者按「读取 → 比较 → 写入」非原子回退；对原子性有硬要求的宿主应为其 store 实现该能力接口。
+- **事件面迁移**：继承/包装 `DefaultAppManager<TAppContext>` 的宿主升级前请阅读《[AppManager 事件面迁移指引](.docs/AppManager事件面迁移指引.md)》——派生类事件遮蔽基类、覆写发布点漏 `base.` 调用会导致通知丢失。
+- **打包防护与校验基准**：`pack.ps1` 打包前探测 NuGet 全局缓存同版本包，存在即拒绝（`-ForceSameVersion` 逃生；本地同版本重打调试走 `pack_debug.ps1`）；校验基准改为「先显式构建 → `pack --no-build`」，消除非确定性校验误报。
 
 ### 测试
 
-- `TokenManagerKeyRegistryTests`（重复键语义与 194/195 诊断、启动期升级与逃生开关）、`TokenCacheStoreAutoBridgeTests`（注册组合 × 桥接结果 × 租户/用户维度分流 × Transient 隔离）、`Bc30ObsoleteAppManagerApiTests`（弃用 API 编译期验证）；
-- `TokenDisabledOptOutTests` / `TokenDisabledMud005ExemptionTests`（双向断言与指纹红线）、`TokenScopeKeyTests` / `TokenBindingModeTests` / `TokenScopeKeyLocatorTests`（单射性、绑定与推导矩阵、键互通）；
-- `RedisTokenStoreTests`（15）、`RedisTokenStoreRegistrationTests`（6）、`AppRegistrySpiTests`、`AppManagerComplianceTests`、`TokenDependencyGraphTests`、`TokenDependencyCascadeTests`（合计 29 个链式依赖用例，含 42001 链式场景钉死）；
-- 回归稳定修复：`N5ConvenienceMethodRetryTests.GetAsync_TimeoutExceeded_NormalizedToApiRequestException` 的 mock 改为观察 `CancellationToken`（对齐默认 Optimistic 协作式超时语义，断言不变）；
-- 双下游反馈批次：`MigrationTokenStoreCodecTests`（23，双读矩阵与 C-2 逐字节守卫）、`TokenManagerRefreshLeaseTests`（6）+ `RedisRefreshLeaseTests`（9，租约钩子与 SET NX PX 形态）、`RedisTokenStoreAppPurgeTests`（8，按应用清库与回退路径）、`RedisTokenStoreCompareExchangeTests`（11，Lua CAS 形态与非原子回退）、`TokenScopeKeyDelimitedKeyTests`（21，分隔符键往返与不互通守卫）、`MultiAppLookupTests`（9，多命中与懒加载不物化）、`AppInstantiatedEventTests`（5，生命周期事件语义）；Redis 侧测试工程独立拆分（`Tests/Mud.HttpUtils.Redis.Tests`）并接入 CI。
-- v2 信封批次：`VersionedTokenStoreCodecTests`（24，三态编解码矩阵 / 结构非法 miss / 前缀识别序数比较 / v1 读取兼容 / **默认形态零影响锚用例** / **旧 reader 读 v2 值 = miss 负例** / 与 U-1 迁移 codec 组合且不参与量级判别）、`RedisTokenStoreVersionedEnvelopeTests`（7，默认关闭零影响 / v2 写入 / 两阶段确认 fail-fast / v2 与 v1 双向读取 / 显式过期态读为 null / CAS 仍走 Lua 原子路径）、`RedisTokenStoreRegistrationTests` 补注册期 fail-fast 与确认后注册（2）。
+- 新增覆盖：重复键诊断与启动期校验、缓存/存储自动桥接、`TokenScopeKey` 与绑定推导、免令牌 opt-out、弃用 API 编译期验证、令牌依赖图与级联、Redis 存储（注册 / 清库 / CAS / 租约 / v2 信封）、应用注册表 SPI 与合规、多命中反查、实例化事件、迁移双读编解码器等批量用例；Redis 侧测试工程独立拆分（`Tests/Mud.HttpUtils.Redis.Tests`）并接入 CI。
+- 回归稳定修复：`N5ConvenienceMethodRetryTests.GetAsync_TimeoutExceeded_NormalizedToApiRequestException` 的 mock 改为观察 `CancellationToken`（对齐默认协作式超时语义，断言不变）。
 
 ---
 
@@ -360,7 +277,7 @@
 
 ## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）
 
-> 把 `Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat` 三个包重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
+> 把 `Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat` 三个包重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure\* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
 > **`AddMudHttpOpenTelemetry` 自身无行为变更**，下游 SDK 将在各自下一版本中改为薄壳。
 
 ### 新增
