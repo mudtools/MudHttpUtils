@@ -36,27 +36,21 @@ public sealed class TokenInvalidatedEventArgs : EventArgs
 }
 
 /// <summary>
-/// F-7（G-7/TK-1）：<b>链式令牌依赖图</b> —— 声明令牌类型之间的派生依赖关系，
+/// <b>链式令牌依赖图</b> —— 声明令牌类型之间的派生依赖关系，
 /// 供 <c>TokenManagerBase</c> 的级联失效钩子查询"某令牌失效后还应连带失效谁"。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>依赖语义</b>：<c>Add("corp_access_token", "suite_access_token")</c> 表示
+/// <para><b>依赖语义</b>：<c>Add("corp_access_token", "suite_access_token")</c> 表示
 /// <c>corp_access_token</c> <b>由</b> <c>suite_access_token</c> <b>派生</b>（换码链：
 /// suite token → 换 corp token）—— 因此<b>被依赖者失效 ⇒ 依赖者失效</b>：
 /// <c>suite_access_token</c> 失效时 <c>corp_access_token</c> 也必须失效并重取
-/// （典型场景：企业微信 <c>42001 → suite_access_token → 重注入</c>）。
-/// </para>
-/// <para>
-/// <b>生命周期</b>：构建期可变（<see cref="Add"/> 链式），构建完成后视为<b>只读</b>
+/// （典型场景：企业微信 <c>42001 → suite_access_token → 重注入</c>）。</para>
+/// <para><b>生命周期</b>：构建期可变（<see cref="Add"/> 链式），构建完成后视为<b>只读</b>
 /// （查询线程安全；构建与查询不要并发）。图本身不做任何 I/O 与失效动作 ——
 /// 级联传播由 <c>TokenManagerBase.EnableTokenDependencyCascade</c> 开关
-/// （<b>默认关闭</b>）与 <c>TokenInvalidated</c> 事件协作完成。
-/// </para>
-/// <para>
-/// <b>环</b>：自依赖（<c>A → A</c>）在 <see cref="Add"/> 时拒绝；互相依赖（<c>A → B → A</c>）
-/// 不禁止（语义上罕见但无害），查询端以访问集合保证遍历终止。
-/// </para>
+/// （<b>默认关闭</b>）与 <c>TokenInvalidated</c> 事件协作完成。</para>
+/// <para><b>环</b>：自依赖（<c>A → A</c>）在 <see cref="Add"/> 时拒绝；互相依赖（<c>A → B → A</c>）
+/// 不禁止（语义上罕见但无害），查询端以访问集合保证遍历终止。</para>
 /// </remarks>
 public sealed class TokenDependencyGraph
 {
