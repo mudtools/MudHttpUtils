@@ -43,7 +43,7 @@ public class CredentialToken
     { get; set; }
 
     /// <summary>
-    /// P2.4（TK-04）获取或设置令牌的签发时间（Unix 时间戳，毫秒）。
+    /// 获取或设置令牌的签发时间（Unix 时间戳，毫秒）。
     /// 用于 TTL 感知阈值：短 TTL 令牌的有效阈值被钳位为 <c>min(configuredThreshold, ttl/2)</c>，
     /// 避免"提前量过大导致 token 刚签发即被判为需刷新"。
     /// </summary>
@@ -65,19 +65,15 @@ public class CredentialToken
     public string? Scope { get; set; }
 
     /// <summary>
-    /// R-P1-07（架构不变式）：写时复制 —— 派生一个"访问令牌字段被失效"的新实例，
+    /// 写时复制 —— 派生一个"访问令牌字段被失效"的新实例，
     /// 保留 <see cref="RefreshToken"/> / <see cref="RefreshTokenExpire"/> / <see cref="Scope"/>。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <b>为何需要</b>：缓存条目实例已通过 <c>TokenManagerBase.GetCachedCredentialToken(string)</c>
+    /// <para><b>为何需要</b>：缓存条目实例已通过 <c>TokenManagerBase.GetCachedCredentialToken(string)</c>
     /// 暴露给派生类与调用方。若字段级失效<b>原地改写</b>该实例，则 401 恢复在锁外失效（
     /// <c>TokenRecoveryExecutor</c>）与锁内刷新交错时，派生类可能读到 <c>RefreshToken == null</c>
-    /// ⇒ 静默降级为 <c>client_credentials</c>，调用方拿到应用级令牌（非用户级）。
-    /// </para>
-    /// <para>
-    /// <b>为何是 internal</b>：属于框架内部不可变派生手段，不扩充公共 API，也不触发 PublicApiAnalyzers。
-    /// </para>
+    /// ⇒ 静默降级为 <c>client_credentials</c>，调用方拿到应用级令牌（非用户级）。</para>
+    /// <para><b>为何是 internal</b>：属于框架内部不可变派生手段，不扩充公共 API，也不触发 PublicApiAnalyzers。</para>
     /// </remarks>
     /// <returns>访问令牌被清空的新实例（不修改 <c>this</c>）。</returns>
     internal CredentialToken WithAccessTokenInvalidated() => new()
@@ -93,7 +89,7 @@ public class CredentialToken
     };
 
     /// <summary>
-    /// R-P1-07：写时复制 —— 派生一个"刷新令牌字段被失效"的新实例，
+    /// 写时复制 —— 派生一个"刷新令牌字段被失效"的新实例，
     /// 保留 <see cref="AccessToken"/> / <see cref="Expire"/> / <see cref="IssuedAt"/> / <see cref="Scope"/>。
     /// </summary>
     /// <remarks>与 <see cref="WithAccessTokenInvalidated"/> 构成对称的字段级失效对，两者互不代偿。</remarks>
@@ -111,7 +107,7 @@ public class CredentialToken
     };
 
     /// <summary>
-    /// P2.9（TK-22）安全的调试字符串：对敏感字段（AccessToken / RefreshToken）做脱敏，
+    /// 安全的调试字符串：对敏感字段（AccessToken / RefreshToken）做脱敏，
     /// 仅展示前缀与长度，绝不输出完整令牌值，防止结构化日志或断言信息中泄漏凭据。
     /// </summary>
     public override string ToString()
