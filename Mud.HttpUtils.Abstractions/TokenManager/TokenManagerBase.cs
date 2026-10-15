@@ -66,23 +66,23 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     public event EventHandler<TokenRefreshFailedEventArgs>? RefreshFailed;
 
     /// <summary>
-    /// F-7：令牌失效通知（<see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 完成移除后触发）。
+    /// 令牌失效通知（<see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 完成移除后触发）。
     /// </summary>
     public event EventHandler<TokenInvalidatedEventArgs>? TokenInvalidated;
 
-    // F-7 级联重入抑制：级联传播（本管理器失效 → 依赖管理器失效）期间置位，
+    // 级联重入抑制：级联传播（本管理器失效 → 依赖管理器失效）期间置位，
     // 依赖管理器的 InvalidateTokenAsync 不再二次传播，防互相依赖图（A↔B）无限递归。
     private static readonly AsyncLocal<bool> s_cascadeInProgress = new();
 
     /// <summary>
-    /// F-7（G-7/TK-1）链式令牌依赖图（默认 <see cref="TokenDependencyGraph.Empty"/>，即无依赖）。
+    /// 链式令牌依赖图（默认 <see cref="TokenDependencyGraph.Empty"/>，即无依赖）。
     /// 声明"本管理器的令牌由谁派生"（<c>Add("corp_access_token", "suite_access_token")</c>）；
     /// 传播方向：被依赖者失效 ⇒ 依赖者连带失效。
     /// </summary>
     public virtual TokenDependencyGraph DependencyGraph => TokenDependencyGraph.Empty;
 
     /// <summary>
-    /// F-7 级联失效开关（<b>默认 false</b>，独立开关：不声明依赖图/不开开关即零行为变化）。
+    /// 级联失效开关（<b>默认 false</b>，独立开关：不声明依赖图/不开开关即零行为变化）。
     /// 开启后 <see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 会把失效沿
     /// <see cref="DependencyGraph"/> 传播到依赖令牌的管理器（解析经
     /// <see cref="ResolveTokenManagerForType(string)"/>）。
@@ -90,7 +90,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual bool EnableTokenDependencyCascade => false;
 
     /// <summary>
-    /// F-7：按令牌类型解析其管理器（级联传播用）。默认返回 null（未接线 = 不传播，fail-safe）；
+    /// 按令牌类型解析其管理器（级联传播用）。默认返回 null（未接线 = 不传播，fail-safe）；
     /// 宿主可覆写为 <c>ITokenManagerRegistry.Resolve(tokenManagerKey)</c> 或 per-app 注册表查询。
     /// </summary>
     /// <param name="tokenType">依赖图中的令牌类型。</param>
@@ -99,7 +99,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 获取令牌刷新失败时的最大重试次数，默认 0（不重试）。
-    /// P2.10（TK-20）重试语义显式化：此值是重试的唯一主控门，
+    /// 重试语义显式化：此值是重试的唯一主控门，
     /// ShouldRetry（TokenRefreshFailedEventArgs）默认为 true 仅用于提前取消；
     /// 子类覆写此属性或事件处理器设 ShouldRetry=false 与 MaxRefreshRetryCount 正交协作。
     /// </summary>
@@ -111,7 +111,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual int RefreshRetryDelayMilliseconds => 1000;
 
     /// <summary>
-    /// U-3：跨进程刷新去重租约（<b>默认 null = 未启用，行为与 3.0.9 逐位一致</b>）。
+    /// 跨进程刷新去重租约（<b>默认 null = 未启用，行为与既有版本逐位一致</b>）。
     /// 子类可覆写以接入分布式租约（如 <c>RedisRefreshLease</c>，或自建去重器的薄包装）。
     /// 多实例部署下，同一归属键的并发刷新经租约去重：未抢到租约的实例限时轮询读穿透
     /// （等持有方写入的新令牌），超时后 fail-open 放行本机刷新（租约持有方崩溃时不得死锁；
@@ -120,23 +120,23 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual ITokenRefreshLease? RefreshLease => null;
 
     /// <summary>
-    /// U-3：刷新租约 TTL，默认 30 秒。必须显著大于一次真实刷新的耗时上界；
+    /// 刷新租约 TTL，默认 30 秒。必须显著大于一次真实刷新的耗时上界；
     /// 持有方崩溃时租约到点自动过期，不产生永久死锁。
     /// </summary>
     protected virtual TimeSpan RefreshLeaseTime => TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// U-3：未抢到租约时的限时等待上界（毫秒），默认 10000ms。超时后 fail-open 放行本机刷新。
+    /// 未抢到租约时的限时等待上界（毫秒），默认 10000ms。超时后 fail-open 放行本机刷新。
     /// </summary>
     protected virtual int RefreshLeaseWaitTimeoutMilliseconds => 10_000;
 
     /// <summary>
-    /// U-3：未抢到租约时的读穿透轮询间隔（毫秒），默认 250ms。
+    /// 未抢到租约时的读穿透轮询间隔（毫秒），默认 250ms。
     /// </summary>
     protected virtual int RefreshLeasePollIntervalMilliseconds => 250;
 
     /// <summary>
-    /// U-3：构建刷新租约键（默认 <c>{管理器可观测键}:{scopeKey}</c>，实现方可在其上追加命名空间前缀）。
+    /// 构建刷新租约键（默认 <c>{管理器可观测键}:{scopeKey}</c>，实现方可在其上追加命名空间前缀）。
     /// </summary>
     /// <param name="scopeKey">作用域缓存键。</param>
     /// <returns>租约键。</returns>
@@ -181,7 +181,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>R-P2-03：默认值由 64 调整为 512。</b>原值 64 与 <see cref="UserTokenCacheOptions.SizeLimit"/>（默认 10000）
+    /// <b>默认值由 64 调整为 512。</b>原值 64 与 <see cref="UserTokenCacheOptions.SizeLimit"/>（默认 10000）
     /// 相差两个数量级，在正常的多租户/多作用域负载下会持续触发收敛，使"保护机制"变成"常态开销"；
     /// 同时 64 也未与任何真实容量预算对齐（<c>MemoryCache</c> 的条目大小按对象引用计，64 条远低于任何合理预算）。
     /// </para>
@@ -189,13 +189,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <b>可配置方式</b>：本属性为 <c>protected virtual</c>（既有扩展点），派生类覆写即完成定制，
     /// 例如 <c>protected override int MaxScopeCacheSize =&gt; 4096;</c>。
     /// 刻意<b>不</b>新增公共可写属性：在热路径基类上再引入一个与覆写点语义重复的配置面，
-    /// 只会带来"两处均可设定、优先级不明"的困惑（见修复方案 §0.3.2 修订 13）。
+    /// 只会带来"两处均可设定、优先级不明"的困惑。
     /// </para>
     /// </remarks>
     protected virtual int MaxScopeCacheSize => 512;
 
     /// <summary>
-    /// R-P2-03：LRU 收敛"脏标记" —— 由 <see cref="UpdateToken"/> 在<b>持锁</b>期间置位，
+    /// LRU 收敛"脏标记" —— 由 <see cref="UpdateToken"/> 在<b>持锁</b>期间置位，
     /// 由维护定时器在<b>锁外</b>（其回调自身持 <c>_cleanupLock</c>，但不持 scope 锁）消费。
     /// </summary>
     private int _compactRequested;
