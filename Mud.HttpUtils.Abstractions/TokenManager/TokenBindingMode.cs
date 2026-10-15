@@ -8,16 +8,13 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// F-2（TK-1）令牌归属绑定模式：声明令牌凭据的归属粒度，
-/// 由 <see cref="TokenManagerBase.BindingMode"/> 消费并驱动租户绑定守卫（<c>BindTenantGuard</c>）分档。
+/// 令牌归属绑定模式：声明令牌凭据的归属粒度，由 <see cref="TokenManagerBase.BindingMode"/> 消费并驱动租户绑定守卫分档。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>单一真源（评审修订 #3）</b>：归属语义以本枚举为唯一裁决点。既有入口
+/// <para><b>单一真源</b>：归属语义以本枚举为唯一裁决点。既有入口
 /// <see cref="TokenManagerBase.EnforceTenantBinding"/> 与 <see cref="ISharedTokenManager"/>
 /// 保留为 <see cref="TokenManagerBase.BindingMode"/> 默认值的<b>推导来源</b>，不再是守卫的独立开关；
-/// 派生类应只覆写其中一处，禁止双向覆写造成分歧（默认推导矩阵有测试钉死）。
-/// </para>
+/// 派生类应只覆写其中一处，禁止双向覆写造成分歧。</para>
 /// </remarks>
 public enum TokenBindingMode
 {
