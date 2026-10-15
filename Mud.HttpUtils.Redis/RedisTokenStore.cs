@@ -28,6 +28,12 @@ namespace Mud.HttpUtils.Redis;
 /// 令牌为空时 codec 返回 <c>null</c>（墓碑语义）→ 对应键<b>删除</b>，不写空值。
 /// </para>
 /// <para>
+/// <b>U-2 v2 信封（可选）</b>：<see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 为 <c>true</c> 时
+/// 写入侧改用 <see cref="VersionedTokenStoreCodec"/>（<c>v2:{expiresInSeconds}|{token}</c>，含显式过期态），
+/// 读取侧本就兼容两种形态（<see cref="DefaultTokenStoreCodec"/> 已识别 v2 前缀；本实现换 codec 后亦直读 v1）。
+/// 默认 <c>false</c> = 形态逐位不变。
+/// </para>
+/// <para>
 /// <b>TTL 策略（C1，宁缺勿滥）</b>：访问令牌键 TTL = 写入方给定的 <c>expiresInSeconds</c>（&gt; 0 时），
 /// 无过期信息时回落 <see cref="RedisTokenStoreOptions.DefaultTtl"/>（缺省 <c>null</c> = 不设 TTL）；
 /// 刷新令牌键 TTL = <see cref="RedisTokenStoreOptions.DefaultTtl"/>。
@@ -54,13 +60,26 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
     /// </summary>
     /// <param name="connection">StackExchange.Redis 连接复用器（连接生命周期由调用方/宿主管理）。</param>
     /// <param name="options">配置；为 <c>null</c> 时取默认（前缀 <c>mud:httputils</c>、共享命名空间、无兜底 TTL）。</param>
-    /// <param name="codec">存储值编解码器；为 <c>null</c> 时取 <see cref="DefaultTokenStoreCodec.Instance"/>。</param>
+    /// <param name="codec">
+    /// 存储值编解码器；为 <c>null</c> 时按 <see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 取
+    /// <see cref="VersionedTokenStoreCodec.Instance"/>（启用 v2 信封）或 <see cref="DefaultTokenStoreCodec.Instance"/>。
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="connection"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 已开启但未确认读取方升级
+    /// （<see cref="RedisTokenStoreOptions.AcknowledgeVersionedEnvelopeReadersUpgraded"/>）。
+    /// </exception>
     public RedisTokenStore(IConnectionMultiplexer connection, RedisTokenStoreOptions? options = null, ITokenStoreCodec? codec = null)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _options = options ?? new RedisTokenStoreOptions();
-        _codec = codec ?? DefaultTokenStoreCodec.Instance;
+
+        // U-2：混部署风险在唯一构造边界上 fail-fast（显式传入 codec 时以调用方 codec 为准，不受开关影响）。
+        RedisTokenStoreOptionsValidation.EnsureVersionedEnvelopeConfirmed(_options);
+
+        _codec = codec ?? (_options.UseVersionedEnvelope
+            ? VersionedTokenStoreCodec.Instance
+            : DefaultTokenStoreCodec.Instance);
     }
 
     /// <inheritdoc />
@@ -249,14 +268,19 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
         "if ARGV[3] == '' then redis.call('SET', KEYS[1], ARGV[2]) else redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) end " +
         "return 1";
 
-    /// <summary>默认 codec 家族判定：Encode 输出为 <c>{seconds}|{token}</c> 形态（Lua 可拆分），CAS 可原子。</summary>
-    private bool IsDefaultFamilyCodec => _codec is DefaultTokenStoreCodec or MigrationTokenStoreCodec;
+    /// <summary>
+    /// 默认 codec 家族判定：Encode 输出为 <c>{seconds}|{token}</c> 形态（Lua 按首个 <c>|</c> 即可拆出令牌段），CAS 可原子。
+    /// U-2：v2 信封 <c>v2:{seconds}|{token}</c> 的前缀段不含 <c>|</c>，首个 <c>|</c> 仍恰为令牌段起点，故同属可原子家族。
+    /// </summary>
+    private bool IsDefaultFamilyCodec
+        => _codec is DefaultTokenStoreCodec or MigrationTokenStoreCodec or VersionedTokenStoreCodec;
 
     /// <inheritdoc />
     /// <remarks>
     /// <para>
     /// <b>原子性边界（U-7 契约）</b>：默认 codec 家族（<see cref="DefaultTokenStoreCodec"/> /
-    /// <see cref="MigrationTokenStoreCodec"/>，Encode 输出 <c>{seconds}|{token}</c>）经 Lua 脚本原子执行；
+    /// <see cref="MigrationTokenStoreCodec"/> / <see cref="VersionedTokenStoreCodec"/>，Encode 输出
+    /// <c>{seconds}|{token}</c> 或 <c>v2:{seconds}|{token}</c>）经 Lua 脚本原子执行；
     /// 自定义 codec 退化为「读取 → 明文比较 → 写入」<b>非原子</b>路径（服务端脚本无法执行任意 C# codec）。
     /// </para>
     /// <para><paramref name="expiresInSeconds"/> ≤ 0 时不设 TTL（C1 宁缺勿滥）。</para>

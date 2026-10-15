@@ -226,3 +226,17 @@ Mud.HttpUtils.IUserTokenStoreCompareExchange.CompareExchangeRefreshTokenAsync(st
 Mud.HttpUtils.UserTokenStoreCompareExchangeExtensions
 static Mud.HttpUtils.UserTokenStoreCompareExchangeExtensions.CompareExchangeAccessTokenAsync(this Mud.HttpUtils.IUserTokenStore! store, string! userId, string! tokenType, string! expectedToken, string? newToken, long expiresInSeconds = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 static Mud.HttpUtils.UserTokenStoreCompareExchangeExtensions.CompareExchangeRefreshTokenAsync(this Mud.HttpUtils.IUserTokenStore! store, string! userId, string! tokenType, string! expectedToken, string? newToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.TokenStoreEnvelopeState
+Mud.HttpUtils.TokenStoreEnvelopeState.Active = 0 -> Mud.HttpUtils.TokenStoreEnvelopeState
+Mud.HttpUtils.TokenStoreEnvelopeState.NoTtlInformation = 1 -> Mud.HttpUtils.TokenStoreEnvelopeState
+Mud.HttpUtils.TokenStoreEnvelopeState.Expired = 2 -> Mud.HttpUtils.TokenStoreEnvelopeState
+Mud.HttpUtils.VersionedTokenStoreCodec
+Mud.HttpUtils.VersionedTokenStoreCodec.VersionedTokenStoreCodec() -> void
+const Mud.HttpUtils.VersionedTokenStoreCodec.VersionPrefix = "v2:" -> string!
+const Mud.HttpUtils.VersionedTokenStoreCodec.ExpiredMarker = "expired" -> string!
+const Mud.HttpUtils.VersionedTokenStoreCodec.ExpiredValue = "v2:expired|" -> string!
+static Mud.HttpUtils.VersionedTokenStoreCodec.Instance.get -> Mud.HttpUtils.VersionedTokenStoreCodec!
+static Mud.HttpUtils.VersionedTokenStoreCodec.IsVersionedEnvelope(string? encoded) -> bool
+static Mud.HttpUtils.VersionedTokenStoreCodec.TryDecodeEnvelope(string? encoded, out Mud.HttpUtils.TokenStoreEnvelopeState state, out string? token, out long expiresInSeconds) -> bool
+Mud.HttpUtils.VersionedTokenStoreCodec.Encode(string? token, long expiresInSeconds) -> string?
+Mud.HttpUtils.VersionedTokenStoreCodec.Decode(string? encoded) -> (string? Token, long ExpiresInSeconds)?

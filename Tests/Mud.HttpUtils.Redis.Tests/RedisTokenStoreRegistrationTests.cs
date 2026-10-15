@@ -114,6 +114,36 @@ public class RedisTokenStoreRegistrationTests
     }
 
     [Fact]
+    public void AddMudHttpRedisTokenStore_WithVersionedEnvelopeWithoutAcknowledgement_ShouldThrowAtRegistration()
+    {
+        var services = new ServiceCollection();
+
+        // U-2 混部署风险：写入方先升级（旧 reader 读不到 v2 值）属静默误配置，
+        // 故注册期即 fail-fast（不等 store 首次解析 / 首次写入）。
+        var act = () => services.AddMudHttpRedisTokenStore(CreateConnection(), o => o.UseVersionedEnvelope = true);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*AcknowledgeVersionedEnvelopeReadersUpgraded*");
+    }
+
+    [Fact]
+    public void AddMudHttpRedisTokenStore_WithAcknowledgedVersionedEnvelope_ShouldRegister()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMudHttpRedisTokenStore(CreateConnection(), o =>
+        {
+            o.UseVersionedEnvelope = true;
+            o.AcknowledgeVersionedEnvelopeReadersUpgraded = true;
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<RedisTokenStoreOptions>().UseVersionedEnvelope.Should().BeTrue();
+        provider.GetRequiredService<ITokenStore>().Should().BeOfType<RedisTokenStore>("确认后正常注册（store 以 v2 信封写入）");
+    }
+
+    [Fact]
     public void WithoutRedisRegistration_B2FallbackShouldStayInMemory()
     {
         // 反向钉死：不注册 ITokenStore 时 B-2 维持现状（内建内存缓存），不误桥接。

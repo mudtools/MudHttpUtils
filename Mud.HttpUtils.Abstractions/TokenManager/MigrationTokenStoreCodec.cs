@@ -119,11 +119,18 @@ public sealed class MigrationTokenStoreCodec : ITokenStoreCodec
     }
 
     /// <inheritdoc />
-    /// <remarks>双读判别规则见类型 remarks；非法格式返回 <c>null</c>（miss，不抛异常）。</remarks>
+    /// <remarks>
+    /// 双读判别规则见类型 remarks；非法格式返回 <c>null</c>（miss，不抛异常）。
+    /// U-2：v2 信封前缀形态<b>不参与</b>旧格式量级判别（自描述值不可能来自「旧绝对毫秒戳」旧形态），
+    /// 直接由新格式 codec 解析，杜绝量级启发式误伤。
+    /// </remarks>
     public (string? Token, long ExpiresInSeconds)? Decode(string? encoded)
     {
         if (string.IsNullOrEmpty(encoded))
             return null;
+
+        if (VersionedTokenStoreCodec.IsVersionedEnvelope(encoded))
+            return _newFormatCodec.Decode(encoded);
 
         var decoded = _newFormatCodec.Decode(encoded);
         if (decoded.HasValue)

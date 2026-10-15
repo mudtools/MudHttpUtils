@@ -44,3 +44,7 @@ Mud.HttpUtils.Redis.RedisTokenStore.CompareExchangeAccessTokenAsync(string! toke
 Mud.HttpUtils.Redis.RedisTokenStore.CompareExchangeRefreshTokenAsync(string! tokenType, string! expectedToken, string? newToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Mud.HttpUtils.Redis.RedisTokenStore.EnumerateKeysAsync(string! appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<string!>!>!
 Mud.HttpUtils.Redis.RedisTokenStore.PurgeAppAsync(string! appKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.UseVersionedEnvelope.get -> bool
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.UseVersionedEnvelope.set -> void
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.AcknowledgeVersionedEnvelopeReadersUpgraded.get -> bool
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.AcknowledgeVersionedEnvelopeReadersUpgraded.set -> void

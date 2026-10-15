@@ -50,4 +50,34 @@ public sealed class RedisTokenStoreOptions
     /// Redis 数据库编号；<c>-1</c> 表示连接默认库（<see cref="StackExchange.Redis.IDatabase"/> 的约定值）。
     /// </summary>
     public int Database { get; set; } = -1;
+
+    /// <summary>
+    /// U-2：写入侧启用 <b>v2 版本化信封</b>（<c>v2:{expiresInSeconds}|{token}</c> + 显式过期态
+    /// <c>v2:expired|</c>）。默认 <c>false</c> = 逐位沿用默认形态 <c>{expiresInSeconds}|{token}</c>（零行为变化）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>两阶段切换纪律</b>：<b>先升级全部读取实例</b>（已含 v2 前缀识别的库版本），再开启本开关。
+    /// 旧版本 reader 读到 v2 值必然解码失败（前导段 <c>v2:3600</c> / <c>v2:expired</c> 非数值 ⇒
+    /// <c>null</c> = miss），方向安全（不会把过期值误判为有效令牌，走刷新路径），
+    /// 但会造成旧实例持续 miss 与重复刷新风暴；逆序切换（写入方先升级）被明令禁止。
+    /// </para>
+    /// <para>
+    /// 开启时必须同时置 <see cref="AcknowledgeVersionedEnvelopeReadersUpgraded"/> ——
+    /// 未确认时构造 <see cref="RedisTokenStore"/> 直接 fail-fast（见该属性说明）。
+    /// </para>
+    /// </remarks>
+    public bool UseVersionedEnvelope { get; set; }
+
+    /// <summary>
+    /// U-2：两阶段切换的<b>显式确认</b> —— 声明「全部读取实例已升级至含 v2 解码的库版本」。
+    /// </summary>
+    /// <remarks>
+    /// 本库无法探测其他实例的库版本，故把 U-2 的混部署风险处置为<b>强制确认</b>：
+    /// <see cref="UseVersionedEnvelope"/> 为 <c>true</c> 而本项为 <c>false</c> 时，
+    /// 注册（<c>AddMudHttpRedisTokenStore</c>）与构造 <see cref="RedisTokenStore"/> 均立即抛出
+    /// <see cref="System.InvalidOperationException"/>，并在消息中给出两阶段切换步骤 ——
+    /// 杜绝「写入方先升级」的静默误配置。
+    /// </remarks>
+    public bool AcknowledgeVersionedEnvelopeReadersUpgraded { get; set; }
 }

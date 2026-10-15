@@ -10,7 +10,7 @@
 > 令牌存储自动桥接与官方分布式 Redis 存储、令牌归属键一等化、多应用注册表可继承可替换、令牌键冲突的启动期诊断；
 > 同时将工具面（ToolSurface）生成引擎整竖井出清，组件包回归纯 HTTP 定位；
 > 同时采纳双下游（MudFeishu / MudWechat）反馈驱动的上游功能完善：迁移双读编解码器、跨进程刷新去重租约、
-> 按应用清库能力面、多命中反查、分隔符键编码、原生 CAS、实例化生命周期事件与打包版本治理
+> 按应用清库能力面、多命中反查、分隔符键编码、原生 CAS、实例化生命周期事件、存储值 v2 版本化信封与打包版本治理
 > （详见 `.docs/双下游反馈功能完善方案-MudFeishu与MudWechat-20261015.md`）。
 > ⚠️ **含破坏性变更**：工具面引擎及引导契约公开 API 删除、元包移除 `Mud.HttpUtils.Resilience` 硬依赖——升级前请先阅读「破坏性变更」与「升级注意」。
 >
@@ -103,6 +103,7 @@
 - **归属键分隔符编码**（方案 U-6）：`TokenScopeKey.ToDelimitedKey(':')`（纯拼接三段式，段含分隔符 fail-fast）+ `TryParseDelimited`（按段数裁断 ForShared/ForApp/ForScope）；与 `ToCompositeKey` 双形态不互通（长度前缀适合作字典键、分隔符适合作 Redis/SCAN 键）。
 - **原生 CAS 原语**（方案 U-7）：`ITokenStoreCompareExchange`（解码明文比较契约；newToken 为空 = compare-and-delete）+ `RedisTokenStore` Lua 原子实现（仅默认 codec 家族；自定义 codec 退化为非原子回退，原子性边界契约明示）；refresh 维度写入侧 TTL 与 `SetRefreshTokenAsync` 同源。
 - **实例化生命周期事件**（方案 U-8，事件面收敛）：`DefaultAppManager.AppInstantiated`——仅补「惰性工厂首滚」这一现有事件面缺失时机（Reconfigured/Removed 语义仍由 `ConfigurationChanged` 承载，避免双通道双发）；发布严格后于注册表并入、同一次实例化恰好一次、订阅者异常隔离。
+- **存储值 v2 版本化信封**（方案 U-2，**可选形态**，C-2 裁决对表）：新增 `VersionedTokenStoreCodec`（写 `v2:{expiresInSeconds}|{token}`）与显式过期值 `v2:expired|`（读侧 = 无令牌/删键语义，写侧不再产生兜底 TTL 僵尸值）；`TokenStoreEnvelopeState` 三态枚举（有效 / 无 TTL 信息 / 已过期）+ `TryDecodeEnvelope`（**唯一**能观察第三态的公开面，二元组 `Decode` 契约无法承载）。`DefaultTokenStoreCodec.Decode` 增加 v2 前缀识别 —— **读取方只升级库版本即可读 v2 值**（无需改配置），旧版本 reader 读 v2 值必然 miss（安全方向）。`RedisTokenStoreOptions.UseVersionedEnvelope` 写入开关（默认 `false` = 形态逐字节不变）配两阶段切换强制确认（见「升级注意」）。**0 值语义不动**（`expiresInSeconds ≤ 0` 仍为「无 TTL 信息」，`SetRefreshTokenAsync` 依赖不变）。
 
 ### 修复
 
@@ -128,6 +129,11 @@
 - **打包同版本重打防护（方案 U-13）**：`pack.ps1` 打包前探测 NuGet 全局缓存同版本包（真实污染向量——按 id+version 键控，同版本重打不失效下游缓存），存在即拒绝（`-ForceSameVersion` 逃生 + 三步清缓存指引）；目标版本不高于 CHANGELOG 最新版本段时输出版本纪律告警。依赖「同版本重打覆盖缓存」的本地调试流程请走 `pack_debug.ps1`（默认转发 `-ForceSameVersion`）。
 - **刷新租约接入**：多实例部署的下游可经 `TokenManagerBase` 派生类覆写 `RefreshLease` 接入 `RedisRefreshLease`（租约键命名空间 `mud:httputils:lease:{管理器键}:{scopeKey}`，与令牌键并列、可 SCAN）；未配置时令牌管线行为与旧版逐位一致。
 - **旧格式存储值迁移**：存量 `{expireMs}|{token}` 旧形态存储值的下游配置 `MigrationTokenStoreCodec` 即可双读兼容；旧数据按条目自然过期收敛（最长一个令牌 TTL 周期）后切回默认 codec。
+- **v2 信封混部署（方案 U-2，两阶段切换）**：启用 `RedisTokenStoreOptions.UseVersionedEnvelope` 前必须**先升级并发布全部读取实例**（含 v2 前缀识别的库版本）——
+  旧版本 reader 读到 v2 值必然解码失败（前导段 `v2:3600` / `v2:expired` 非数值 ⇒ `null` = miss），方向安全（走刷新而非误判有效令牌），
+  但会造成旧实例持续 miss 与重复刷新。`UseVersionedEnvelope = true` 必须同时置 `AcknowledgeVersionedEnvelopeReadersUpgraded = true`
+  （声明「全部读取实例已升级」），否则注册（`AddMudHttpRedisTokenStore`）与构造 `RedisTokenStore` 均直接抛 `InvalidOperationException`（防逆序切换）。
+  **未启用该开关时存储值形态与旧版逐位一致**，无需任何改动。
 - **用户维度令牌轮换（下游反馈）**：用户维度 CAS 为**可选能力**——`IUserTokenStoreCompareExchange` 由存储实现（内存 `MemoryUserTokenStore` 已提供真原子实现），
   未实现者经 `UserTokenStoreCompareExchangeExtensions.CompareExchangeAccessTokenAsync/CompareExchangeRefreshTokenAsync` 统一入口按「读取 → 比较 → 写入」**非原子**回退；
   对原子性有硬要求的宿主应为其 store 实现该能力接口。
@@ -143,6 +149,7 @@
 - `RedisTokenStoreTests`（15）、`RedisTokenStoreRegistrationTests`（6）、`AppRegistrySpiTests`、`AppManagerComplianceTests`、`TokenDependencyGraphTests`、`TokenDependencyCascadeTests`（合计 29 个链式依赖用例，含 42001 链式场景钉死）；
 - 回归稳定修复：`N5ConvenienceMethodRetryTests.GetAsync_TimeoutExceeded_NormalizedToApiRequestException` 的 mock 改为观察 `CancellationToken`（对齐默认 Optimistic 协作式超时语义，断言不变）；
 - 双下游反馈批次：`MigrationTokenStoreCodecTests`（23，双读矩阵与 C-2 逐字节守卫）、`TokenManagerRefreshLeaseTests`（6）+ `RedisRefreshLeaseTests`（9，租约钩子与 SET NX PX 形态）、`RedisTokenStoreAppPurgeTests`（8，按应用清库与回退路径）、`RedisTokenStoreCompareExchangeTests`（11，Lua CAS 形态与非原子回退）、`TokenScopeKeyDelimitedKeyTests`（21，分隔符键往返与不互通守卫）、`MultiAppLookupTests`（9，多命中与懒加载不物化）、`AppInstantiatedEventTests`（5，生命周期事件语义）；Redis 侧测试工程独立拆分（`Tests/Mud.HttpUtils.Redis.Tests`）并接入 CI。
+- v2 信封批次：`VersionedTokenStoreCodecTests`（24，三态编解码矩阵 / 结构非法 miss / 前缀识别序数比较 / v1 读取兼容 / **默认形态零影响锚用例** / **旧 reader 读 v2 值 = miss 负例** / 与 U-1 迁移 codec 组合且不参与量级判别）、`RedisTokenStoreVersionedEnvelopeTests`（7，默认关闭零影响 / v2 写入 / 两阶段确认 fail-fast / v2 与 v1 双向读取 / 显式过期态读为 null / CAS 仍走 Lua 原子路径）、`RedisTokenStoreRegistrationTests` 补注册期 fail-fast 与确认后注册（2）。
 
 ---
 

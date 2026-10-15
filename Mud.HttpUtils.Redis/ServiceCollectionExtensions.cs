@@ -33,6 +33,10 @@ public static class ServiceCollectionExtensions
     /// store 由 DI 容器管理（Singleton），桥接器 Dispose 不释放它（ownsInnerStore: false 语义一致）。
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="connection"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">
+    /// U-2：<see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 已开启但未确认读取方升级
+    /// （<b>注册期</b> fail-fast，不等运行期才发现）。
+    /// </exception>
     public static IServiceCollection AddMudHttpRedisTokenStore(
         this IServiceCollection services,
         IConnectionMultiplexer connection,
@@ -43,8 +47,10 @@ public static class ServiceCollectionExtensions
         if (connection == null)
             throw new ArgumentNullException(nameof(connection));
 
+        var options = CreateOptions(configureOptions);
+
         services.TryAddSingleton(connection);
-        services.TryAddSingleton(sp => CreateOptions(configureOptions));
+        services.TryAddSingleton(options);
         services.TryAddSingleton<ITokenStore>(sp =>
             new RedisTokenStore(connection, sp.GetService<RedisTokenStoreOptions>()));
 
@@ -66,6 +72,7 @@ public static class ServiceCollectionExtensions
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="connectionString"/> 为 null。</exception>
     /// <exception cref="ArgumentException"><paramref name="connectionString"/> 为空白。</exception>
+    /// <exception cref="InvalidOperationException">U-2：开启 v2 写入开关但未确认读取方升级（注册期 fail-fast）。</exception>
     public static IServiceCollection AddMudHttpRedisTokenStore(
         this IServiceCollection services,
         string connectionString,
@@ -78,8 +85,10 @@ public static class ServiceCollectionExtensions
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentException("连接字符串不得为空白。", nameof(connectionString));
 
+        var options = CreateOptions(configureOptions);
+
         services.TryAddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(connectionString));
-        services.TryAddSingleton(sp => CreateOptions(configureOptions));
+        services.TryAddSingleton(options);
         services.TryAddSingleton<ITokenStore>(sp =>
             new RedisTokenStore(
                 sp.GetRequiredService<IConnectionMultiplexer>(),
@@ -92,6 +101,11 @@ public static class ServiceCollectionExtensions
     {
         var options = new RedisTokenStoreOptions();
         configureOptions?.Invoke(options);
+
+        // U-2：注册期 fail-fast —— 开启 v2 写入开关却未确认「全部读取实例已升级」属静默误配置，
+        // 不等 store 首次解析（或写入）才暴露。
+        RedisTokenStoreOptionsValidation.EnsureVersionedEnvelopeConfirmed(options);
+
         return options;
     }
 }

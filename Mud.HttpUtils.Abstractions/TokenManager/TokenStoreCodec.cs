@@ -46,8 +46,15 @@ public interface ITokenStoreCodec
 /// 但格式由库定义并文档化，可安全替换）。
 /// </summary>
 /// <remarks>
+/// <para>
 /// 选择"剩余秒数"而非"绝对过期戳"：绝对戳在持久层滞留后会被误判为有效（时钟回拨/长期留存），
 /// 而相对秒数由写入方按当前时钟推导，与 <see cref="TokenStoreValue.ExpiresInSeconds"/> 语义一致。
+/// </para>
+/// <para>
+/// <b>U-2 读取面扩展</b>：<see cref="Decode"/> 识别 <see cref="VersionedTokenStoreCodec.VersionPrefix"/>
+/// 前缀（v2 信封）——即读取方升级本库即可读 v2 值，<b>无需</b>改配置；<see cref="Encode"/> 输出形态不变
+/// （C-2 裁决：默认形态不得漂移，写入侧是否改 v2 由显式开关决定）。
+/// </para>
 /// </remarks>
 public sealed class DefaultTokenStoreCodec : ITokenStoreCodec
 {
@@ -68,10 +75,18 @@ public sealed class DefaultTokenStoreCodec : ITokenStoreCodec
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// v2 信封前缀（<see cref="VersionedTokenStoreCodec.VersionPrefix"/>）走 v2 解析分支
+    /// （<see cref="VersionedTokenStoreCodec.DecodeEnvelopeToTuple"/>）；非前缀形态按本 codec 的 v1 规则解析。
+    /// 旧版本（无前缀识别的）reader 读到 v2 值会因前导段非数值而解析失败返回 <c>null</c>（miss，安全方向）。
+    /// </remarks>
     public (string? Token, long ExpiresInSeconds)? Decode(string? encoded)
     {
         if (string.IsNullOrEmpty(encoded))
             return null;
+
+        if (VersionedTokenStoreCodec.IsVersionedEnvelope(encoded))
+            return VersionedTokenStoreCodec.DecodeEnvelopeToTuple(encoded);
 
         var index = encoded.IndexOf(Separator);
         if (index <= 0)
