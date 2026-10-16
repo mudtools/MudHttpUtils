@@ -119,7 +119,7 @@ public abstract partial class EnhancedHttpClient
  _logger.HttpRequestCancelled(uri, ex);
  throw;
  }
-/纯 OperationCanceledException（非 TaskCanceledException）表示请求被取消，
+// /纯 OperationCanceledException（非 TaskCanceledException）表示请求被取消，
 // 直接重抛避免被下面的 catch-all 包装为 HttpRequestException
  catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
  {
@@ -127,7 +127,7 @@ public abstract partial class EnhancedHttpClient
  _logger.HttpRequestCancelled(uri, ex);
  throw;
  }
-/与 ExecuteHttpRequestCoreAsync（L750-768）保持一致，
+// /与 ExecuteHttpRequestCoreAsync（L750-768）保持一致，
 // 保留 JsonException 与 InvalidOperationException 原始类型，使流式与非流式路径的异常处理模式统一。
 // 原实现将所有非 HttpRequestException/OCE 异常包装为 HttpRequestException，
 // 调用方无法用统一的 catch (JsonException) 模式处理流式与非流式响应。

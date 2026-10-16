@@ -23,7 +23,7 @@ public sealed class MudHttpAppManagementOptions
 /// 是否要求必须注册 <see cref="IAppAccessAuthorizer"/>。默认 <c>false</c>（仅告警不阻断）。
 /// </summary>
 /// <remarks>
- 已将生成代码 <c>UseApp</c>/<c>BeginScope(appKey)</c> 改为「授权器缺失即抛异常」，
+ // 已将生成代码 <c>UseApp</c>/<c>BeginScope(appKey)</c> 改为「授权器缺失即抛异常」，
 /// 因此未注册授权器时按 appKey 切换在运行期必然失败。此处仅决定是否把该缺陷提升为<b>启动期阻断</b>；
 /// 多租户宿主建议设为 <c>true</c>，把接线缺陷前移到启动阶段。
 /// </remarks>

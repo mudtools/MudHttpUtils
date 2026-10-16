@@ -63,12 +63,12 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
-        ：Query 令牌注入模式诊断（Info 级，可抑制）
+        // ：Query 令牌注入模式诊断（Info 级，可抑制）
         context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
     }
 
     /// <summary>
-    ：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
+    // ：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
     /// 报 Info 诊断——Query 模式令牌进入 URL，代理/访问日志/浏览器历史不可控，生产环境建议 Header。
     /// </summary>
     private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)

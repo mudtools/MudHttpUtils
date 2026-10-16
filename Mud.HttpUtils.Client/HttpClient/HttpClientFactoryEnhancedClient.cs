@@ -21,7 +21,7 @@ namespace Mud.HttpUtils;
 /// 如果需要刷新 DNS 或更新 HttpClient 配置，请通过 IHttpClientFactory 的配置重新注册。
 /// </para>
 /// <para>
-/验证结果：基类 <see cref="EnhancedHttpClient"/> 不实现 <c>IDisposable</c>，
+// /验证结果：基类 <see cref="EnhancedHttpClient"/> 不实现 <c>IDisposable</c>，
 /// 因此 <see cref="HttpClientFactoryEnhancedClient"/> 不会调用 <c>HttpClient.Dispose()</c>，
 /// 不会破坏 IHttpClientFactory 的池化复用机制。此行为正确，无需修复。
 /// </para>

@@ -487,7 +487,7 @@ public class DefaultHttpRequestExecutor(
 
 /// <inheritdoc/>
 /// <remarks>
- /M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
+ // /M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
 /// <c>[Cache]</c> 与文件下载组合），故此处仅应用弹性策略（Retry/CircuitBreaker/Timeout），
 /// 编排口径与 <see cref="ExecuteAsync(HttpRequestMessage, IBaseHttpClient, ExecutionDescriptor, CancellationToken)"/> 保持一致。
 /// </remarks>
@@ -909,7 +909,7 @@ public class DefaultHttpRequestExecutor(
  {
  var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
 // 透传滑动过期语义
- 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
+ // 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
  var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
  return await _cacheProvider.GetOrFetchAsync(
  scopedKey,
@@ -928,7 +928,7 @@ public class DefaultHttpRequestExecutor(
  {
  var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
 // 透传滑动过期语义
- 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
+ // 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
  var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
  return await _cacheProvider.GetOrFetchAsync(
  scopedKey,

@@ -12,7 +12,7 @@ internal static partial class MudHttpClientLog
  #region Config 模块 (EventId: 113-120)
 
 #if NET6_0_OR_GREATER
- 收尾）：起「缺 BaseAddress」的客户端**仍会被注册**（超时/默认头/自定义 URL 开关照常生效），
+ // 收尾）：起「缺 BaseAddress」的客户端**仍会被注册**（超时/默认头/自定义 URL 开关照常生效），
 // 原文案「该客户端不会被注册，…配置将被忽略」与实际行为相反，会把宿主引向错误的修复方向。
 // 方法名同步去掉 Skipped（EventId 113 保持不变，避免日志消费方的 EventId 映射断裂）。
  [LoggerMessage(EventId = 113, Level = LogLevel.Warning,

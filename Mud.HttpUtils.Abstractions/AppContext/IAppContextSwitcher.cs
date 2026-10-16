@@ -29,7 +29,7 @@ namespace Mud.HttpUtils;
 /// 此时请改用 <see cref="IAppScopeSwitcher"/>（默认与 TokenManager 模式均可用）。
 /// </para>
 /// <para>
-/// ：<c>GetTokenAsync()</c> 已弃用（3.x 保留告警，<b>4.0 移除</b>），
+/// <b>BC-28</b>：<c>GetTokenAsync()</c> 已弃用（3.x 保留告警，<b>4.0 移除</b>），
 /// 迁移目标 <c>ITokenProvider.GetTokenAsync(...)</c> —— 取令牌能力与切换能力解耦，
 /// 未来移除后本接口将回归纯"上下文切换"定位。
 /// </para>
@@ -40,9 +40,9 @@ public interface IAppContextSwitcher : IAppContextHolder
     /// 异步获取当前应用上下文的访问令牌。
     /// </summary>
     /// <returns>包含访问令牌的字符串任务。</returns>
-    /// <remarks>：已弃用，<b>4.0 移除</b>。请改用 <c>ITokenProvider.GetTokenAsync(...)</c> 直接获取令牌。
+    /// <remarks><b>BC-28</b>：已弃用，<b>4.0 移除</b>。请改用 <c>ITokenProvider.GetTokenAsync(...)</c> 直接获取令牌。
     /// 本成员仅转发当前应用的令牌提供器，且仅在 TokenManager 模式下可用；
     /// 生成类成员不标 <c>[Obsolete]</c>（实现接口噪音豁免），经接口调用得 <c>CS0618</c>。</remarks>
-    [Obsolete("已弃用（3.x 保留告警，计划 4.0 移除）。请改用 ITokenProvider.GetTokenAsync(...) 直接获取令牌：IAppContextSwitcher.GetTokenAsync 仅转发当前应用的令牌提供器，且仅在 TokenManager 模式下可用。")]
+    [Obsolete("BC-28：已弃用（3.x 保留告警，计划 4.0 移除）。请改用 ITokenProvider.GetTokenAsync(...) 直接获取令牌：IAppContextSwitcher.GetTokenAsync 仅转发当前应用的令牌提供器，且仅在 TokenManager 模式下可用。")]
     Task<string> GetTokenAsync();
 }

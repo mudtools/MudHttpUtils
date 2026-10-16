@@ -104,7 +104,7 @@ internal static partial class MudHttpClientLog
  Message = "令牌注入失败（不支持的 InjectionMode={InjectionMode}），返回 401")]
  public static partial void TokenInjectionUnsupported(ILogger logger, string injectionMode);
 
- C4）：只记录异常**类型名**，不记录异常对象 —— ISecretProvider 的异常
+ // C4）：只记录异常**类型名**，不记录异常对象 —— ISecretProvider 的异常
 // 可能内嵌密钥服务返回的敏感报文（如 vault 的 401 响应体），记对象会把明文带入日志与 APM。
  [LoggerMessage(EventId = 152, Level = LogLevel.Warning,
  Message = "从 ISecretProvider 获取客户端密钥失败（{ExceptionType}），回退到配置值")]
@@ -366,7 +366,7 @@ internal static partial class MudHttpClientLog
  public static void TokenInjectionUnsupported(ILogger logger, string injectionMode)
  => s_tokenInjectionUnsupported(logger, injectionMode, null);
 
- C4）：只记录异常**类型名**，不记录异常对象（同 net6+ 分支口径）。
+ // C4）：只记录异常**类型名**，不记录异常对象（同 net6+ 分支口径）。
  private static readonly Action<ILogger, string, Exception?> s_secretProviderFallback =
  LoggerMessage.Define<string>(LogLevel.Warning, new EventId(152, nameof(SecretProviderFallback)),
  "从 ISecretProvider 获取客户端密钥失败（{ExceptionType}），回退到配置值");
@@ -614,7 +614,7 @@ internal static partial class MudHttpClientLog
  public static void UserTokenCacheEncryptionIgnored(ILogger logger, string manager)
  => s_userTokenCacheEncryptionIgnored(logger, manager, null);
 
- 2026-10-13）：自动桥接落地后 EventId 191 语义改写 —— 由「存储未接入管线」的 Warning
+ // 2026-10-13）：自动桥接落地后 EventId 191 语义改写 —— 由「存储未接入管线」的 Warning
 // 降为「store 未接入自动桥接、由宿主自理」的 Information（原 RegistrationIgnored 文案同步改写）。
  private static readonly Action<ILogger, string, Exception?> s_tokenStoreRegistrationIgnored =
  LoggerMessage.Define<string>(LogLevel.Information, new EventId(191, nameof(TokenStoreRegistrationIgnored)),

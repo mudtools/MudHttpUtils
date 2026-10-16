@@ -358,7 +358,7 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    ：Path / HmacSignature 注入模式不被 TokenRecoveryDelegatingHandler /
+    // ：Path / HmacSignature 注入模式不被 TokenRecoveryDelegatingHandler /
     // TokenRecoveryEnhancedClient 的恢复执行器支持（ApplyTokenToRequest 对这两种模式直接返回 false），
     // 令牌过期触发 401 后刷新出的新令牌无法重新注入，恢复将静默失败。编译期以 Warning 提醒开发者。
     public static readonly DiagnosticDescriptor TokenRecoveryUnsupportedInjectionMode = new(
@@ -783,7 +783,7 @@ internal static class Diagnostics
         isEnabledByDefault: true,
         description: "ITokenManager 实现应注册为 Singleton，以避免并发安全机制失效与冗余令牌刷新.");
 
-    ：Query 注入模式令牌进入 URL → 代理 / 访问日志 / 浏览器历史不可控。
+    // ：Query 注入模式令牌进入 URL → 代理 / 访问日志 / 浏览器历史不可控。
     // 库内遥测已由 SensitiveUrlRedactor 脱敏，外部系统不受控；生产环境建议 Header。
     //：级别由 Info 提升为 Warning（Info 在默认构建下几乎不可见，等于没有提示），
     // 并把覆盖范围从 Query 扩展到 Path（令牌进 URL 路径，留存面与 Query 等同）。

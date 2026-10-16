@@ -16,7 +16,7 @@ public static class UrlValidator
 // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
 // 读取方只读不写，快照引用在被替换前始终完整可用。
 //
- v3.1）：白名单按「来源」分桶 —— 配置桶（来自 appsettings / ConfigureAllowedDomains）
+ // v3.1）：白名单按「来源」分桶 —— 配置桶（来自 appsettings / ConfigureAllowedDomains）
 // 与运行期桶（来自 AddAllowedDomain）。配置热更新重放只写配置桶，
 // 从而不再清除运行期通过 AddAllowedDomain 新增的域名。
 // 两桶各自独立 Volatile 槽，读端各取一次快照后取并集 —— 仍保持「无空窗」特性。
@@ -293,7 +293,7 @@ public static class UrlValidator
  var host = uri.Host;
 
 // 白名单域名跳过 IP / 内网域名检查（配置桶 + 运行期桶的并集）。
- 信任边界声明：白名单域名由配置方保证可信（含其历次 DNS 解析结果），此处仅按 host 字符串
+ // 信任边界声明：白名单域名由配置方保证可信（含其历次 DNS 解析结果），此处仅按 host 字符串
 // 判定放行，不做私有 IP 检查。若未启用连接期校验（SsrfSafeSocketsHttpHandler + IIpAddressPolicy，
 // net6.0+ opt-in），白名单域名被 DNS rebinding 解析到内网 IP 将不受防护。
 // 生产环境推荐：AddMudHttpClientSsrfProtection(services) + 每个客户端 builder 上

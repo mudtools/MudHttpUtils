@@ -37,7 +37,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
 
     private void GenerateNamespaceDeclaration(StringBuilder codeBuilder, GeneratorContext context)
     {
-        /说明：生成代码使用块作用域命名空间以兼容 netstandard2.0（file-scoped namespace 需 C# 10+）。
+        // /说明：生成代码使用块作用域命名空间以兼容 netstandard2.0（file-scoped namespace 需 C# 10+）。
         // AGENTS.md 的 file-scoped namespace 规范适用于手写代码，生成代码受目标框架约束豁免。
         codeBuilder.AppendLine($"namespace {context.NamespaceName}".Trim());
         codeBuilder.AppendLine("{");

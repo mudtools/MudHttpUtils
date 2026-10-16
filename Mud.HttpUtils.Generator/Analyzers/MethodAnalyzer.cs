@@ -680,7 +680,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         }
     }
 
-    /说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
+    // /说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
     // 在 IDE 场景下 Compilation 可能保持较长时间引用，但这是 Roslyn 源生成器的标准缓存模式。
     // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<INamedTypeSymbol, InterfaceDeclarationSyntax?>> _interfaceSyntaxCache = new();

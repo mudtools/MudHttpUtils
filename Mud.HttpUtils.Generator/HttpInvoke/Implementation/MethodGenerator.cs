@@ -282,7 +282,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
 
-        ：Path / HmacSignature 注入模式不被令牌恢复执行器支持，编译期以 Warning 提示。
+        // ：Path / HmacSignature 注入模式不被令牌恢复执行器支持，编译期以 Warning 提示。
         if (needsTokenInjection &&
             (methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath ||
              methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
@@ -1424,7 +1424,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // ApiKey 模式或自定义 Header 名称仍使用 Headers.Add 直接注入原始令牌值。
             if (IsTokenHeaderMode(methodInfo) && headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
             {
-                ：使用令牌方案（Scheme）而非硬编码 "Bearer"。
+                // ：使用令牌方案（Scheme）而非硬编码 "Bearer"。
                 var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
                 codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(\"{scheme}\", access_token);");
             }
@@ -1438,7 +1438,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // BasicAuth 模式同样需要守卫（令牌值拼入 Authorization 头）。
             EmitTokenValueGuard(codeBuilder, indent);
 
-            ：BasicAuth 使用令牌方案（Scheme），默认 "Basic"。
+            // ：BasicAuth 使用令牌方案（Scheme），默认 "Basic"。
             var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Authorization\", $\"{scheme} {{__basicCredentials}}\");");
         }
@@ -1491,7 +1491,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 判断是否需要生成 TokenRecoveryContext。
     /// 仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
-    /：当显式指定了 TokenManagerKey 时也必须生成上下文，以便 TokenManagerKey 能
+    /// /：当显式指定了 TokenManagerKey 时也必须生成上下文，以便 TokenManagerKey 能
     /// 携带到恢复执行器，作为管理器定位的查询键与可观测性维度写入。
     /// </summary>
     private bool ShouldGenerateTokenRecoveryContext(GeneratorContext context, MethodAnalysisResult methodInfo)
@@ -1567,7 +1567,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             _ => "TokenInjectionMode.Header"
         };
 
-        ：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
+        // ：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
         // [F-Identity] 经虚接缝解析（见上方 tokenKeyExpr / userIdExpr），继承方法被派生类覆盖身份后仍能正确恢复。
         // 写入 Scopes，使恢复执行器能按正确的作用域失效和刷新令牌。
         var effectiveScopes = methodInfo.EffectiveTokenScopes;

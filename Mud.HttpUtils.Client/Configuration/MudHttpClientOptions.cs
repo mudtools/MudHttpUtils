@@ -74,7 +74,7 @@ public class MudHttpClientOptions
 /// </remarks>
  public bool AllowCustomBaseUrls { get; set; }
 
-：已移除 AppKey 属性。
+// ：已移除 AppKey 属性。
 // 该属性原声明「建立命名客户端 → 应用的显式映射，使 per-app 弹性策略与实例隔离语义对齐」，
 // 但实现中除格式校验外<b>没有任何消费点</b>：
 // · DefaultHttpRequestExecutor.ResolveEffectiveResilienceResolver 只读

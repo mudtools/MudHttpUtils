@@ -40,7 +40,7 @@ internal sealed class MudHttpClientApplicationOptionsValidator
  && options.Clients.TryGetValue(defaultClientName!, out var defaultClient)
  && string.IsNullOrWhiteSpace(defaultClient.BaseAddress))
  {
- 后：无 BaseAddress 的客户端仍会被注册（Timeout/DefaultHeaders 生效），
+ // 后：无 BaseAddress 的客户端仍会被注册（Timeout/DefaultHeaders 生效），
 // 但它作为「默认客户端」时无法承载相对 URL 请求 ⇒ 仍视为不可用组合。
  return ValidateOptionsResult.Fail(
  $"MudHttpClients:DefaultClientName 指向的客户端 '{options.DefaultClientName}' 未配置 BaseAddress，" +
@@ -48,7 +48,7 @@ internal sealed class MudHttpClientApplicationOptionsValidator
  "请补充 BaseAddress，或修正 DefaultClientName。");
  }
 
-：原 MudHttpClientOptions.AppKey 已移除（死配置），此处对应的格式校验一并移除。
+// ：原 MudHttpClientOptions.AppKey 已移除（死配置），此处对应的格式校验一并移除。
 // 应用标识的格式约束仍由 AppKeyValidator（AppManager 注册/查询入口）与
 // MudHttpAppManagementOptions.RegisteredAppKeys 校验承担。
 

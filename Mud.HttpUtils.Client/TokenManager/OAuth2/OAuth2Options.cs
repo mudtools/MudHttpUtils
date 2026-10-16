@@ -1,0 +1,151 @@
+namespace Mud.HttpUtils;
+
+/// <summary>
+/// OAuth2 配置选项。
+/// </summary>
+public class OAuth2Options
+{
+/// <summary>
+/// 配置节的名称。
+/// </summary>
+ public const string SectionName = "MudHttpOAuth2";
+
+/// <summary>
+/// 客户端 ID。
+/// </summary>
+ public string ClientId { get; set; } = string.Empty;
+
+/// <summary>
+/// 客户端密钥。建议优先使用 <see cref="ClientSecretProviderName"/> 从安全存储获取。
+/// </summary>
+/// <remarks>
+/// <para>安全警告：字符串在 .NET 中不可变，无法被主动清除，可能被内存转储攻击获取。</para>
+/// <para>生产环境强烈建议使用 <see cref="ClientSecretProviderName"/> 配合 <see cref="ISecretProvider"/> 
+/// 从安全存储（如 Azure Key Vault、HashiCorp Vault）获取密钥，而非使用明文配置。</para>
+/// <para>长期计划：在下一个大版本中将引入 <c>SecureClientSecret</c> 属性（byte[] 类型），
+/// 支持使用后通过 <c>CryptographicOperations.ZeroMemory</c> 清除。</para>
+/// </remarks>
+ public string ClientSecret { get; set; } = string.Empty;
+
+/// <summary>
+/// 客户端密钥的安全提供程序名称。
+/// 当设置此值时，将通过 <see cref="ISecretProvider"/> 从安全存储中获取 ClientSecret，
+/// 而非使用明文配置的 <see cref="ClientSecret"/>。
+/// <para>注意：当同时设置 <see cref="ClientSecret"/> 和 <see cref="ClientSecretProviderName"/> 时，
+/// <see cref="ClientSecretProviderName"/> 优先生效。建议仅设置其中之一以避免混淆。</para>
+/// </summary>
+ public string? ClientSecretProviderName { get; set; }
+
+/// <summary>
+ // 客户端密钥缓存的 TTL（秒），默认 300。
+/// 用于控制从 <see cref="ISecretProvider"/> 解析得到的密钥在内存中的缓存时长，
+/// 以便密钥轮换后能在 TTL 过期后被重新解析。
+/// <para>设为 0 表示不缓存（每次刷新都重新解析密钥）。</para>
+/// <para>当 <see cref="ClientSecretProviderName"/> 为空（不启用安全提供程序）时，直接返回配置值，不进入缓存路径。</para>
+/// </summary>
+/// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+ public int ClientSecretCacheTtlSeconds
+ {
+ get => _clientSecretCacheTtlSeconds;
+ set => _clientSecretCacheTtlSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ClientSecretCacheTtlSeconds), "客户端密钥缓存 TTL 不能为负数。");
+ }
+ private int _clientSecretCacheTtlSeconds = 300;
+
+/// <summary>
+/// 校验配置是否存在互斥冲突：当同时设置 <see cref="ClientSecret"/> 和 <see cref="ClientSecretProviderName"/> 时返回警告消息。
+/// </summary>
+/// <returns>警告消息；如果无冲突则返回 null。</returns>
+ internal string? GetConflictWarning()
+ {
+ if (!string.IsNullOrEmpty(ClientSecret) && !string.IsNullOrEmpty(ClientSecretProviderName))
+ {
+ return $"OAuth2Options: ClientSecret 和 ClientSecretProviderName 同时设置，ClientSecretProviderName 将优先生效。建议仅保留一个以避免混淆。";
+ }
+ return null;
+ }
+
+/// <summary>
+/// 令牌端点。
+/// </summary>
+ public string TokenEndpoint { get; set; } = string.Empty;
+
+/// <summary>
+/// 撤销端点。
+/// </summary>
+ public string RevocationEndpoint { get; set; } = string.Empty;
+
+/// <summary>
+/// 内省端点。
+/// </summary>
+ public string IntrospectionEndpoint { get; set; } = string.Empty;
+
+/// <summary>
+/// 是否强制使用 HTTPS 端点。当设置为 true 时，如果端点不是 HTTPS 将抛出异常。
+/// 默认为 true。
+/// </summary>
+ public bool RequireHttps { get; set; } = true;
+
+/// <summary>
+/// 令牌过期安全边际（秒），默认 60 秒。
+/// 计算令牌过期时间时会从服务器返回的 expires_in 中减去此值，
+/// 以确保在令牌实际过期前提前刷新，避免因网络延迟导致使用已过期令牌。
+/// <para>注意：此值仅用于 OAuth2 令牌端点返回的 <c>expires_in</c> 计算偏移。
+/// 令牌缓存层面的提前刷新由 <see cref="TokenManagerBase.ExpireThresholdSeconds"/> 和
+/// <see cref="UserTokenCacheOptions.ExpireThresholdSeconds"/> 控制（默认 300 秒）。</para>
+/// </summary>
+/// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+ public int ExpirySafetyMarginSeconds
+ {
+ get => _expirySafetyMarginSeconds;
+ set => _expirySafetyMarginSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ExpirySafetyMarginSeconds), "令牌过期安全边际不能为负数。");
+ }
+ private int _expirySafetyMarginSeconds = 60;
+
+/// <summary>
+/// 是否允许在当前作用域缺少 refresh_token 时回退默认作用域的 refresh_token。默认 false。
+/// <para>
+/// 对签发绑定 audience/scope 的 refresh_token 的 IdP，跨作用域回退等于拿 A 授权的凭据换 B scope
+/// 的令牌（越权令牌落地），故默认关闭。仅当 IdP 明确支持"统一刷新令牌"（所有 scope 共享一个
+/// refresh_token）时才应显式开启。
+/// </para>
+/// </summary>
+ public bool AllowDefaultScopeRefreshTokenFallback { get; set; }
+
+/// <summary>
+/// 将 OAuth2 令牌端点限制为<b>公网地址</b>（拒绝私网 / 回环 / 链路本地 / 云元数据 / CGNAT）。默认 <c>false</c>。
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>默认 <c>false</c></b>：令牌端点来自<b>宿主机配置</b>而非终端用户输入，
+/// SSRF 的"攻击者可控 URL"前提不成立；而默认拒绝私网会<b>直接打断内网 IdP</b>（内网 https 端点是最常见部署形态）。
+/// 故本属性是**新增的收紧能力**，而非默认安全策略。
+/// </para>
+/// <para>
+/// 设为 <c>true</c> 时（仅在端点确为公网公共服务时开启）：
+/// ① 端点字符串校验拒绝私网/元数据字面量地址；
+/// ② <c>AddMudHttpOAuth2TokenManager</c> 额外安装连接期 IP 准入处理器，阻断 DNS 重绑定（TOCTOU）。
+/// </para>
+/// <para>注意：域名形式的端点由连接期 IP 准入兜底（字符串校验无法在解析前判定其解析结果）。</para>
+/// </remarks>
+ public bool RestrictOAuth2EndpointsToPublicAddresses { get; set; }
+
+/// <summary>
+ // 安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
+/// 防止结构化日志或配置转储中泄漏明文客户端密钥。
+/// </summary>
+ public override string ToString()
+ => $"OAuth2Options{{ ClientId={ClientId}, ClientSecret={RedactSecret(ClientSecret)}, " +
+ $"ClientSecretProviderName={(string.IsNullOrEmpty(ClientSecretProviderName) ? "(none)" : ClientSecretProviderName)}, " +
+ $"ClientSecretCacheTtlSeconds={ClientSecretCacheTtlSeconds}, TokenEndpoint={TokenEndpoint}, " +
+ $"RevocationEndpoint={RevocationEndpoint}, IntrospectionEndpoint={IntrospectionEndpoint}, " +
+ $"RequireHttps={RequireHttps}, ExpirySafetyMarginSeconds={ExpirySafetyMarginSeconds}, " +
+ $"RestrictOAuth2EndpointsToPublicAddresses={RestrictOAuth2EndpointsToPublicAddresses} }}";
+
+ private static string RedactSecret(string value)
+ {
+ if (string.IsNullOrEmpty(value))
+ return "<null>";
+ var prefix = value.Length > 4 ? value.Substring(0, 4) : value;
+ return prefix + "***(" + value.Length + ")";
+ }
+}

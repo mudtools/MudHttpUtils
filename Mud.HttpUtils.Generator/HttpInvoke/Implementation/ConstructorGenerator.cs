@@ -39,7 +39,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 生成类字段
     /// </summary>
-    /说明：GenerateClassFields 方法采用二维分支策略：
+    /// /说明：GenerateClassFields 方法采用二维分支策略：
     // 第一维按是否继承基类（HasInheritedFrom）划分，因为继承模式下字段生成规则与独立模式差异显著；
     // 第二维按字段类别（TokenManager/HttpClient/Cache/Resilience 等）划分。
     // 当前为渐进式重构，已将两大主分支抽取为独立方法。建议未来引入 IFieldGenerator 策略模式

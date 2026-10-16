@@ -606,7 +606,7 @@ public abstract partial class EnhancedHttpClient
  }
 
 // 序列化器未实现 fast-path 接口，回退到默认路径。
- / 不变量 配置已设置但因条件未满足而回退，必须留下 Debug 级及以上日志；
+ // / 不变量 配置已设置但因条件未满足而回退，必须留下 Debug 级及以上日志；
 // 用 Interlocked 门控只记一次，避免每请求刷屏（该回退条件在整个客户端生命周期内恒定）。
  if (Interlocked.Exchange(ref _fastPathFallbackLogged, 1) == 0)
  {

@@ -513,7 +513,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc />
-    [Obsolete("已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope(appKey)/UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
+    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope(appKey)/UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     public virtual TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -522,7 +522,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc />
-    [Obsolete("已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
+    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     public virtual TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -675,7 +675,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc/>
-    [Obsolete("已弃用（3.x 保留仅告警）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope/UseDefaultAppScope（本工厂 1 参委托与生成器 3 参构造不对齐，对其不生效）；若作为替代反射的 AOT 低层接缝使用，3.x 继续可用，4.0 是否保留该接缝届时重评估。")]
+    [Obsolete("BC-30：已弃用（3.x 保留仅告警）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope/UseDefaultAppScope（本工厂 1 参委托与生成器 3 参构造不对齐，对其不生效）；若作为替代反射的 AOT 低层接缝使用，3.x 继续可用，4.0 是否保留该接缝届时重评估。")]
     public void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
         where TContextSwitcher : IAppContextSwitcher
     {
