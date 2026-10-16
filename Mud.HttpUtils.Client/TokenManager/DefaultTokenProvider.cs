@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 /// <remarks>
 /// 此实现不持有 IMudAppContext 引用，而是通过方法参数逐调用接收，
 /// 以确保生成代码中 UseApp()/UseDefaultApp() 上下文切换的正确性。
-/// <para>SR-M7（P2.5，D10-A）：注入可选 <see cref="ICurrentUserContext"/>，在用户令牌入口
+/// <para>注入可选 <see cref="ICurrentUserContext"/>，在用户令牌入口
 /// 校验 request.UserId 与上下文主体身份的一致性（上下文缺席不拦截——纵深防御层，非完整授权模型）。</para>
 /// </remarks>
 internal sealed class DefaultTokenProvider(
@@ -79,7 +79,7 @@ internal sealed class DefaultTokenProvider(
  $"TokenManager '{request.TokenManagerKey}' 未实现 IUserTokenManager，无法获取用户令牌。");
  }
 
-// SR-M7（P2.5，D10-A）userId 一致性校验（与 TokenRecoveryExecutor 同语义）：
+// （P2.5，D10-A）userId 一致性校验（与 TokenRecoveryExecutor 同语义）：
 // 上下文可提供主体身份且与请求 UserId 不一致 → 拒绝（失败安全）。
 // 上下文缺席（未注册 / 后台任务）不拦截；userId 必须来自服务端受信上下文。
  var principalUserId = _currentUserContext?.UserId;

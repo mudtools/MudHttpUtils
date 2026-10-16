@@ -172,7 +172,7 @@ internal class GeneratorContext
     }
 
     /// <summary>
-    /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>UseApp(string appKey)</c>。
+    ///  接口（自身或任一基接口）是否声明了 <c>UseApp(string appKey)</c>。
     /// </summary>
     /// <remarks>
     /// <b>用途</b>：<c></c> 移除了三个旧切换入口的<b>默认发射</b>；但当使用方接口<b>自行声明</b>同名成员时仍须发射实现 ——
@@ -183,13 +183,13 @@ internal class GeneratorContext
         DeclaresMethod(AppSwitchMemberNames.UseApp, IsSingleStringParameter);
 
     /// <summary>
-    /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>UseDefaultApp()</c>。见 <see cref="DeclaresUseAppMember"/>。
+    ///  接口（自身或任一基接口）是否声明了 <c>UseDefaultApp()</c>。见 <see cref="DeclaresUseAppMember"/>。
     /// </summary>
     public bool DeclaresUseDefaultAppMember =>
         DeclaresMethod(AppSwitchMemberNames.UseDefaultApp, IsParameterless);
 
     /// <summary>
-    /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>BeginScope(string appKey)</c>。见 <see cref="DeclaresUseAppMember"/>。
+    ///  接口（自身或任一基接口）是否声明了 <c>BeginScope(string appKey)</c>。见 <see cref="DeclaresUseAppMember"/>。
     /// </summary>
     /// <remarks>
     /// ⚠️ 必须按<b>签名</b>而非仅按名字判定：<see cref="IAppContextHolder.BeginScope"/> 的实例重载

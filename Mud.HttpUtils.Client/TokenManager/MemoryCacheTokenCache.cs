@@ -81,7 +81,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
  if (_cache.TryGetValue(key, out var obj) && obj is T typed)
  {
  value = typed;
-// TMX-15-8 (D3)：_keys.TryAdd 移出读路径——键已在 Set 时登记，
+// _keys.TryAdd 移出读路径——键已在 Set 时登记，
 // 读路径无需重复 TryAdd（影子索引容忍弱一致，Compact 按实际缓存条目为准）
  return true;
  }
@@ -201,7 +201,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
  {
  mc.Compact(percentage);
  }
- P0.1）：BCL Compact 的驱逐回调是<b>异步</b>触发的（2026-09-21 最小实验：
+BCL Compact 的驱逐回调是<b>异步</b>触发的（2026-09-21 最小实验：
 // Compact(1.0) 返回时回调尚未执行，条目随后才逐个回调）。立即对账影子索引，
 // 保证 Compact 返回后 Count/Keys 即时准确（上层 LRU 硬上限分支依赖该计数）。
 // 稍后异步执行的回调会 TryRemove 已移除的键，无副作用。

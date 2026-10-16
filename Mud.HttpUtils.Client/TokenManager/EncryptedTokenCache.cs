@@ -140,7 +140,7 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public bool TryRemove(string key, out T? removed)
  {
-// TMX-15-1 (B8)：先 TryGet 解密得到 removed，使 InvalidateTokenAsync 能返回失效前令牌
+// 先 TryGet 解密得到 removed，使 InvalidateTokenAsync 能返回失效前令牌
  T? value = default;
  var hasValue = TryGet(key, out value);
  var result = _inner.TryRemove(key, out _);

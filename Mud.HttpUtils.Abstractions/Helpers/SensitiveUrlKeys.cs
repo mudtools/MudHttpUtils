@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 敏感 URL 键登记门面（R-P1-05① 的下游可达形态）：把词表外的自定义凭据参数名
+/// 敏感 URL 键登记门面（ 的下游可达形态）：把词表外的自定义凭据参数名
 /// 登记进进程级强制掩码集合（<c>SensitiveUrlRedactor.ExtraSensitiveKeys</c>）。
 /// </summary>
 /// <remarks>
@@ -18,7 +18,7 @@ namespace Mud.HttpUtils;
 /// </para>
 /// <para>
 /// 登记后的键<b>无论 <see cref="MudHttpObservabilityOptions.RedactUrlInTelemetry"/> 开关为何都强制掩码</b>
-/// —— 该开关只影响"词表外的未知参数"，不应成为已确认为凭据的键的逃生门（与 R-P1-05① 语义一致）。
+/// —— 该开关只影响"词表外的未知参数"，不应成为已确认为凭据的键的逃生门（与  语义一致）。
 /// 仅作用于 URL query 脱敏；JSON 消息体脱敏（<c>MessageSanitizer</c>）仍以静态词表为准。
 /// </para>
 /// <para>

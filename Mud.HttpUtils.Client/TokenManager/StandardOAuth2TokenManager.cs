@@ -441,7 +441,7 @@ invalid_grant 清除 + 回退：轮换型 IdP 响应丢失后旧 refresh_token �
 /// <remarks>
  同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
  按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token。
-/// SR-M9（P2.6，D11-2）跨作用域回退默认关闭（<see cref="OAuth2Options.AllowDefaultScopeRefreshTokenFallback"/>）：
+/// （P2.6，D11-2）跨作用域回退默认关闭（<see cref="OAuth2Options.AllowDefaultScopeRefreshTokenFallback"/>）：
 /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，默认作用域凭据换取当前 scope 令牌 = 越权。
 invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 /// </remarks>
@@ -467,7 +467,7 @@ invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
  }
  }
 
-// 回退默认作用域（"统一刷新令牌"服务端场景），默认关闭（SR-M9）
+// 回退默认作用域（"统一刷新令牌"服务端场景），默认关闭（）
  if (Options.AllowDefaultScopeRefreshTokenFallback)
  {
  var defaultToken = GetCachedCredentialToken(DefaultScopeKey);

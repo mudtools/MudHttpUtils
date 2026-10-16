@@ -62,7 +62,7 @@ public partial class TokenRecoveryExecutor
 
 /// <summary>
 /// 当前生效的令牌恢复选项。优先走 IOptionsMonitor（热更新），回退静态快照。
-/// TMX-15-9 (D4)：删除不可达的 `?? new TokenRecoveryOptions()`——每个 ctor 至少设置 _staticOptions 或 _optionsMonitor 之一。
+/// 删除不可达的 `?? new TokenRecoveryOptions()`——每个 ctor 至少设置 _staticOptions 或 _optionsMonitor 之一。
 /// </summary>
  private TokenRecoveryOptions Options => _optionsMonitor?.CurrentValue ?? _staticOptions!;
 
@@ -106,7 +106,7 @@ public partial class TokenRecoveryExecutor
  _appContextHolder = appContextHolder;
  _multiTenantOptions = multiTenantOptions;
 
-// R-P3-02②：上限以委托读取 Options 热值（而非构造期快照），使 MaxDedupEntries 的配置变更即时生效。
+// ：上限以委托读取 Options 热值（而非构造期快照），使 MaxDedupEntries 的配置变更即时生效。
  _credentialRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  _userRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  }
@@ -131,7 +131,7 @@ public partial class TokenRecoveryExecutor
  _appContextHolder = appContextHolder;
  _multiTenantOptions = multiTenantOptions;
 
-// R-P3-02②：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
+// ：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
  _credentialRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  _userRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  }
@@ -165,7 +165,7 @@ public partial class TokenRecoveryExecutor
  _appContextHolder = appContextHolder;
  _multiTenantOptions = multiTenantOptions;
 
-// R-P3-02②：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
+// ：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
  _credentialRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  _userRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  }
@@ -388,7 +388,7 @@ public partial class TokenRecoveryExecutor
  }
  }
 
-// SR-M7/L2（P2.5，D10-A）userId 一致性校验 + 上下文 UserId 回退：
+// /L2（P2.5，D10-A）userId 一致性校验 + 上下文 UserId 回退：
 // ① TokenRecoveryContext.UserId 取自请求属性（中间层可灌入不可信输入）——与受信的
 // ICurrentUserContext.UserId 不一致即拒绝（失败安全，防任意用户令牌读取原语）；
 // ② 请求未携带恢复上下文但当前用户上下文有 UserId 时，补全用户级恢复路径（激活原死代码承诺）。

@@ -52,7 +52,7 @@ public partial class TokenRecoveryExecutor
  }
 
 /// <summary>
-/// 读取请求上的恢复上下文。R-P1-05②：实现已下沉到 <see cref="TokenRecoveryContext.FromRequest"/>
+/// 读取请求上的恢复上下文。：实现已下沉到 <see cref="TokenRecoveryContext.FromRequest"/>
 /// （恢复执行器与 URL 脱敏共用同一读取口径）。
 /// </summary>
  private static TokenRecoveryContext? GetRecoveryContext(HttpRequestMessage request)

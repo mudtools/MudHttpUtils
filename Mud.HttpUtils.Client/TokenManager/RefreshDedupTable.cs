@@ -36,7 +36,7 @@ namespace Mud.HttpUtils;
 /// <item><description>共享刷新自身由<b>独立</b>的 <see cref="CancellationTokenSource"/>（仅受硬预算约束）
 /// 驱动 —— 刻意不链接任何单个调用方的 CT：单方取消<b>不得</b>中止共享刷新（取消隔离语义保持，
 /// 对照 <c>TokenRecoveryConcurrencyTests.Recovery_WaiterCancellation_ShouldNotCancelSharedRefresh</c>）。</description></item>
-/// <item><description>刷新任务完成时统一观察异常并释放 CTS，杜绝未观察任务异常（回归 MT-05）。</description></item>
+/// <item><description>刷新任务完成时统一观察异常并释放 CTS，杜绝未观察任务异常（回归 。</description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -72,7 +72,7 @@ internal sealed class RefreshDedupTable
  }
 
 /// <summary>
-/// R-P3-02②：以委托形式提供条目上限，使 <c>TokenRecoveryOptions.MaxDedupEntries</c> 的
+/// ：以委托形式提供条目上限，使 <c>TokenRecoveryOptions.MaxDedupEntries</c> 的
 /// <b>配置热更新</b>在去重表上即时生效（原实现把上限在构造时固化为只读字段）。
 /// </summary>
 /// <param name="maxEntriesProvider">返回当前生效上限的委托（每次收缩时读取）。小于等于 0 视为 <c>1</c>。</param>
@@ -85,7 +85,7 @@ internal sealed class RefreshDedupTable
 /// <summary>G1：时钟接缝（默认真实系统时钟）。</summary>
  private readonly ISystemClock _clock;
 
-/// <summary>R-P3-02②：当前生效的条目上限（读热值，恒 ≥ 1）。</summary>
+/// <summary>：当前生效的条目上限（读热值，恒 ≥ 1）。</summary>
  private int MaxEntries
  {
  get
@@ -180,7 +180,7 @@ internal sealed class RefreshDedupTable
 
  var task = factory(cts.Token);
 
-// 任务结束即释放 CTS，并显式观察异常（防止等待者全部超时离开时的未观察任务异常 —— 回归 MT-05）。
+// 任务结束即释放 CTS，并显式观察异常（防止等待者全部超时离开时的未观察任务异常 —— 回归 。
  _ = task.ContinueWith(
  static (t, state) =>
  {
@@ -372,7 +372,7 @@ internal sealed class RefreshDedupTable
 /// <remarks>
 /// 只在新增条目后调用，属于 O(n) 的偶发操作，不进入热路径。
 /// 淘汰在途条目不会造成问题：其 <see cref="Task"/> 仍被发起方 await，结果照常返回。
-/// <para>R-P3-02②：上限经 <c>_maxEntriesProvider</c> 每次读取（支持配置热更新）。</para>
+/// <para>：上限经 <c>_maxEntriesProvider</c> 每次读取（支持配置热更新）。</para>
 /// </remarks>
  private void TrimIfNeeded()
  {

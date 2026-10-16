@@ -893,7 +893,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
         var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
 
-        // [BC-27] 旧入口 UseApp / UseDefaultApp 不再**默认发射**（唯一推荐入口是 UseAppScope / UseDefaultAppScope）。
+        //  旧入口 UseApp / UseDefaultApp 不再**默认发射**（唯一推荐入口是 UseAppScope / UseDefaultAppScope）。
         // 唯一例外：使用方接口（自身或基接口）**自行声明**了同名成员 —— 此时必须继续发射实现，
         // 否则该成员会落入契约补全（占位 + HTTPCLIENT024（Error）），把原本可编译的代码变为编译失败。
         var emitUseApp = _context.DeclaresUseAppMember;
@@ -938,7 +938,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
-        } // [BC-27] end of emitUseApp
+        } //  end of emitUseApp
 
         // 与无作用域的 UseApp 对称，提供「按 appKey 切换 + 作用域自动归还」的安全入口。
         // UseApp 依赖 AsyncLocal，异常路径或长生命周期宿主（后台任务 / 单例编排）下会残留上下文，
@@ -995,7 +995,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
-        } // [BC-27] end of emitUseDefaultApp
+        } //  end of emitUseDefaultApp
 
         // 新增 UseDefaultAppScope 方法
         codeBuilder.AppendLine("        /// <summary>");
@@ -1090,7 +1090,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasHttpClient)
             return;
 
-        // [BC-27] BeginScope(string appKey) 不再**默认发射**（与 UseAppScope(appKey) 逐行等价的旧命名，见方案 §4.5）。
+        //  BeginScope(string appKey) 不再**默认发射**（与 UseAppScope(appKey) 逐行等价的旧命名，见方案 §4.5）。
         // 仅当使用方接口自行声明该重载时发射 —— 且必须按**签名**判定：Holder 面的
         // BeginScope(IMudAppContext) 由 GenerateAppContextMembers 无条件发射，不受本门控影响。
         if (!_context.DeclaresBeginScopeStringMember)

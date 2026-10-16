@@ -587,7 +587,7 @@ internal class InterfaceImplementationGenerator
             context.MarkMemberProvided(AppSwitchMemberNames.UseAppScope);
             context.MarkMemberProvided(AppSwitchMemberNames.UseDefaultAppScope);
 
-            // [BC-27] 旧入口（UseApp / UseDefaultApp）仅在使用方接口自行声明时发射 ⇒
+            //  旧入口（UseApp / UseDefaultApp）仅在使用方接口自行声明时发射 ⇒
             // 登记必须与发射**同门控**：多登记会「登记了没发射」（契约补全避让一个并不存在的成员 ⇒ 静默缺失 ⇒ CS0535），
             // 少登记会「发射了没登记」（契约补全重复发射 ⇒ CS0111/CS0102）。
             if (context.DeclaresUseAppMember)

@@ -563,7 +563,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>事件面收敛（U-8）</b>：Reconfigured/Removed 语义由既有 <see cref="ConfigurationChanged"/>
+    /// <b>事件面收敛</b>：Reconfigured/Removed 语义由既有 <see cref="ConfigurationChanged"/>
     /// （Added/Updated/Removed）承载，本事件只补「惰性工厂首滚」这一现有事件面缺失的真实时机 ——
     /// 避免双通道双发（下游迁移须维护两套订阅）。
     /// </para>

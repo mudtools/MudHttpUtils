@@ -67,7 +67,7 @@ internal static class SensitiveUrlRedactor
     };
 
     /// <summary>
-    /// R-P1-05①：进程级"额外敏感键"登记表（Query 令牌注入模式的参数名为典型用法）。
+    /// ：进程级"额外敏感键"登记表（Query 令牌注入模式的参数名为典型用法）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -84,7 +84,7 @@ internal static class SensitiveUrlRedactor
     private static readonly HashSet<string> ExtraSensitiveKeys = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// R-P1-05①：登记一个进程级敏感键（幂等、线程安全、空值忽略）。
+    /// ：登记一个进程级敏感键（幂等、线程安全、空值忽略）。
     /// </summary>
     /// <param name="key">参数名 / 字段名（大小写不敏感）。</param>
     public static void RegisterExtraSensitiveKey(string? key)
@@ -106,7 +106,7 @@ internal static class SensitiveUrlRedactor
     public static string Redact(string? url) => Redact(url, null);
 
     /// <summary>
-    /// R-P1-05②：脱敏 URL，并额外掩码调用点指定的敏感键（请求级精确，避免词表全局化的误伤）。
+    /// ：脱敏 URL，并额外掩码调用点指定的敏感键（请求级精确，避免词表全局化的误伤）。
     /// </summary>
     /// <param name="url">原始 URL（可为 null）。</param>
     /// <param name="extraKeys">
@@ -145,7 +145,7 @@ internal static class SensitiveUrlRedactor
     }
 
     /// <summary>
-    /// R-P1-05②：按<b>请求上下文</b>脱敏 —— 从请求的 <see cref="TokenRecoveryContext"/> 推导
+    /// ：按<b>请求上下文</b>脱敏 —— 从请求的 <see cref="TokenRecoveryContext"/> 推导
     /// Query 注入模式的参数名，作为本次调用的强制掩码键（请求级精确，无全局副作用）。
     /// </summary>
     /// <remarks>
@@ -172,7 +172,7 @@ internal static class SensitiveUrlRedactor
     }
 
     /// <summary>
-    /// R-P1-05②：收集请求级强制掩码键（当前来源为 Query 注入模式的 <c>QueryParameterName</c>）。
+    /// ：收集请求级强制掩码键（当前来源为 Query 注入模式的 <c>QueryParameterName</c>）。
     /// </summary>
     private static List<string>? CollectRequestSensitiveKeys(HttpRequestMessage request)
     {

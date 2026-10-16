@@ -68,7 +68,7 @@ userId 外层比较器改 Ordinal：
 /// 移除并发 <see cref="RemoveAsync"/> 与过期移除后残留的空内层字典（这些正是桶数无界增长的唯一来源）。
 /// </summary>
 /// <remarks>
-/// 弱一致：并发写入者可能刚向某个空桶填充条目——<c>IsEmpty</c> 为真才移除，误删由下次 Set 恢复（同 SR-L5 口径）。
+/// 弱一致：并发写入者可能刚向某个空桶填充条目——<c>IsEmpty</c> 为真才移除，误删由下次 Set 恢复（同  口径）。
 /// 未采用后台心跳清扫：令牌存储是纯内存实现，引入 <c>TokenRefreshBackgroundService</c> 依赖会污染
 /// <see cref="ITokenStore"/> 的构造契约（其可在无后台服务的宿主中单独注册）。
 /// </remarks>
@@ -143,7 +143,7 @@ userId 外层比较器改 Ordinal：
  var removed = userTokens.TryRemove(tokenType, out _);
 #endif
 
-// SR-L5 同口径：删除后空桶顺带清理，避免空内层字典壳滞留
+//  同口径：删除后空桶顺带清理，避免空内层字典壳滞留
  if (removed && userTokens.IsEmpty)
  _userStore.TryRemove(userId, out _);
 
