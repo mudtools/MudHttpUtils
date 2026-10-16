@@ -14,7 +14,7 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 语法级保守预筛器（编译期性能修复 F-2a）：在昂贵的语义绑定（<c>GetDeclaredSymbol</c> /
+/// 语法级保守预筛器（编译期性能修复 ）：在昂贵的语义绑定（<c>GetDeclaredSymbol</c> /
 /// 覆盖集合扫描）之前，用纯 token 文本扫描判断「编译中是否可能出现目标标记」。
 /// </summary>
 /// <remarks>
@@ -69,7 +69,7 @@ internal static class SyntaxPrefilter
     }
 
     /// <summary>
-    /// 单个类型声明的特性名文本预检（F-2b）：属性名中不含目标标记的声明，
+    /// 单个类型声明的特性名文本预检（）：属性名中不含目标标记的声明，
     /// 其符号绑定（<c>GetDeclaredSymbol</c>）可安全跳过。
     /// </summary>
     /// <remarks>

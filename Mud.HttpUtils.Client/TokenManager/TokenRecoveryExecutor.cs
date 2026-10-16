@@ -68,7 +68,7 @@ public partial class TokenRecoveryExecutor
 
 // 并发刷新去重：同一时间段内多个 401 只触发一次令牌刷新
 // 刷新结果在 TTL 窗口内保留，窗口内后续 401 直接复用结果而不重新刷新
-// MT-05/去重逻辑收敛到 RefreshDedupTable（条目即任务 + 条目数硬上限）
+去重逻辑收敛到 RefreshDedupTable（条目即任务 + 条目数硬上限）
  private readonly RefreshDedupTable _credentialRefreshTasks;
  private readonly RefreshDedupTable _userRefreshTasks;
 
@@ -144,7 +144,7 @@ public partial class TokenRecoveryExecutor
 /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
 /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
 /// <param name="logger">日志记录器（可选）。</param>
-/// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。</param>
+：令牌管理器注册表（可选）。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
  public TokenRecoveryExecutor(
  ITokenManager tokenManager,
@@ -178,7 +178,7 @@ public partial class TokenRecoveryExecutor
 /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
 /// <param name="options">令牌恢复配置选项（可选）。</param>
 /// <param name="logger">日志记录器（可选）。</param>
-/// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。非空时按
+：令牌管理器注册表（可选）。非空时按
 /// TokenRecoveryContext.TokenManagerKey 路由到正确管理器；解析失败回退注入实例 + Warning。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
 /// <remarks>P0）：internal（快照路径），理由见 <see cref="TokenRecoveryExecutor(ITokenManager, TokenRecoveryOptions?, ILogger?, IAppContextHolder?)"/>；
@@ -243,7 +243,7 @@ public partial class TokenRecoveryExecutor
  var maxCachedRequestBodySize = Options.MaxCachedRequestBodyBytes;
  byte[]? contentBytes = null;
 
-// R-P1-02/03：bodyReplayable = 该请求体是否具备无损重放能力。
+bodyReplayable = 该请求体是否具备无损重放能力。
 // 无体 ⇒ 天然可重放；有体 ⇒ 需满足"缓冲成功"或"内存型内容（可在恢复时惰性读取）"。
 // MaxCachedRequestBodyBytes == 0 表达"流式优先 / 不缓冲"：该值下带体请求一律放弃重试（保留既有逃生门语义）。
  var bodyReplayable = request.Content == null;
@@ -352,7 +352,7 @@ public partial class TokenRecoveryExecutor
  return response; // D3：返回真实 401
  }
 
- + R-P1-02/03：不具备无损重放能力的带体请求 → 返回真实 401，不重试、不伪造（D3）
+不具备无损重放能力的带体请求 → 返回真实 401，不重试、不伪造（D3）
  if (!bodyReplayable)
  {
  MudHttpClientLog.TokenRecoveryBodyNotRecoverable(
@@ -388,7 +388,7 @@ public partial class TokenRecoveryExecutor
  }
  }
 
-// /L2（P2.5，D10-A）userId 一致性校验 + 上下文 UserId 回退：
+// userId 一致性校验 + 上下文 UserId 回退：
 // ① TokenRecoveryContext.UserId 取自请求属性（中间层可灌入不可信输入）——与受信的
 // ICurrentUserContext.UserId 不一致即拒绝（失败安全，防任意用户令牌读取原语）；
 // ② 请求未携带恢复上下文但当前用户上下文有 UserId 时，补全用户级恢复路径（激活原死代码承诺）。
@@ -406,7 +406,7 @@ public partial class TokenRecoveryExecutor
 
  if (recoveryContext == null)
  {
-// SR-L2：无显式上下文但上下文有 UserId → 构造用户级恢复上下文
+/：无显式上下文但上下文有 UserId → 构造用户级恢复上下文
  recoveryContext = new TokenRecoveryContext { UserId = contextUserId };
  }
  }

@@ -111,7 +111,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
  {
-// NEW-修复：Dispose 后不再写入，避免 ObjectDisposedException
+/修复：Dispose 后不再写入，避免 ObjectDisposedException
  if (_disposed)
  return;
  if (value == null)
@@ -162,7 +162,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public bool TryRemove(string key, out T? removed)
  {
-// NEW-修复：Dispose 后直接返回 false，避免 ObjectDisposedException
+/修复：Dispose 后直接返回 false，避免 ObjectDisposedException
  if (_disposed)
  {
  removed = default;
@@ -191,7 +191,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public void Compact(double percentage)
  {
-// NEW-修复：Dispose 后不再操作，避免 ObjectDisposedException
+/修复：Dispose 后不再操作，避免 ObjectDisposedException
  if (_disposed)
  return;
  lock (_sync)
@@ -218,7 +218,7 @@ BCL Compact 的驱逐回调是<b>异步</b>触发的（2026-09-21 最小实验�
 /// <inheritdoc />
  public void Clear()
  {
-// NEW-修复：Dispose 后不再操作，避免 ObjectDisposedException
+/修复：Dispose 后不再操作，避免 ObjectDisposedException
  if (_disposed)
  return;
  C2，TK-16）在单一临界区内同时清影子索引与 IMemoryCache，

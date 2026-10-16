@@ -23,7 +23,7 @@ internal class InterfaceImplementationGenerator
     /// 类型解析缓存：以 Compilation 为主键的 ConditionalWeakTable，Compilation 变化时自动失效；
     /// 内层以类型名为键缓存解析结果（包括 null），避免对同一 Compilation 重复执行全局命名空间扫描。
     /// </summary>
-    // NEW-说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
+    /说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
     // 在 IDE 场景下 Compilation 可能保持较长时间引用，但这是 Roslyn 源生成器的标准缓存模式。
     // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();

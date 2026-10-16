@@ -68,7 +68,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
 /// <summary>
 /// 初始化 TokenRefreshBackgroundService 实例，使用 IOptions 配置。
-/// TMX-10/D8：DI 激活唯一构造入口（Timer 版不支持热更新，仍为快照）。
+DI 激活唯一构造入口（Timer 版不支持热更新，仍为快照）。
 /// </summary>
 /// <param name="options">后台刷新配置选项（IOptions 模式）。</param>
 /// <param name="logger">日志记录器（可选）。</param>
@@ -193,7 +193,7 @@ Timer 交换加锁：并发 StartAsync 下双 Timer 交换竞态（读旧引用/
  _loopState.Reset();
  _stopped = false;
 
-// StartAsync 内部为「先停旧 Timer 再建新 Timer」的幂等实现（P1.6，
+
 // 可直接复用，无需重复 Timer 交换逻辑。
  await StartAsync(cancellationToken).ConfigureAwait(false);
  }
@@ -222,7 +222,7 @@ Timer 交换加锁：并发 StartAsync 下双 Timer 交换竞态（读旧引用/
  {
 // 置位 IsStopped，使运维侧可探测"已停止调度"并可通过 RestartAsync 恢复。
  _stopped = true;
-// SR-L3：回调读 Timer 引用经 Volatile.Read（锁外安全读）
+/：回调读 Timer 引用经 Volatile.Read（锁外安全读）
  Volatile.Read(ref _timer)?.Change(Timeout.Infinite, Timeout.Infinite);
  }
  }

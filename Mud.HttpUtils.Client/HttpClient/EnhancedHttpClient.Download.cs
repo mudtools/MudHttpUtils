@@ -313,7 +313,7 @@ public abstract partial class EnhancedHttpClient
 /// 抽出带时间节流的进度复制（行为与 NEW-一致：100ms 节流 + 收尾必报）。
 /// </summary>
 /// <remarks>
-/// NEW-进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
+//进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
 /// GB 级文件每秒可能触发数百到数千次回调，造成 UI 线程高频刷新、IProgress.Post 排队堆积、日志海量输出。
 /// 实现下沉至 <see cref="ThrottledStreamCopier"/>，与生成器执行路径、上传路径共用同一口径。
 /// </remarks>

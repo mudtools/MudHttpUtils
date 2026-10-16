@@ -553,7 +553,7 @@ invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 
  using var request = new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint);
 
-// SR-L7（P2.3，D8-3）：先建参数字典 → 认证注入（可能向字典补 client_id）→ 再建 FormUrlEncodedContent。
+/（P2.3，D8-3）：先建参数字典 → 认证注入（可能向字典补 client_id）→ 再建 FormUrlEncodedContent。
 // 重构前：Content 先行创建，公共客户端（空 Secret）的 client_id 无法走请求体。
  if (useClientAuth)
  {
@@ -636,7 +636,7 @@ invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 /// <param name="clientSecret">已解析的客户端密钥（由调用方通过 <see cref="GetClientSecretAsync"/> 获取后传入）。</param>
 /// <remarks>
  /修复：密钥由调用方异步解析后传入，消除 Lazy 路径的阻塞与竞态。
-/// SR-L7（P2.3，D8-3）修复：useClientAuth 且 Secret 为空时不再发送
+//（P2.3，D8-3）修复：useClientAuth 且 Secret 为空时不再发送
 /// <c>"Basic base64(clientId:)"</c> 弱凭据头，改为 <c>client_id</c> 走请求体
 /// （RFC 6749 §2.3.1 公共客户端标准行为）。
 /// </remarks>
@@ -690,7 +690,7 @@ invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 /// 且<b>无论</b>标志状态都<b>必须</b>调用 base，否则基类的定时器 / 缓存 / 锁表释放会被整体跳过。
 /// </para>
 /// <para>
-/// 该区域历史上出过三次回归（/ NEW-/ SR-H1），故由
+/// 该区域历史上出过三次回归（），故由
 /// <c>TokenManagerDisposeChainTests</c> 固定三条：密钥缓存已清零、基类资源已释放、重复 Dispose 安全。
 /// </para>
 /// </remarks>

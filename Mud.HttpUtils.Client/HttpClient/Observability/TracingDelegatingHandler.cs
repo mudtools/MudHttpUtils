@@ -34,7 +34,7 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
  public const string ObservedPropertyKey = MudHttpObservability.ObservedPropertyKey;
 
 /// <summary>
-/// NEW-共享的无状态单例实例。
+//共享的无状态单例实例。
 /// </summary>
 /// <remarks>
 /// 仅供测试使用。生产路径由 IHttpClientFactory 池化 DelegatingHandler，不应使用此静态字段。

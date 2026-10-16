@@ -77,7 +77,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
 
 /// <summary>
 /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例。
-/// TMX-10/D8：DI 激活唯一构造入口——<see cref="ActivatorUtilitiesConstructorAttribute"/> 标注确保
+DI 激活唯一构造入口——<see cref="ActivatorUtilitiesConstructorAttribute"/> 标注确保
 /// <c>ActivatorUtilities</c> 确定性地选择此 ctor，支持配置热更新。
 /// </summary>
 /// <param name="optionsMonitor">令牌刷新后台服务配置选项监视器，支持热更新。</param>

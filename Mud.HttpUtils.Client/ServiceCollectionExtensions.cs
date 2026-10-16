@@ -1855,7 +1855,7 @@ public static class HttpClientServiceCollectionExtensions
 // 注册 TokenRecoveryOptions 为可解析服务（使旧构造函数兼容），
 // 但 TokenRecoveryDelegatingHandler / TokenRecoveryExecutor 的 IOptionsMonitor 重载
 // 直接从 DI 解析 IOptionsMonitor<TokenRecoveryOptions>，实现热更新。
-// NEW-使用 TryAddSingleton 避免覆盖已注册的 TokenRecoveryOptions
+/使用 TryAddSingleton 避免覆盖已注册的 TokenRecoveryOptions
  services.TryAddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
  return services;
  }

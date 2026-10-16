@@ -92,7 +92,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
 /// <param name="options">令牌恢复配置选项（可选）。</param>
 /// <param name="logger">日志记录器（可选）。</param>
-/// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
 /// <remarks>internal，理由见 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, TokenRecoveryOptions?, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>；
 /// 外部请改用带 <see cref="IOptionsMonitor{T}"/> 的重载（支持热更新）。</remarks>
@@ -138,7 +138,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
 /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
 /// <param name="logger">日志记录器（可选）。</param>
-/// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
  [ActivatorUtilitiesConstructor]
  public TokenRecoveryDelegatingHandler(

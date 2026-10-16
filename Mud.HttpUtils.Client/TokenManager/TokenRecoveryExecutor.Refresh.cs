@@ -24,7 +24,7 @@ public partial class TokenRecoveryExecutor
  var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
  var dedupKey = BuildTenantScopedDedupKey(managerKey, scopeKey);
 
-// MT-05/去重与有界收敛统一委托 RefreshDedupTable。
+去重与有界收敛统一委托 RefreshDedupTable。
 // 刷新工厂本身即为共享任务（不再经 TaskCompletionSource 转发），
 // 因此失败时不存在"无人 await 的任务"，根除未观察任务异常。
 // forceRefresh=true（恢复循环第 2..N 轮）跳过窗口内的已完成结果，避免复用已被拒绝的令牌。
@@ -222,7 +222,7 @@ public partial class TokenRecoveryExecutor
 /// 以取消隔离方式执行租户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
 /// 按 recoveryContext.Scopes 失效和刷新（不再恒走默认作用域）。
 /// </summary>
-/// <param name="tokenManager">SR-M6（D9）经注册表解析的管理器（解析失败时为构造注入实例）。</param>
+经注册表解析的管理器（解析失败时为构造注入实例）。</param>
 /// <param name="scopes">恢复上下文中的作用域集合，为空时走默认作用域。</param>
 /// <param name="cancellationToken">
 /// I3：去重表注入的<b>共享刷新</b>取消令牌 —— 仅受硬预算约束，不等价于任一调用方的 CT
@@ -277,7 +277,7 @@ public partial class TokenRecoveryExecutor
  var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
  var dedupKey = BuildTenantScopedDedupKey(managerKey, userId, scopeKey);
 
-// MT-05/同租户级路径，统一委托 RefreshDedupTable（含 userId 的高基数键受条目上限约束）。
+同租户级路径，统一委托 RefreshDedupTable（含 userId 的高基数键受条目上限约束）。
 // forceRefresh 语义与租户级路径一致。
 // I3：等待可取消 + 硬预算，与租户级路径同一入口。
  return GetOrRefreshWithBudgetAsync(
@@ -323,7 +323,7 @@ public partial class TokenRecoveryExecutor
 /// 按 scopes 精准失效（不淆空全部作用域），非基类实现降级为 RemoveTokenAsync + Warning。
 /// </summary>
 /// <param name="userId">用户标识。</param>
-/// <param name="userTokenManager">SR-M6（D9）经注册表解析的用户管理器（解析失败时为构造注入实例）。</param>
+经注册表解析的用户管理器（解析失败时为构造注入实例）。</param>
 /// <param name="scopes">恢复上下文中的作用域集合。</param>
 /// <param name="cancellationToken">I3：去重表注入的共享刷新取消令牌（语义同租户级路径）。</param>
  private async Task<string?> RefreshUserTokenWithIsolationAsync(

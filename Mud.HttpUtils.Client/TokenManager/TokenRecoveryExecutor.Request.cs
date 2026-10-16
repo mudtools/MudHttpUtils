@@ -309,7 +309,7 @@ public partial class TokenRecoveryExecutor
  {
  var clone = new HttpRequestMessage(original.Method, original.RequestUri);
 
-// NEW-复制 Version 和 VersionPolicy
+/复制 Version 和 VersionPolicy
  clone.Version = original.Version;
 #if !NETSTANDARD2_0
  clone.VersionPolicy = original.VersionPolicy;
@@ -344,7 +344,7 @@ public partial class TokenRecoveryExecutor
  clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
  }
 
-// NEW-跳过 __mud_* 可观测性内部属性，让重试请求被独立采集为新的 Trace/Metric。
+/跳过 __mud_* 可观测性内部属性，让重试请求被独立采集为新的 Trace/Metric。
 // 原实现复制所有 Properties/Options，导致：
 // 1. TracingDelegatingHandler 检测到 __mud_observed=true 跳过 Activity 创建，重试请求无独立 Trace
 // 2. ExecuteWithObservabilityAsync 检测到已 observed 跳过指标采集，重试耗时与状态码不计入指标

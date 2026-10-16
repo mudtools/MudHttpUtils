@@ -36,7 +36,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     /// </summary>
     /// <returns></returns>
     /// <remarks>
-    /// NEW-修复：原默认列表仅含 4 个命名空间，不包含生成代码实际依赖的
+    //修复：原默认列表仅含 4 个命名空间，不包含生成代码实际依赖的
     /// System.Net.Http、System.Threading、System.Text.Json、Mud.HttpUtils 等。
     /// 若子类未重写此方法且消费项目未配置 GlobalUsings.cs，生成代码可能因缺少 using 而编译失败。
     /// 修复后扩展为生成代码实际依赖的完整命名空间集合。
@@ -144,7 +144,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// 生成代码语法验证的跳过开关（F-6）：环境变量 <c>MudHttpSkipGeneratedValidation=true|1</c> 时跳过。
+    /// 生成代码语法验证的跳过开关（）：环境变量 <c>MudHttpSkipGeneratedValidation=true|1</c> 时跳过。
     /// </summary>
     /// <remarks>
     /// 用环境变量而非 build_property 的原因：本验证方法标 <c>[Conditional("DEBUG")]</c>，
@@ -163,7 +163,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     /// 在 DEBUG 构建下验证生成代码的语法正确性（S1 优化建议）。
     /// 使用 <c>CSharpSyntaxTree.ParseText</c> 解析生成代码，发现语法错误时记录日志。
     /// Release 构建下此方法被 [Conditional("DEBUG")] 移除，零开销；
-    /// DEBUG 下可经 <c>MudHttpSkipGeneratedValidation=true</c> 环境变量跳过（F-6）。
+    /// DEBUG 下可经 <c>MudHttpSkipGeneratedValidation=true</c> 环境变量跳过（）。
     /// </summary>
     [Conditional("DEBUG")]
     internal static void ValidateGeneratedCode(string hintName, string code)

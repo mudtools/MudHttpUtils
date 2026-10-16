@@ -79,7 +79,7 @@ internal sealed class DefaultTokenProvider(
  $"TokenManager '{request.TokenManagerKey}' 未实现 IUserTokenManager，无法获取用户令牌。");
  }
 
-// （P2.5，D10-A）userId 一致性校验（与 TokenRecoveryExecutor 同语义）：
+userId 一致性校验（与 TokenRecoveryExecutor 同语义）：
 // 上下文可提供主体身份且与请求 UserId 不一致 → 拒绝（失败安全）。
 // 上下文缺席（未注册 / 后台任务）不拦截；userId 必须来自服务端受信上下文。
  var principalUserId = _currentUserContext?.UserId;

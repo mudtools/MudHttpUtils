@@ -159,7 +159,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
 
     /// <summary>
     /// ：判定方法的有效 <c>[Token(Disabled = ...)]</c> 是否为 <c>true</c>（免令牌 opt-out）。
-    /// 有效级与生成器一致（MT-21「方法级覆盖接口级」）：方法级显式取值优先，未标注时取接口级。
+    /// 有效级与生成器一致（「方法级覆盖接口级」）：方法级显式取值优先，未标注时取接口级。
     /// 仅认布尔字面量 —— 非字面量保守视为未禁用（安全告警不得默认静音，与 <see cref="HasJustification"/> 同口径）。
     /// </summary>
     private static bool IsTokenDisabled(MethodDeclarationSyntax method, InterfaceDeclarationSyntax interfaceDecl)

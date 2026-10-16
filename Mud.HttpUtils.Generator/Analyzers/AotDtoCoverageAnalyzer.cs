@@ -481,7 +481,7 @@ internal static class AotDtoCoverageAnalyzer
 
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
-                // [F-2b 同源预检] 无基类子句的类型声明不可能继承 JsonSerializerContext，跳过符号绑定。
+                //  无基类子句的类型声明不可能继承 JsonSerializerContext，跳过符号绑定。
                 // 注意此处刻意不用 token 标记预筛（MayContain("JsonSerializerContext")）：
                 // 本地 Context 子类可经【引用程序集中的中间基类】传递继承（如 class MyCtx : ExternalBase），
                 // 源文本可完全不含 "JsonSerializerContext" 标记，token 预筛会漏报。

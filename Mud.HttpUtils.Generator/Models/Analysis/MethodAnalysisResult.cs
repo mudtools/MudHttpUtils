@@ -240,17 +240,17 @@ internal class MethodAnalysisResult
     public bool? MethodRequiresUserId { get; set; }
 
     /// <summary>
-    /// 方法级 [Token(Disabled = ...)] 显式取值（F-1，三态：null = 方法级未标注）。
+    /// 方法级 [Token(Disabled = ...)] 显式取值（，三态：null = 方法级未标注）。
     /// </summary>
     public bool? MethodTokenDisabled { get; set; }
 
     /// <summary>
-    /// 接口级 [Token(Disabled = ...)] 显式取值（F-1，三态：null = 接口级未标注）。
+    /// 接口级 [Token(Disabled = ...)] 显式取值（，三态：null = 接口级未标注）。
     /// </summary>
     public bool? InterfaceTokenDisabled { get; set; }
 
     /// <summary>
-    /// 获取有效的免令牌阻断标志（F-1）：方法级 &gt; 接口级 &gt; 默认 false（三态回退，
+    /// 获取有效的免令牌阻断标志（）：方法级 &gt; 接口级 &gt; 默认 false（三态回退，
     /// 与 <see cref="EffectiveTokenName"/> / <see cref="EffectiveTokenScopes"/> 同一「有效级」口径；
     /// 接口级 Disabled = true 时方法级 <c>[Token(Disabled = false)]</c> 可重新启用）。
     /// 为 true 时方法不取令牌、不注入、不参与令牌恢复。
