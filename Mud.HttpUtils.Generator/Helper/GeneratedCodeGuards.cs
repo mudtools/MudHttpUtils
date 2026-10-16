@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// I-18）：<c>NETSTANDARD2_0</c> 只在「目标框架为 netstandard2.0」的项目里定义；
+/// GEN-07（I-18）：<c>NETSTANDARD2_0</c> 只在「目标框架为 netstandard2.0」的项目里定义；
 /// net4x 项目定义 <c>NETFRAMEWORK</c>/<c>NET472</c>，经 netstandard2.0 资产消费本库时会落入
 /// <c>#else</c> 分支引用 .NET 5+ 才有的 API 而编译失败。故生成产物统一改用**能力符号**
 /// <c>NET5_0_OR_GREATER</c>（.NET 5+ / .NET Core 3.0+ 均定义该宏，net4x 不定义，

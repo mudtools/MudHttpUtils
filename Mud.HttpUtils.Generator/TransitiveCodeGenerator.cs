@@ -36,7 +36,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     /// </summary>
     /// <returns></returns>
     /// <remarks>
-    //修复：原默认列表仅含 4 个命名空间，不包含生成代码实际依赖的
+    /// NEW-GEN-13 修复：原默认列表仅含 4 个命名空间，不包含生成代码实际依赖的
     /// System.Net.Http、System.Threading、System.Text.Json、Mud.HttpUtils 等。
     /// 若子类未重写此方法且消费项目未配置 GlobalUsings.cs，生成代码可能因缺少 using 而编译失败。
     /// 修复后扩展为生成代码实际依赖的完整命名空间集合。
@@ -94,7 +94,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     /// 生成通用的文件头部（使用子类提供的命名空间）。
     /// </summary>
     /// <remarks>
-    /// <paramref name="emitNullableEnable"/> 由调用方显式传入（参数化），移除原实例可变属性
+    /// G9-07：<paramref name="emitNullableEnable"/> 由调用方显式传入（参数化），移除原实例可变属性
     /// <c>EmitNullableEnable</c>——增量生成器实例跨编译代复用，可变属性依赖「每次 ExecuteGenerator
     /// 先赋值后生成」的顺序纪律，属脆弱的隐式契约；实现类文件路径（ClassStructureGenerator）已是参数传递，
     /// 此处对齐为同一机制。

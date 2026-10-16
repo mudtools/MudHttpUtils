@@ -16,7 +16,7 @@ public static class UrlValidator
 // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
 // 读取方只读不写，快照引用在被替换前始终完整可用。
 //
- // v3.1）：白名单按「来源」分桶 —— 配置桶（来自 appsettings / ConfigureAllowedDomains）
+ // CFG-34（v3.1）：白名单按「来源」分桶 —— 配置桶（来自 appsettings / ConfigureAllowedDomains）
 // 与运行期桶（来自 AddAllowedDomain）。配置热更新重放只写配置桶，
 // 从而不再清除运行期通过 AddAllowedDomain 新增的域名。
 // 两桶各自独立 Volatile 槽，读端各取一次快照后取并集 —— 仍保持「无空窗」特性。
@@ -35,7 +35,7 @@ public static class UrlValidator
  private static volatile bool _allowInsecureWhitelistedDomains;
 
 /// <summary>
-/// 配置「白名单域名是否允许非 HTTPS 访问」（逃生门）。internal：由
+/// MT-10：配置「白名单域名是否允许非 HTTPS 访问」（逃生门）。internal：由
 /// <see cref="MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains"/> 经
 /// <c>AllowedDomainsReloader</c> 重放写入。
 /// </summary>
@@ -234,7 +234,7 @@ public static class UrlValidator
 /// <param name="domains">配置来源允许的域名集合。</param>
 /// <remarks>
 /// <para>
-/// ：供配置热更新重放（<c>AllowedDomainsReloader</c>）使用。
+/// <b>CFG-34</b>：供配置热更新重放（<c>AllowedDomainsReloader</c>）使用。
 /// 修复前重放调用 <see cref="ConfigureAllowedDomains"/>，会整体覆盖运行期增量 ——
 /// 与 <c>MudHttpClientApplicationOptions</c> XML 文档承诺的「可在运行时用
 /// <c>AddAllowedDomain</c>/<c>RemoveAllowedDomain</c> 动态修改白名单」相矛盾。
@@ -293,12 +293,12 @@ public static class UrlValidator
  var host = uri.Host;
 
 // 白名单域名跳过 IP / 内网域名检查（配置桶 + 运行期桶的并集）。
- // 信任边界声明：白名单域名由配置方保证可信（含其历次 DNS 解析结果），此处仅按 host 字符串
+ // H-6 信任边界声明：白名单域名由配置方保证可信（含其历次 DNS 解析结果），此处仅按 host 字符串
 // 判定放行，不做私有 IP 检查。若未启用连接期校验（SsrfSafeSocketsHttpHandler + IIpAddressPolicy，
 // net6.0+ opt-in），白名单域名被 DNS rebinding 解析到内网 IP 将不受防护。
 // 生产环境推荐：AddMudHttpClientSsrfProtection(services) + 每个客户端 builder 上
 // AddMudHttpClientSsrfProtection(builder)。二者互补：此处管控"是否放行"，连接期校验管控"实际连到哪"。
-// 但传输安全（HTTPS）不再因白名单而豁免 —— 否则 http:// 会明文承载令牌。
+// MT-10：但传输安全（HTTPS）不再因白名单而豁免 —— 否则 http:// 会明文承载令牌。
  if (IsDomainAllowedByAnySnapshot(host))
  {
  EnsureWhitelistedHostIsSecure(uri, host);
@@ -526,7 +526,7 @@ public static class UrlValidator
  }
  }
 
-// IPv4 映射型 IPv6（::ffff:a.b.c.d）必须先归一为 IPv4 再判定。
+/// M6-HC-01：IPv4 映射型 IPv6（::ffff:a.b.c.d）必须先归一为 IPv4 再判定。
 // 否则恶意 DNS 返回映射 AAAA 记录时，::ffff:10.0.0.1 不命中 IPv4 网段
 // （IPNetwork.Contains 按 AddressFamily 短路），且 IsLoopback(::ffff:127.0.0.1)=False，
 // URL 层与连接期 DefaultIpAddressPolicy 两道 SSRF 防线同时被绕过。
@@ -620,7 +620,7 @@ public static class UrlValidator
 /// 添加自定义域名到白名单（运行时扩展）。线程安全（复制快照后整体替换）。
 /// </summary>
 /// <remarks>
-/// ：本方法只写「运行期桶」，因此配置热更新重放（<see cref="SetConfigurationDomains"/>）
+/// <b>CFG-34</b>：本方法只写「运行期桶」，因此配置热更新重放（<see cref="SetConfigurationDomains"/>）
 /// 不会清除此处新增的域名（不变量 I-13）。
 /// 如需让新增域名参与「整体替换」语义，请改用 <see cref="ConfigureAllowedDomains"/>。
 /// </remarks>
@@ -639,7 +639,7 @@ public static class UrlValidator
 /// 从白名单中移除域名。线程安全（复制快照后整体替换）。
 /// </summary>
 /// <remarks>
-/// ：运行期桶的移除是<b>永久</b>的；配置桶的移除会在下一次配置热更新重放时被配置值重新覆盖
+/// <b>CFG-34</b>：运行期桶的移除是<b>永久</b>的；配置桶的移除会在下一次配置热更新重放时被配置值重新覆盖
 /// （配置是来源真相）。如需彻底清空，请调用 <see cref="ConfigureAllowedDomains"/>。
 /// </remarks>
  public static void RemoveAllowedDomain(string domain)

@@ -7,7 +7,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-// 客户端密钥 TTL 缓存：取代 <c>Lazy&lt;Task&lt;string?&gt;&gt;</c>，支持按 TTL 轮换密钥，
+/// P1.8（TK-13）客户端密钥 TTL 缓存：取代 <c>Lazy&lt;Task&lt;string?&gt;&gt;</c>，支持按 TTL 轮换密钥，
 /// 且工厂故障不缓存（下一次调用重新解析）。
 /// </summary>
 /// <remarks>
@@ -68,14 +68,14 @@ internal sealed class ClientSecretCache : IDisposable
 
 /// <summary>
 /// 获取缓存的密钥；未命中或已过期时通过 <paramref name="factory"/> 解析并写入缓存。
-/// TTL &lt;= 0 时短路返回工厂结果（不读缓存、不进闸门、不写缓存）——修正原实现 TTL=0 反而永久缓存（long.MaxValue）的语义反转。
+/// TMX-01：TTL &lt;= 0 时短路返回工厂结果（不读缓存、不进闸门、不写缓存）——修正原实现 TTL=0 反而永久缓存（long.MaxValue）的语义反转。
 /// 工厂签名贯通取消令牌，使密钥解析可被 <c>RefreshTimeoutSeconds</c> 兜底中断。
 /// </summary>
 /// <param name="factory">解析工厂（内部应已 try/catch 回退配置值，不应抛出）。接收取消令牌以便支持超时中断。</param>
 /// <param name="ct">取消令牌。</param>
 /// <returns>解析出的密钥。</returns>
 /// <remarks>
-/// ：修复 TTL 语义反转。原实现在 TTL == <see cref="TimeSpan.Zero"/> 时把
+/// <b>MT-04</b>：修复 TTL 语义反转。原实现在 TTL == <see cref="TimeSpan.Zero"/> 时把
 /// <c>_expiresAtTicks</c> 写成 <see cref="long.MaxValue"/>，使"TTL=0"实际等价于
 /// <b>永久缓存</b> —— 与 <see cref="OAuth2Options.ClientSecretCacheTtlSeconds"/> 文档承诺的
 /// "设为 0 表示不缓存（每次刷新都重新解析密钥）"完全相反，密钥轮换永不生效。
@@ -83,8 +83,8 @@ internal sealed class ClientSecretCache : IDisposable
 /// <para>
 /// 同时修正两点：① <c>_value</c> 改为 <c>Volatile.Read</c>/<c>Volatile.Write</c>，消除非同步读写；
 /// ② 工厂返回 null/空时不写入缓存（避免把"未就绪"固化），与类注释"故障不缓存"一致。
-/// ：TTL 每次调用时从 <c>ttlProvider</c> 读取，配置热更新即时生效。
-/// ：工厂签名贯通取消令牌，密钥解析可被 <c>RefreshTimeoutSeconds</c> 兜底中断。
+/// <b>L-10</b>：TTL 每次调用时从 <c>ttlProvider</c> 读取，配置热更新即时生效。
+/// <b>TMX-09</b>：工厂签名贯通取消令牌，密钥解析可被 <c>RefreshTimeoutSeconds</c> 兜底中断。
 /// </para>
 /// </remarks>
  public async Task<string?> GetAsync(Func<CancellationToken, Task<string?>> factory, CancellationToken ct)
@@ -93,7 +93,7 @@ internal sealed class ClientSecretCache : IDisposable
  var ttl = _ttlProvider();
 
 // TTL <= 0 即"不缓存"——不读缓存、不进闸门、不写缓存，直接短路走工厂。
- // C3）：短路时同步解除<b>已驻留</b>的值 —— 否则"不缓存"只对新解析生效，
+ // R-P2-05（C3）：短路时同步解除<b>已驻留</b>的值 —— 否则"不缓存"只对新解析生效，
 // 旧明文仍留在字段里直到进程退出（TTL 由 >0 热更新为 0 的场景）。
  if (ttl <= TimeSpan.Zero)
  {
@@ -120,7 +120,7 @@ internal sealed class ClientSecretCache : IDisposable
 // 空结果不缓存（解析出空串说明密钥源异常/未就绪，不应固化）。
  if (string.IsNullOrEmpty(resolved))
  {
- // C3）：解析失败时**同时清除**上一次的陈旧值 —— 原实现只"不写入"，
+ // R-P2-05（C3）：解析失败时**同时清除**上一次的陈旧值 —— 原实现只"不写入"，
 // 已过期的旧密钥仍以明文形式驻留内存直到下次覆盖（本类承载的是 client_secret）。
  Clear();
  }
@@ -150,7 +150,7 @@ internal sealed class ClientSecretCache : IDisposable
  }
 
 /// <summary>
- // /C3）：清除缓存中的密钥明文（幂等、线程安全）。
+ /// R-P2-05（C3）：清除缓存中的密钥明文（幂等、线程安全）。
 /// </summary>
 /// <remarks>
 /// 调用点：① 密钥解析失败（陈旧值不再有使用价值，继续驻留只是扩大泄漏面）；
@@ -168,12 +168,12 @@ internal sealed class ClientSecretCache : IDisposable
  }
 
 /// <summary>
- // /测试观测钩子：缓存中是否仍持有密钥明文（经 <c>InternalsVisibleTo</c> 使用）。
+ /// R-P2-05 测试观测钩子：缓存中是否仍持有密钥明文（经 <c>InternalsVisibleTo</c> 使用）。
 /// </summary>
  internal bool HasCachedValueForTest => Volatile.Read(ref _value) != null;
 
 /// <summary>
- // /C3）：释放缓存 —— 清除密钥明文。
+ /// R-P2-05（C3）：释放缓存 —— 清除密钥明文。
 /// </summary>
 /// <remarks>
 /// 刻意<b>不</b> Dispose <see cref="_gate"/>：与 <c>KeyedLockTable.Dispose</c> 同一决策 ——

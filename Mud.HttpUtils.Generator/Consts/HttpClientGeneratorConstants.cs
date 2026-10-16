@@ -182,7 +182,7 @@ internal static class HttpClientGeneratorConstants
     public const string ImplementationNamespaceSuffix = "Internal";
 
     /// <summary>
-    /// 文件下载默认缓冲区大小（字节），与 <c>DefaultHttpRequestExecutor.DownloadLargeAsync</c> 的默认值一致。
+    /// G8-06：文件下载默认缓冲区大小（字节），与 <c>DefaultHttpRequestExecutor.DownloadLargeAsync</c> 的默认值一致。
     /// </summary>
     public const int DefaultDownloadBufferSize = 81920;
 

@@ -112,7 +112,7 @@ public class OAuth2Options
  public bool AllowDefaultScopeRefreshTokenFallback { get; set; }
 
 /// <summary>
-/// 将 OAuth2 令牌端点限制为<b>公网地址</b>（拒绝私网 / 回环 / 链路本地 / 云元数据 / CGNAT）。默认 <c>false</c>。
+/// R-P2-01：将 OAuth2 令牌端点限制为<b>公网地址</b>（拒绝私网 / 回环 / 链路本地 / 云元数据 / CGNAT）。默认 <c>false</c>。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -130,7 +130,7 @@ public class OAuth2Options
  public bool RestrictOAuth2EndpointsToPublicAddresses { get; set; }
 
 /// <summary>
- // 安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
+ /// P2.9（TK-22）安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
 /// 防止结构化日志或配置转储中泄漏明文客户端密钥。
 /// </summary>
  public override string ToString()

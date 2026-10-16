@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 public partial class TokenRecoveryExecutor
 {
 /// <summary>
- // /Phase A，errcode 令牌失效恢复）：令牌失效统一判定点，首次响应与重试响应共用。
+ /// WX-01（Phase A，errcode 令牌失效恢复）：令牌失效统一判定点，首次响应与重试响应共用。
 /// 默认语义 = HTTP 401（短路在前，无判定器时非 401 响应零额外工作，与既有行为逐字节等价）；
 /// 注册 <see cref="TokenRecoveryOptions.TokenInvalidationDetector"/> 后追加
 /// 「HTTP 200 + 业务错误码」语义：先经 <see cref="ITokenInvalidationDetector.ShouldInspect"/>
@@ -153,7 +153,7 @@ public partial class TokenRecoveryExecutor
  }
  catch
  {
-// 读流失败（取消 / IO 异常）时内容流已处于半消费状态，既无法继续读取也无法被替换，
+// R-P1-01：读流失败（取消 / IO 异常）时内容流已处于半消费状态，既无法继续读取也无法被替换，
 // 必须显式释放以闭合底层连接，否则该连接滞留至 GC 才归还连接池。异常沿原路径上抛。
  content.Dispose();
  throw;

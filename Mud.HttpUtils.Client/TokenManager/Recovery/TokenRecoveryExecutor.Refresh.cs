@@ -15,7 +15,7 @@ public partial class TokenRecoveryExecutor
 /// TMR-04/执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
 /// 去重键含 scope（I1/长度前缀单射编码，见 <see cref="BuildTenantScopedDedupKey(string, string)"/>），
 /// 避免同管理器不同 scope 的并发 401 被合并。
-/// 去重键增加 AppKey 维度（前缀），避免多租户同 managerKey 的 401 恢复被错误合并。
+/// FIX-10：去重键增加 AppKey 维度（前缀），避免多租户同 managerKey 的 401 恢复被错误合并。
 /// 刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
 /// </summary>
  private Task<string?> RefreshTokenWithDedupAsync(
@@ -27,7 +27,7 @@ public partial class TokenRecoveryExecutor
 // 去重与有界收敛统一委托 RefreshDedupTable。
 // 刷新工厂本身即为共享任务（不再经 TaskCompletionSource 转发），
 // 因此失败时不存在"无人 await 的任务"，根除未观察任务异常。
-// forceRefresh=true（恢复循环第 2..N 轮）跳过窗口内的已完成结果，避免复用已被拒绝的令牌。
+// M6-HC-23：forceRefresh=true（恢复循环第 2..N 轮）跳过窗口内的已完成结果，避免复用已被拒绝的令牌。
 // I3：等待可取消 + 硬预算；工厂入参为共享刷新的 CT（仅受硬预算约束，取消隔离语义保持）。
  return GetOrRefreshWithBudgetAsync(
  _credentialRefreshTasks,
@@ -140,7 +140,7 @@ public partial class TokenRecoveryExecutor
 /// ④ 管理器覆写 <c>EnforceTenantBinding = false</c>（合法共享凭据设计）。
 /// </para>
 /// <para>
- // /EL-9）：已注入 <see cref="IAppContextHolder"/> 但当前无应用上下文时，改读 <see cref="MudMultiTenantOptions.MissingContextPolicy"/> 决策：
+ /// FIX-09（EL-9）：已注入 <see cref="IAppContextHolder"/> 但当前无应用上下文时，改读 <see cref="MudMultiTenantOptions.MissingContextPolicy"/> 决策：
 /// • <see cref="MissingAppContextPolicy.Reject"/>（默认）：fail-closed，返回 <c>false</c>，恢复流程返回真实 401；
 /// • <see cref="MissingAppContextPolicy.FallbackToDefaultApp"/>：维持旧行为，跳过守卫（<c>return true</c>）。
 /// 注意：未注入 <see cref="IAppContextHolder"/>（无 DI / 第三方宿主自建执行器）时不读策略，始终跳过守卫——
@@ -159,7 +159,7 @@ public partial class TokenRecoveryExecutor
  var appKey = _appContextHolder?.Current?.AppKey;
  if (string.IsNullOrEmpty(appKey))
  {
- // EL-9）：已注入 IAppContextHolder 但当前无应用上下文时，改读 MudMultiTenantOptions 决策。
+ // FIX-09（EL-9）：已注入 IAppContextHolder 但当前无应用上下文时，改读 MudMultiTenantOptions 决策。
 // 未注入 IAppContextHolder 时（_appContextHolder == null）：跳过守卫——该场景不涉及多租户。
  if (_appContextHolder == null)
  return true;
@@ -194,7 +194,7 @@ public partial class TokenRecoveryExecutor
  }
 
 /// <summary>
-// 用户级恢复的管理器解析：与 <see cref="ResolveManager"/> 同语义，但要求
+/// SR-M6（P2.4，D9）用户级恢复的管理器解析：与 <see cref="ResolveManager"/> 同语义，但要求
 /// 解析结果实现 <see cref="IUserTokenManager"/>——解析失败或解析到非用户管理器（租户实例）时
 /// 一律回退构造注入实例并记 Warning（绝不用租户管理器执行用户级恢复，凭据错配防线）。
 /// </summary>
@@ -242,7 +242,7 @@ public partial class TokenRecoveryExecutor
 
  try
  {
-// 优先走"仅清访问令牌"（internal 入口），保留 refresh_token 以支持自愈——
+// TR-02：优先走"仅清访问令牌"（internal 入口），保留 refresh_token 以支持自愈——
 // 整条 InvalidateTokenAsync 会把 refresh_token 一并销毁，迫使恢复降级为 client_credentials
 // 或重新授权。非 TokenManagerBase 派生实现退化为既有整条失效（记 Warning，行为与历史一致）。
  if (tokenManager is TokenManagerBase baseManager)
@@ -268,7 +268,7 @@ public partial class TokenRecoveryExecutor
 /// <summary>
 /// TMR-05/执行用户令牌刷新，使用 ConcurrentDictionary 按 userId + scope 去重。
 /// 去重键含 scope：managerKey + "\u001F" + userId + "\u001F" + scopeKey。
-/// 去重键增加 AppKey 维度（前缀），避免多租户同 managerKey 的用户令牌 401 恢复被错误合并。
+/// FIX-10：去重键增加 AppKey 维度（前缀），避免多租户同 managerKey 的用户令牌 401 恢复被错误合并。
 /// 刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
 /// </summary>
  private Task<string?> RefreshUserTokenWithDedupAsync(
@@ -320,7 +320,7 @@ public partial class TokenRecoveryExecutor
 
 /// <summary>
 /// 以取消隔离方式执行用户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
-/// 按 scopes 精准失效（不淆空全部作用域），非基类实现降级为 RemoveTokenAsync + Warning。
+/// TMR-05：按 scopes 精准失效（不淆空全部作用域），非基类实现降级为 RemoveTokenAsync + Warning。
 /// </summary>
 /// <param name="userId">用户标识。</param>
 // 经注册表解析的用户管理器（解析失败时为构造注入实例）。</param>
@@ -339,7 +339,7 @@ public partial class TokenRecoveryExecutor
  try
  {
 // 精准失效——基类实现走 scoped 虚方法，非基类降级为整用户清除 + Warning
- // 用户级）：优先走"仅清访问令牌字段"（internal 入口，保留 RefreshToken 支持自愈，
+ // TR-02（用户级）：优先走"仅清访问令牌字段"（internal 入口，保留 RefreshToken 支持自愈，
 // 且不触发派生类对 InvalidateUserTokenAsync 的覆写副作用——401 恢复不应撤销 IdP 侧凭据）。
  if (userTokenManager is UserTokenManagerBase baseManager)
  {

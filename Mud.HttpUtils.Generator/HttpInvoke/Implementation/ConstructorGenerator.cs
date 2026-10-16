@@ -163,7 +163,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
             codeBuilder.AppendLine("        /// </summary>");
-            // 修复：TokenManager 模式下字段名从 _appManager 改为 _tokenManager，使命名与语义一致。
+            // GEN-01 修复：TokenManager 模式下字段名从 _appManager 改为 _tokenManager，使命名与语义一致。
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
 
             codeBuilder.AppendLine("        /// <summary>");
@@ -221,7 +221,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpRequestExecutor _executor;");
 
-        // 修复：_defaultContentType 字段在 RequestBuilder 生成的方法体中被引用（作为未显式指定 ContentType 时的回退值）。
+        // GEN-03 修复：_defaultContentType 字段在 RequestBuilder 生成的方法体中被引用（作为未显式指定 ContentType 时的回退值）。
         // CS0414 警告源于编译器无法跨生成的分部类检测引用，此处的 #pragma 抑制是有意为之，非无用字段。
         codeBuilder.AppendLine("#pragma warning disable CS0414 // 字段在生成的 ExecuteAsync 方法体中被引用，编译器跨分部类检测不到引用");
         codeBuilder.AppendLine("        /// <summary>");
@@ -341,7 +341,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             if (property.IsFromInheritedBase)
                 continue;
 
-            // 修复：接口属性为只读时（仅 getter），生成的实现属性也不生成 setter，保持接口契约一致。
+            // GEN-05 修复：接口属性为只读时（仅 getter），生成的实现属性也不生成 setter，保持接口契约一致。
             var accessor = property.IsReadOnly ? "{ get; }" : "{ get; set; }";
             var propLine = $"        public {property.Type} {property.Name} {accessor}";
             if (!string.IsNullOrEmpty(property.DefaultValue))
@@ -518,7 +518,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // （netstandard2.1+ 才内置），需用 #if 包裹避免 netstandard2.0 消费项目编译失败
         if (_context.EmitGeneratedCodeMarkers)
         {
-            // GEN-07）：!NETSTANDARD2_0 → NET5_0_OR_GREATER（DynamicDependency 是 .NET 5+ 才可用，
+            // B-3（GEN-07）：!NETSTANDARD2_0 → NET5_0_OR_GREATER（DynamicDependency 是 .NET 5+ 才可用，
             // 且 netstandard2.0 消费项目的 #if 分支语义与能力符号对齐）。
             codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]");
@@ -890,7 +890,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         }
 
         var isDefaultMode = !_context.HasTokenManager;
-        // 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
+        // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
         var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
 
         //  旧入口 UseApp / UseDefaultApp 不再**默认发射**（唯一推荐入口是 UseAppScope / UseDefaultAppScope）。
@@ -913,7 +913,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // [SW-09] 混合模式继承（public new 隐藏基类成员）时补发「调用路径分叉」提示。
         if (HiddenAppMemberCallPathNotice() is { } useAppHiddenNotice)
             codeBuilder.AppendLine(useAppHiddenNotice);
-        // 修复（仍然有效）：**生成类成员不标 [Obsolete]** —— 生成类必须实现抽象接口成员，
+        // GEN-02 修复（仍然有效）：**生成类成员不标 [Obsolete]** —— 生成类必须实现抽象接口成员，
         // 在成员上标 [Obsolete] 只会给"实现接口"这一必然行为制造噪音（且 的消费者会看到 CS0618）。
         // [S7-B 订正] 废弃标注放在**抽象层**（IAppContextSwitcher.UseApp / UseDefaultApp / BeginScope(string)）：
         // 经接口调用即得 CS0618 迁移提示，经具体类型调用无噪音。
@@ -926,11 +926,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
-        //：授权器改为「默认拒绝」。
+        // MT-02（BC-18）：授权器改为「默认拒绝」。
         // 原实现为 `is not null && !CanSwitchTo(...)` ⇒ 宿主漏注册 IAppAccessAuthorizer 时静默放行，
         // 调用方可凭请求参数中的 appKey 切换到任意租户应用并读取其令牌（跨租户越权）。
         // 未注册即抛异常，把"放行"变为需显式声明的意图（注册 AllowAllAppAccessAuthorizer）。
-        // 先做 appKey 格式校验（授权器不应承担格式校验职责），异常消息经 AppKey.ToSafeText 过滤
+        // MT-18：先做 appKey 格式校验（授权器不应承担格式校验职责），异常消息经 AppKey.ToSafeText 过滤
         //（appKey 可能来自请求参数，直接插值构成日志注入面）。
         GenerateAppKeyGuard(codeBuilder);
         codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
@@ -980,7 +980,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // [SW-09] 混合模式继承时补发「调用路径分叉」提示。
         if (HiddenAppMemberCallPathNotice() is { } useDefaultAppHiddenNotice)
             codeBuilder.AppendLine(useDefaultAppHiddenNotice);
-        // 修复：移除 [Obsolete] 标记，理由同上。
+        // GEN-02 修复：移除 [Obsolete] 标记，理由同上。
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
@@ -1066,7 +1066,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    ///  解析 Current 属性的访问器形态（init/set），与接口声明保持一致。
+    /// FIX-02: 解析 Current 属性的访问器形态（init/set），与接口声明保持一致。
     /// 接口显式声明 Current { get; set; } 时，实现必须用 set 而非 init（CS8854）。
     /// 接口显式声明 Current { get; init; } 时，实现必须用 init。
     /// 接口未声明 Current 时，维持 init 语义（由基础设施提供，允许对象初始化期赋值）。
@@ -1097,7 +1097,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             return;
 
         var isDefaultMode = !_context.HasTokenManager;
-        // 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
+        // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
         var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
 
         codeBuilder.AppendLine("        /// <summary>");

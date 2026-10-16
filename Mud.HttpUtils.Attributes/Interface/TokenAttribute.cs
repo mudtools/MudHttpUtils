@@ -139,7 +139,7 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     public string? Justification { get; set; }
 
     /// <summary>
-    /// ：获取或设置一个值，该值指示<b>显式阻断接口级 <c>[Token]</c> 继承</b>（方法级免令牌 opt-out）。
+    /// F-1（G-1）：获取或设置一个值，该值指示<b>显式阻断接口级 <c>[Token]</c> 继承</b>（方法级免令牌 opt-out）。
     /// </summary>
     /// <remarks>
     /// <para>

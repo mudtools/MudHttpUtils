@@ -59,7 +59,7 @@ internal sealed class KeyedLockTable : IDisposable
     internal IEnumerable<string> Keys => _entries.Keys;
 
     /// <summary>
-    /// 测试观测钩子：退休分支进入异步退避的累计次数（Interlocked 计数）。
+    /// SR-C1（P1.1）测试观测钩子：退休分支进入异步退避的累计次数（Interlocked 计数）。
     /// 供并发用例断言"等待期间重试次数有界"。
     /// </summary>
     internal long SpinRetries;
@@ -102,7 +102,7 @@ internal sealed class KeyedLockTable : IDisposable
                 continue;   // 本方已帮助移除，下一轮必得新条目，立即重试
             }
 
-            // 修复：退休条目仍被持有/等待时，异步退避后重试。
+            // SR-C1（P1.1）修复：退休条目仍被持有/等待时，异步退避后重试。
             // 原实现为无让步 while(true) 紧循环——持锁刷新可达 30s+（RefreshTimeoutSeconds），
             // 期间所有并发等待者持续烧 CPU（近似活锁）。retire 协议的正确性前提
             // （"取到退休条目必须放弃并重取新条目"，防孤儿竞态破坏互斥）不可移除，
@@ -113,7 +113,7 @@ internal sealed class KeyedLockTable : IDisposable
     }
 
     /// <summary>
-    /// 退休分支的指数退避时长（毫秒）：1, 2, 4, 8, 16, 32, 50, 50, ...
+    /// R-P2-02：退休分支的指数退避时长（毫秒）：1, 2, 4, 8, 16, 32, 50, 50, ...
     /// </summary>
     /// <param name="retryIndex">累计重试序号（由 <see cref="SpinRetries"/> 提供，恒 ≥ 1）。</param>
     /// <returns>本次退避毫秒数，上界为 <see cref="MaxRetryBackoffMilliseconds"/>。</returns>
@@ -131,7 +131,7 @@ internal sealed class KeyedLockTable : IDisposable
     }
 
     /// <summary>
-    /// 测试观测钩子：当前配置下的最大单次退避（毫秒），供测试断言"退避有界"而无需硬编码常量。
+    /// R-P2-02 测试观测钩子：当前配置下的最大单次退避（毫秒），供测试断言"退避有界"而无需硬编码常量。
     /// </summary>
     internal static int MaxBackoffMillisecondsForTest => MaxRetryBackoffMilliseconds;
 

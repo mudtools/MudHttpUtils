@@ -112,7 +112,7 @@ public class TokenRecoveryOptions
     public RequestBodyBufferingMode BufferingMode { get; set; } = RequestBodyBufferingMode.Auto;
 
     /// <summary>
-    /// 是否允许对<b>非幂等</b>方法（POST/PATCH 等）执行 401 重放。默认 <c>false</c>。
+    /// R-P1-04：是否允许对<b>非幂等</b>方法（POST/PATCH 等）执行 401 重放。默认 <c>false</c>。
     /// </summary>
     /// <remarks>
     /// <para>

@@ -33,7 +33,7 @@ public class UserTokenInfo : CurrentUserInfo
     public long AccessTokenExpireTime { get; set; }
 
     /// <summary>
-    /// 获取或设置访问令牌的签发时间（Unix 时间戳，毫秒）。默认 0 表示未知。
+    /// MT-07：获取或设置访问令牌的签发时间（Unix 时间戳，毫秒）。默认 0 表示未知。
     /// </summary>
     /// <remarks>
     /// 供 <see cref="TokenExpiryPolicy.EffectiveThresholdSeconds"/> 计算 TTL 感知的过期提前量

@@ -106,7 +106,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
  private const int MaxDebugLogBodyLength = 32768;
 /// <summary>日志侧响应体窗口（与 DefaultHttpRequestExecutor 日志口径一致为 500；错误响应体落日志用 200，进 ApiException 用 EffectiveMaxErrorContentLength）。</summary>
  private const int LogBodyMaxLength = 500;
-// 默认上限统一至 HttpExecutionConstants（单一真相源），与 DefaultHttpRequestExecutor 路径一致
+// N-1：默认上限统一至 HttpExecutionConstants（单一真相源），与 DefaultHttpRequestExecutor 路径一致
  private const int MaxErrorContentLength = HttpExecutionConstants.DefaultMaxExceptionContentLength;
 
 /// <summary>
@@ -706,7 +706,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
 /// <exception cref="ArgumentNullException"><paramref name="baseAddress"/> 为 null。</exception>
 /// <exception cref="NotSupportedException">基类实现不支持直接创建 <see cref="HttpClient"/>，必须由子类重写。</exception>
 /// <remarks>
- // /修复：基类不再直接创建裸 <c>HttpClient</c> 实例（会绕过 <c>IHttpClientFactory</c> 池化机制，导致 Socket 端口耗尽和 DNS 不刷新）。
+ /// M-3 修复：基类不再直接创建裸 <c>HttpClient</c> 实例（会绕过 <c>IHttpClientFactory</c> 池化机制，导致 Socket 端口耗尽和 DNS 不刷新）。
 /// 基类实现现在抛出 <see cref="NotSupportedException"/>，强制子类通过 <c>IHttpClientFactory.CreateClient</c> 提供正确实现。
 /// <para>
 /// 使用 <see cref="HttpClientFactoryEnhancedClient"/> 时，此方法已被重写为通过 <c>IHttpClientFactory.CreateClient</c> 创建新实例。
@@ -718,7 +718,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
  if (baseAddress == null)
  throw new ArgumentNullException(nameof(baseAddress));
 
- // 修复：基类不再创建裸 HttpClient，避免绕过 IHttpClientFactory 导致 Socket 端口耗尽。
+ // M-3 修复：基类不再创建裸 HttpClient，避免绕过 IHttpClientFactory 导致 Socket 端口耗尽。
 // 子类（如 HttpClientFactoryEnhancedClient）必须重写此方法，通过 IHttpClientFactory.CreateClient 创建实例。
  throw new NotSupportedException(
  "EnhancedHttpClient.WithBaseAddress 基类实现已禁用：直接创建 HttpClient 会绕过 IHttpClientFactory 池化机制，" +

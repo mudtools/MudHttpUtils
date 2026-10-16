@@ -95,7 +95,7 @@ public abstract partial class TokenManagerBase
     public bool IsTenantBindingEnforced => BindingMode != TokenBindingMode.Shared;
 
     /// <summary>
-    /// bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
+    /// SR-H5（P2.1，D6）bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
     /// 同键重复绑定幂等通过。internal：仅框架调用点（<c>DefaultTokenProvider</c>）触发，不进公共 API。
     /// 按 <see cref="BindingMode"/> 分档（本重载无 scopeKey，PerScope 档以「AppKey + 空归属键」绑定）。
     /// </summary>
@@ -104,7 +104,7 @@ public abstract partial class TokenManagerBase
     internal void BindTenantGuard(string tenantKey) => BindTenantGuard(tenantKey, scopeKey: null);
 
     /// <summary>
-    /// bind-once 租户绑定守卫（带归属键）。按 <see cref="BindingMode"/> 分档：
+    /// SR-H5 + F-2：bind-once 租户绑定守卫（带归属键）。按 <see cref="BindingMode"/> 分档：
     /// <see cref="TokenBindingMode.Shared"/> 跳过绑定；<see cref="TokenBindingMode.PerScope"/>
     /// 以 AppKey + ScopeKey 归属对绑定（同对幂等、任一段不同即拒绝）；
     /// <see cref="TokenBindingMode.PerApp"/> 只以 AppKey 绑定（与既有行为逐位一致，scopeKey 不参与）。
@@ -166,7 +166,7 @@ public abstract partial class TokenManagerBase
     }
 
     /// <summary>
-    /// 当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
+    /// L-1：当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
     /// PerScope 档绑定记录含归属键，此处仍只回传 AppKey 段（告警口径不变）。
     /// </summary>
     internal string? BoundTenant => Volatile.Read(ref _tenantBinding)?.AppKey;

@@ -30,7 +30,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
  private readonly IMemoryCache _cache;
  private readonly MemoryCacheOptions _memoryCacheOptions;
  private readonly ConcurrentDictionary<string, byte> _keys = new();
- // C2，TK-16）为「影子索引 + IMemoryCache」所有双真源操作提供原子性屏障。
+ // P3.2（C2，TK-16）为「影子索引 + IMemoryCache」所有双真源操作提供原子性屏障。
  private readonly object _sync = new();
  private volatile bool _disposed;
 
@@ -111,7 +111,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
  {
-// /修复：Dispose 后不再写入，避免 ObjectDisposedException
+// NEW-修复：Dispose 后不再写入，避免 ObjectDisposedException
  if (_disposed)
  return;
  if (value == null)
@@ -123,7 +123,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 
  var options = new MemoryCacheEntryOptions { Priority = CacheItemPriority.Normal };
 
- // 修复：仅在 MemoryCache 配置了 SizeLimit 时才设置 Size。
+ // M-5 修复：仅在 MemoryCache 配置了 SizeLimit 时才设置 Size。
 // 当 MemoryCacheOptions.SizeLimit 为 null 时（默认无参构造函数），
 // 设置 MemoryCacheEntryOptions.Size 会导致 IMemoryCache.Set 抛出 InvalidOperationException。
  if (_memoryCacheOptions.SizeLimit.HasValue)
@@ -162,7 +162,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public bool TryRemove(string key, out T? removed)
  {
-// /修复：Dispose 后直接返回 false，避免 ObjectDisposedException
+// NEW-修复：Dispose 后直接返回 false，避免 ObjectDisposedException
  if (_disposed)
  {
  removed = default;
@@ -191,7 +191,7 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public void Compact(double percentage)
  {
-// /修复：Dispose 后不再操作，避免 ObjectDisposedException
+// NEW-修复：Dispose 后不再操作，避免 ObjectDisposedException
  if (_disposed)
  return;
  lock (_sync)
@@ -218,10 +218,10 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
 /// <inheritdoc />
  public void Clear()
  {
-// /修复：Dispose 后不再操作，避免 ObjectDisposedException
+// NEW-修复：Dispose 后不再操作，避免 ObjectDisposedException
  if (_disposed)
  return;
- // C2，TK-16）在单一临界区内同时清影子索引与 IMemoryCache，
+ // P3.2（C2，TK-16）在单一临界区内同时清影子索引与 IMemoryCache，
 // 外部调用方不会观察到「索引已空但缓存仍有值」或「缓存已空但索引有残留」的中间态。
  lock (_sync)
  {

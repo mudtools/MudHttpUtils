@@ -13,7 +13,7 @@ using System.Text.Json;
 namespace Mud.HttpUtils;
 
 /// <summary>
-// 令牌缓存的加密包装：值经 <see cref="IEncryptionProvider"/> 加密后
+/// SR-M8（P3.4，D12）令牌缓存的加密包装：值经 <see cref="IEncryptionProvider"/> 加密后
 /// 以 Base64 密文字符串写入底层 <see cref="ITokenCache{String}"/>，内存转储/抓取不再暴露明文凭据。
 /// </summary>
 /// <typeparam name="T">缓存值类型。</typeparam>

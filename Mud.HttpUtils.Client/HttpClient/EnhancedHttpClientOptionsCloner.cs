@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// DI 路径（<c>CreateEnhancedClient</c>）以 <see cref="Microsoft.Extensions.Options.IOptions{T}"/>
+/// CFG-01：DI 路径（<c>CreateEnhancedClient</c>）以 <see cref="Microsoft.Extensions.Options.IOptions{T}"/>
 /// 中已注册的编程式配置为基线构造「每客户端独立实例」，
 /// 避免就地修改共享的 <c>IOptions&lt;T&gt;.Value</c> 单例（多客户端串味）。
 /// </para>

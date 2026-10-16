@@ -94,7 +94,7 @@ internal sealed class AppManagementStartupValidator : IHostedService
  }
  }
 
- // 诊断 A）：ITokenManagerRegistry 后注册被 TryAdd 静默忽略 —— EventId 194 告警（注册期无日志器，延迟至此输出）。
+ // B-1（诊断 A）：ITokenManagerRegistry 后注册被 TryAdd 静默忽略 —— EventId 194 告警（注册期无日志器，延迟至此输出）。
  var registrationDiagnostics = _serviceProvider.GetService<TokenManagerRegistrationDiagnostics>();
  if (registrationDiagnostics != null && registrationDiagnostics.RegistryRegistrationSuppressed)
  {
@@ -102,7 +102,7 @@ internal sealed class AppManagementStartupValidator : IHostedService
  MudHttpClientLog.TokenManagerRegistryRegistrationSuppressed(_logger, registeredTypeName);
  }
 
- // 诊断 B）：同一管理器类型重复注册（描述符叠加）—— EventId 195 告警（每类型一条）。
+ // B-1（诊断 B）：同一管理器类型重复注册（描述符叠加）—— EventId 195 告警（每类型一条）。
  if (registrationDiagnostics != null)
  {
  foreach (var managerType in registrationDiagnostics.DuplicatedManagerTypes)
@@ -111,7 +111,7 @@ internal sealed class AppManagementStartupValidator : IHostedService
  }
  }
 
- // 诊断 C）：TokenManagerKeyRegistry 重复键 —— 默认 Error 抛出，逃生开关降级 Warning。
+ // B-1（诊断 C）：TokenManagerKeyRegistry 重复键 —— 默认 Error 抛出，逃生开关降级 Warning。
  if (_serviceProvider.GetService<ITokenManagerRegistry>() is TokenManagerKeyRegistry keyRegistry && keyRegistry.DuplicateKeys.Count > 0)
  {
  var keys = string.Join(", ", keyRegistry.DuplicateKeys.OrderBy(k => k, StringComparer.Ordinal).Select(k => AppKeyValidator.ToSafeText(k)));

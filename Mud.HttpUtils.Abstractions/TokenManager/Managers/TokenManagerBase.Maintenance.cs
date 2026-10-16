@@ -18,7 +18,7 @@ public abstract partial class TokenManagerBase
         if (_disposed)
             return;
 
-        // 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
+        // NEW-TM-02 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
         try
         {
             lock (_cleanupLock)
@@ -30,11 +30,11 @@ public abstract partial class TokenManagerBase
 
                 foreach (var key in _tokenCache.Keys.ToList())
                 {
-                    // 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
+                    // T-2 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
                     // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
                     // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
 
-                    // 收敛：过期判定统一委托 TokenExpiryPolicy，与 TryGetValidToken 严格一致
+                    // P1.3（TK-04）收敛：过期判定统一委托 TokenExpiryPolicy，与 TryGetValidToken 严格一致
                     // TTL 感知阈值
                     if (_tokenCache.TryGet(key, out var entry)
                         && entry != null
@@ -71,7 +71,7 @@ public abstract partial class TokenManagerBase
         if (_disposed)
             return;
 
-        // 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
+        // NEW-TM-02 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
         try
         {
             lock (_cleanupLock)

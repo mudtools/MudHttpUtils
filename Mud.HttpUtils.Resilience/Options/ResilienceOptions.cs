@@ -63,7 +63,7 @@ public class ResilienceOptions
     public long MaxCloneContentSize { get; set; } = HttpRequestMessageCloner.DefaultMaxContentSize;
 
     /// <summary>
-    /// 弹性策略（熔断器等）的作用域，默认 <see cref="ResiliencePolicyScope.PerHost"/>。
+    /// M5-HC-06：弹性策略（熔断器等）的作用域，默认 <see cref="ResiliencePolicyScope.PerHost"/>。
     /// </summary>
     /// <remarks>
     /// <see cref="ResiliencePolicyScope.PerHost"/>：不同 host / Named Client 各自独立熔断，避免跨服务故障放大。

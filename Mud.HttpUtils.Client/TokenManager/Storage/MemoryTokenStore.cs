@@ -68,7 +68,7 @@ public class MemoryTokenStore : ITokenStore
  {
  return Task.FromResult<string?>(entry.AccessToken);
  }
-// /修复：过期则移除，与文档承诺一致
+// NEW-修复：过期则移除，与文档承诺一致
 #if NET5_0_OR_GREATER
 // 条件移除：按引用比对，仅当条目仍是我们读到的那个实例时才移除
  _store.TryRemove(new KeyValuePair<string, TokenEntry>(tokenType, entry));
@@ -93,7 +93,7 @@ public class MemoryTokenStore : ITokenStore
 /// </remarks>
  public virtual Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
  {
-// M2-#15：AddOrUpdate 原子操作 + 不可变条目 —— update 工厂返回新实例
+// NEW-/ M2-#15：AddOrUpdate 原子操作 + 不可变条目 —— update 工厂返回新实例
 // （原地 mutate 在 AddOrUpdate 下不保证原子性，并发 Set/Set 交错会丢失更新）
  _store.AddOrUpdate(tokenType,
  _ => new TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),

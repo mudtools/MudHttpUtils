@@ -17,7 +17,7 @@ namespace Mud.HttpUtils.Helpers;
 /// 兼顾排障可用性。
 /// </para>
 /// <para>
-/// <c>scheme://user:pass@host</c> 形式的内嵌凭据（userinfo）在 query 处理之前先行剥离为
+/// M6-HC-27：<c>scheme://user:pass@host</c> 形式的内嵌凭据（userinfo）在 query 处理之前先行剥离为
 /// <c>scheme://***@host</c>，避免 Basic 凭据等随 URL 泄漏。
 /// </para>
 /// <para>
@@ -57,7 +57,7 @@ internal static class SensitiveUrlRedactor
         // （`code` 亦常为业务编码、`address` 亦常为网络地址），收窄为具体变体：
         "auth_code", "authorization_code", "verify_code", "sms_code", "captcha", "otp",
         "home_address", "detail_address", "billing_address", "shipping_address",
-        // Mud.Wechat 集成评审，P0-4）：企业微信把凭据强制放在 **Query**（官方契约，非 Header），
+        // C-01（Mud.Wechat 集成评审，P0-4）：企业微信把凭据强制放在 **Query**（官方契约，非 Header），
         // 其参数名既非通用 `token`/`secret` 变体，也不含 `_token` 后缀，因此精确匹配词表必须显式列出，
         // 否则 `corpsecret` / `suite_access_token` / `provider_access_token` 会随
         // `ApiException.RequestUri`、日志与遥测 URL 明文外泄。本组同时被
@@ -67,7 +67,7 @@ internal static class SensitiveUrlRedactor
     };
 
     /// <summary>
-    /// ：进程级"额外敏感键"登记表（Query 令牌注入模式的参数名为典型用法）。
+    /// R-P1-05①：进程级"额外敏感键"登记表（Query 令牌注入模式的参数名为典型用法）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -84,7 +84,7 @@ internal static class SensitiveUrlRedactor
     private static readonly HashSet<string> ExtraSensitiveKeys = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// ：登记一个进程级敏感键（幂等、线程安全、空值忽略）。
+    /// R-P1-05①：登记一个进程级敏感键（幂等、线程安全、空值忽略）。
     /// </summary>
     /// <param name="key">参数名 / 字段名（大小写不敏感）。</param>
     public static void RegisterExtraSensitiveKey(string? key)
@@ -106,7 +106,7 @@ internal static class SensitiveUrlRedactor
     public static string Redact(string? url) => Redact(url, null);
 
     /// <summary>
-    /// ：脱敏 URL，并额外掩码调用点指定的敏感键（请求级精确，避免词表全局化的误伤）。
+    /// R-P1-05②：脱敏 URL，并额外掩码调用点指定的敏感键（请求级精确，避免词表全局化的误伤）。
     /// </summary>
     /// <param name="url">原始 URL（可为 null）。</param>
     /// <param name="extraKeys">
@@ -145,7 +145,7 @@ internal static class SensitiveUrlRedactor
     }
 
     /// <summary>
-    /// ：按<b>请求上下文</b>脱敏 —— 从请求的 <see cref="TokenRecoveryContext"/> 推导
+    /// R-P1-05②：按<b>请求上下文</b>脱敏 —— 从请求的 <see cref="TokenRecoveryContext"/> 推导
     /// Query 注入模式的参数名，作为本次调用的强制掩码键（请求级精确，无全局副作用）。
     /// </summary>
     /// <remarks>
@@ -172,7 +172,7 @@ internal static class SensitiveUrlRedactor
     }
 
     /// <summary>
-    /// ：收集请求级强制掩码键（当前来源为 Query 注入模式的 <c>QueryParameterName</c>）。
+    /// R-P1-05②：收集请求级强制掩码键（当前来源为 Query 注入模式的 <c>QueryParameterName</c>）。
     /// </summary>
     private static List<string>? CollectRequestSensitiveKeys(HttpRequestMessage request)
     {

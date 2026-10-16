@@ -178,7 +178,7 @@ internal class MethodAnalysisResult
     /// （<c>MethodGenerator.ShouldInjectToken</c>），必须保持「未声明 ⇒ false」语义。
     /// </para>
     /// <para>
-    /// 附带收敛：本属性把「原始接口级字段」的最后两个消费点（ShouldInjectToken）也收进模型，
+    /// G8-20 附带收敛：本属性把「原始接口级字段」的最后两个消费点（ShouldInjectToken）也收进模型，
     /// 使 <c>InterfaceToken*</c> 字段仅存在于模型与解析器中 —— 由
     /// <c>EffectiveTokenFieldUsageGuardTests</c> 强制（其余文件必须走 Effective*/HasExplicit* 访问器）。
     /// </para>

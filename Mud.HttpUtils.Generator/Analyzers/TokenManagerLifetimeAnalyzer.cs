@@ -63,12 +63,12 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
-        // ：Query 令牌注入模式诊断（Info 级，可抑制）
+        // SR-L6（P3.9，D13）：Query 令牌注入模式诊断（Info 级，可抑制）
         context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
     }
 
     /// <summary>
-    // ：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
+    /// SR-L6（P3.9，D13）：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
     /// 报 Info 诊断——Query 模式令牌进入 URL，代理/访问日志/浏览器历史不可控，生产环境建议 Header。
     /// </summary>
     private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
@@ -104,7 +104,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (tokenAttribute == null)
                 return;
 
-            // ：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）不取令牌、
+            // F-1（G-1）：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）不取令牌、
             // 不注入 —— URL 承载面不存在，豁免 MUD005。
             if (IsTokenDisabled(method, interfaceDecl))
                 return;
@@ -158,7 +158,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// ：判定方法的有效 <c>[Token(Disabled = ...)]</c> 是否为 <c>true</c>（免令牌 opt-out）。
+    /// F-1（G-1）：判定方法的有效 <c>[Token(Disabled = ...)]</c> 是否为 <c>true</c>（免令牌 opt-out）。
     /// 有效级与生成器一致（「方法级覆盖接口级」）：方法级显式取值优先，未标注时取接口级。
     /// 仅认布尔字面量 —— 非字面量保守视为未禁用（安全告警不得默认静音，与 <see cref="HasJustification"/> 同口径）。
     /// </summary>

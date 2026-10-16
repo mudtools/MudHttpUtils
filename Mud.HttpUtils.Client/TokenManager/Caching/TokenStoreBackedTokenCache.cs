@@ -295,7 +295,7 @@ public class TokenStoreBackedTokenCache<T> : ITokenCache<T>, IAsyncTokenCache<T>
 
  if (_mirror.TryGetValue(key, out var entry))
  {
- // LRU 时间戳降采样：距上次更新 < 1s 跳过 Interlocked.Exchange
+ // TMX-15-8 同款 LRU 时间戳降采样：距上次更新 < 1s 跳过 Interlocked.Exchange
  var nowTicks = DateTime.UtcNow.Ticks;
  var last = entry.LastAccessTicks;
  if (nowTicks - last >= TimeSpan.TicksPerSecond)

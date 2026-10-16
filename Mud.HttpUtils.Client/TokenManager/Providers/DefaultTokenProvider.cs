@@ -38,7 +38,7 @@ internal sealed class DefaultTokenProvider(
  $"TokenManager '{request.TokenManagerKey}' 未找到，请确认已正确注册。");
  }
 
-// 租户绑定守卫：单实例跨租户共享（凭据错配）在此统一拒绝。
+// SR-H5（P2.1，D6）租户绑定守卫：单实例跨租户共享（凭据错配）在此统一拒绝。
 // 绑定键 = AppKey（多租户在本框架的投影即多 App）；合法共享场景覆写 EnforceTenantBinding=false。
  if (tokenManager is TokenManagerBase baseManager)
  baseManager.BindTenantGuard(appContext.AppKey);
@@ -87,7 +87,7 @@ internal sealed class DefaultTokenProvider(
  && !string.Equals(principalUserId, request.UserId, StringComparison.Ordinal))
  {
 // request.UserId 为可空；主体存在而请求侧为空同属不一致，故日志以占位符呈现 null。
-// 结构化日志保留原值（遥测可由日志管道统一脱敏）；异常消息经公开门面
+// G9-02：结构化日志保留原值（遥测可由日志管道统一脱敏）；异常消息经公开门面
 // AppKey.ToSafeText 文本化（截断 128 + 控制字符过滤，方法名虽为 AppKey 但实现通用）。
  MudHttpClientLog.UserTokenIdentityMismatch(_logger, principalUserId!, request.UserId ?? "(null)");
  throw new InvalidOperationException(

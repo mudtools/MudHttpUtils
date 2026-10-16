@@ -52,11 +52,11 @@ public partial class TokenRecoveryExecutor
  private readonly IOptionsMonitor<TokenRecoveryOptions>? _optionsMonitor;
  private readonly ILogger _logger;
 
-// 应用上下文持有器（可选）。用于在恢复链路解析出管理器后执行租户绑定守卫，
+// L-1：应用上下文持有器（可选）。用于在恢复链路解析出管理器后执行租户绑定守卫，
 // 与 DefaultTokenProvider 的守卫形成闭环（此前仅令牌获取路径有守卫，恢复路径没有）。
  private readonly IAppContextHolder? _appContextHolder;
 
-// 多租户选项（可选）。控制应用上下文缺失时的 fail-open/fail-closed 决策。
+// FIX-09：多租户选项（可选）。控制应用上下文缺失时的 fail-open/fail-closed 决策。
 // 默认 MissingAppContextPolicy.Reject（fail-closed）；设为 FallbackToDefaultApp 可回退旧行为。
  private readonly MudMultiTenantOptions? _multiTenantOptions;
 
@@ -85,11 +85,11 @@ public partial class TokenRecoveryExecutor
 /// <param name="options">令牌恢复配置选项（可选）。</param>
 /// <param name="logger">日志记录器（可选）。</param>
 /// <param name="appContextHolder">
-/// 应用上下文持有器（可选）。提供时，恢复链路解析出的令牌管理器会先执行
+/// L-1：应用上下文持有器（可选）。提供时，恢复链路解析出的令牌管理器会先执行
 /// <c>BindTenantGuard(当前 appKey)</c> 租户绑定守卫；为 null 或当前无应用上下文时跳过（与既有行为一致）。
 /// </param>
 /// <remarks>
- // /P0）：internal —— 容器默认构造选择要求「IOptionsMonitor 快照两族构造不同时公开」，
+ /// TMX-19（P0）：internal —— 容器默认构造选择要求「IOptionsMonitor 快照两族构造不同时公开」，
 /// 否则同元数构造均可满足时 DI 解析抛 "The following constructors are ambiguous"。
 /// 快照路径经本类内部/同程序集 <see cref="TokenRecoveryDelegatingHandler"/> 使用。
 /// </remarks>
@@ -106,7 +106,7 @@ public partial class TokenRecoveryExecutor
  _appContextHolder = appContextHolder;
  _multiTenantOptions = multiTenantOptions;
 
-// ：上限以委托读取 Options 热值（而非构造期快照），使 MaxDedupEntries 的配置变更即时生效。
+// R-P3-02②：上限以委托读取 Options 热值（而非构造期快照），使 MaxDedupEntries 的配置变更即时生效。
  _credentialRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  _userRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  }
@@ -131,7 +131,7 @@ public partial class TokenRecoveryExecutor
  _appContextHolder = appContextHolder;
  _multiTenantOptions = multiTenantOptions;
 
-// ：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
+// R-P3-02②：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
  _credentialRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  _userRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  }
@@ -144,7 +144,7 @@ public partial class TokenRecoveryExecutor
 /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
 /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
 /// <param name="logger">日志记录器（可选）。</param>
-// ：令牌管理器注册表（可选）。</param>
+/// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
  public TokenRecoveryExecutor(
  ITokenManager tokenManager,
@@ -165,7 +165,7 @@ public partial class TokenRecoveryExecutor
  _appContextHolder = appContextHolder;
  _multiTenantOptions = multiTenantOptions;
 
-// ：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
+// R-P3-02②：上限以委托读取 Options 热值（IOptionsMonitor 路径下配置变更后立即采用新上限）。
  _credentialRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  _userRefreshTasks = new RefreshDedupTable(() => Options.MaxDedupEntries);
  }
@@ -178,7 +178,7 @@ public partial class TokenRecoveryExecutor
 /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
 /// <param name="options">令牌恢复配置选项（可选）。</param>
 /// <param name="logger">日志记录器（可选）。</param>
-// ：令牌管理器注册表（可选）。非空时按
+/// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。非空时按
 /// TokenRecoveryContext.TokenManagerKey 路由到正确管理器；解析失败回退注入实例 + Warning。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
 /// <remarks>P0）：internal（快照路径），理由见 <see cref="TokenRecoveryExecutor(ITokenManager, TokenRecoveryOptions?, ILogger?, IAppContextHolder?)"/>；
@@ -229,7 +229,7 @@ public partial class TokenRecoveryExecutor
  if (!ShouldAttemptRecovery(request, recoveryContext))
  return await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
- // 幂等门控）：非幂等方法默认不做 401 重放 —— 重放 POST/PATCH 可能造成
+ // R-P1-04（幂等门控）：非幂等方法默认不做 401 重放 —— 重放 POST/PATCH 可能造成
 // 重复下单 / 重复扣款等业务副作用，而 2.0.x 对任意方法自动重放。
 // 门控置于缓冲之前：被门控拒绝的请求不应承担任何缓冲代价（的性能目标）。
  if (!IsRecoveryAllowedForRequest(request, recoveryContext))
@@ -270,7 +270,7 @@ public partial class TokenRecoveryExecutor
  buffered.Headers.TryAddWithoutValidation(h.Key, h.Value);
  }
 
-// 保留上传进度语义（前序 T3 转正）——若原内容为 ProgressableStreamContent，
+// TMX-13：保留上传进度语义（前序 T3 转正）——若原内容为 ProgressableStreamContent，
 // 以同一 IProgress<long> 与 bufferSize 重新包装缓冲体。
  request.Content = original is ProgressableStreamContent p ? p.Rebind(buffered) : buffered;
 
@@ -282,7 +282,7 @@ public partial class TokenRecoveryExecutor
 // 无条件发送原请求（不可缓冲也必须发送）
  var response = await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
- // 所有权栅栏）：IsTokenInvalidAsync 会把 OperationCanceledException 原样重抛
+ // R-P1-01（所有权栅栏）：IsTokenInvalidAsync 会把 OperationCanceledException 原样重抛
 // （见其 try/catch），此时下方所有 `return response` 分支均不可达 ⇒ 原始 401 响应及其连接流泄漏。
 // 这里以单一栅栏统一兜底，避免在 14 个返回分支上逐处补 Dispose 而再次遗漏。
  HttpResponseMessage recovered;
@@ -337,7 +337,7 @@ public partial class TokenRecoveryExecutor
 // 原实现比较 request.RequestUri 与由它克隆出的 retryRequest.RequestUri —— 两者同源，校验恒真形同虚设。
  var finalUri = response.RequestMessage?.RequestUri ?? request.RequestUri;
 
-// 统一失效判定点（首次响应）——默认语义仅 HTTP 401；注册判定器后追加
+// WX-01：统一失效判定点（首次响应）——默认语义仅 HTTP 401；注册判定器后追加
 // 「HTTP 200 + 业务错误码」语义（ShouldInspect 预过滤 + 按需响应体捕获，见 IsTokenInvalidAsync）。
  if (!await IsTokenInvalidAsync(response, request, cancellationToken).ConfigureAwait(false))
  return response;
@@ -406,14 +406,14 @@ public partial class TokenRecoveryExecutor
 
  if (recoveryContext == null)
  {
-// /：无显式上下文但上下文有 UserId → 构造用户级恢复上下文
+// SR-L2：无显式上下文但上下文有 UserId → 构造用户级恢复上下文
  recoveryContext = new TokenRecoveryContext { UserId = contextUserId };
  }
  }
 
  var isUserTokenRecovery = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
 
- // TK-07）：优先使用请求上下文中显式写入的 TokenManagerKey 作为管理器定位键与可观测性维度；
+ // P2.5（TK-07）：优先使用请求上下文中显式写入的 TokenManagerKey 作为管理器定位键与可观测性维度；
 // 未显式指定时回退到注入管理器类型的短名推断（保持旧行为）。
  var tokenManagerKey = !string.IsNullOrEmpty(recoveryContext?.TokenManagerKey)
  ? recoveryContext!.TokenManagerKey
@@ -421,7 +421,7 @@ public partial class TokenRecoveryExecutor
  ? _userTokenManager?.GetType().Name
  : _tokenManager.GetType().Name);
 
- // TK-06）fail-fast：用户级令牌恢复但未配置用户令牌管理器时，
+ // P1.4（TK-06）fail-fast：用户级令牌恢复但未配置用户令牌管理器时，
 // 不得静默回退到租户令牌（会造成凭据错配），直接返回 401。
  if (isUserTokenRecovery && _userTokenManager == null)
  {
@@ -430,10 +430,10 @@ public partial class TokenRecoveryExecutor
  return response; // D3：返回真实 401
  }
 
-// 注册表路由：解析一次、全链路复用（失效+刷新+重试走同一管理器实例）。
+// SR-M6（P2.4，D9）注册表路由：解析一次、全链路复用（失效+刷新+重试走同一管理器实例）。
 // 解析失败回退注入实例 + Warning（不 fail-fast——生成器默认键场景的 401 恢复可用性优先）；
 // 用户级恢复解析到非 IUserTokenManager 时同样回退（绝不用租户管理器执行用户级恢复）。
-// 解析结果若被租户绑定守卫拒绝则返回 null（已记结构化告警）→ 与其它恢复失败分支一致返回真实 401。
+// L-1：解析结果若被租户绑定守卫拒绝则返回 null（已记结构化告警）→ 与其它恢复失败分支一致返回真实 401。
  var resolvedCredentialManager = ResolveManager(recoveryContext);
  if (resolvedCredentialManager == null)
  return response; // D3：返回服务端真实 401
@@ -456,7 +456,7 @@ public partial class TokenRecoveryExecutor
  {
  for (var retry = 0; retry < Options.RecoveryMaxRetries; retry++)
  {
- // TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
+ // P1.4（TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
  MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, Options.RecoveryMaxRetries, request.Method.Method, RedactForLog(request, recoveryContext)); 
 
 // 首轮之后的刷新必须绕过「结果复用窗口」——首轮所得的令牌已被服务端判为无效，
@@ -539,7 +539,7 @@ public partial class TokenRecoveryExecutor
  }
  catch
  {
-// 重试发送抛出（含取消 / 连接失败）时，调用方只能拿到异常而无法归还资源，
+// M6-HC-23：重试发送抛出（含取消 / 连接失败）时，调用方只能拿到异常而无法归还资源，
 // 故在此显式释放原始 401 响应与克隆请求（原实现两者均泄漏，取消路径尤为明显），再上抛原异常。
  if (retryRequest != request) retryRequest.Dispose();
  response.Dispose();

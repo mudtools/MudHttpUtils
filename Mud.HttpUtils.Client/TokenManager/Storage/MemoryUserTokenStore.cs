@@ -59,7 +59,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
  private int _bucketSweepInProgress;
 
 /// <summary>
-/// 测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
+/// M6-HC-28：测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
 /// </summary>
  internal int UserBucketCount => _userStore.Count;
 
@@ -126,7 +126,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
  }
 
 /// <summary>
- // /用户维度扩展）：CAS 引用比较重试上限 —— 并发替换会令 TryUpdate 的引用比较失败，
+ /// U-7（用户维度扩展）：CAS 引用比较重试上限 —— 并发替换会令 TryUpdate 的引用比较失败，
 /// 重读重试以吸收短促竞争；超过上限即视为「不确定」，返回 false（不改写，宁可让调用方重试）。
 /// </summary>
  private const int CompareExchangeMaxAttempts = 8;
@@ -143,7 +143,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
  var removed = userTokens.TryRemove(tokenType, out _);
 #endif
 
-//  同口径：删除后空桶顺带清理，避免空内层字典壳滞留
+// SR-L5 同口径：删除后空桶顺带清理，避免空内层字典壳滞留
  if (removed && userTokens.IsEmpty)
  _userStore.TryRemove(userId, out _);
 
@@ -152,7 +152,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
 
 /// <inheritdoc />
 /// <remarks>
- // /用户维度扩展）：内存实现的 CAS 是<b>真原子</b> —— 比对用引用相等（<c>TryUpdate</c> 的值比较重载），
+ /// U-7（用户维度扩展）：内存实现的 CAS 是<b>真原子</b> —— 比对用引用相等（<c>TryUpdate</c> 的值比较重载），
 /// 删除用值比较移除；并发替换导致的引用变更经有界重试吸收。
 /// 匹配口径为<b>存储中的原始令牌值</b>（与应用维度契约一致：不做过期判定，过期策略由读取路径负责）。
 /// </remarks>
@@ -320,7 +320,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
  {
  userTokens.TryRemove(tokenType, out _);
 
-// 空内层字典清扫：消除海量短命 userId 的空字典壳滞留。
+// SR-L5（P3.8，D14）空内层字典清扫：消除海量短命 userId 的空字典壳滞留。
 // 竞态弱一致可接受——误删（刚被并发 Set 重新填充即被移除）由下次 Set 恢复；
 // 外层 TryRemove(key) 重载在 ns2.0 一直可用（§0.3-V4），无条件编译。
  if (userTokens.IsEmpty)

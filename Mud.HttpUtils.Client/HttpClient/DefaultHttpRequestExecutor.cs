@@ -57,7 +57,7 @@ public class DefaultHttpRequestExecutor(
  IExceptionRedactor? exceptionRedactor = null,
  int? maxExceptionContentLength = null,
  bool captureRequestContent = false,
-// 成功响应体最大字节数（0 = 不限制），与 EnhancedHttpClientOptions.MaxSuccessResponseBytes 同源
+// N-2：成功响应体最大字节数（0 = 不限制），与 EnhancedHttpClientOptions.MaxSuccessResponseBytes 同源
  long maxSuccessResponseBytes = 0,
 // M2-#18：日志脱敏掩码器（与 EnhancedHttpClient.SanitizeContent 同一回退链）
  ISensitiveDataMasker? sensitiveDataMasker = null,
@@ -78,7 +78,7 @@ public class DefaultHttpRequestExecutor(
  private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
 // Phase 2 字段
  private readonly IExceptionRedactor? _exceptionRedactor = exceptionRedactor;
-// 统一默认值（10240），与 EnhancedHttpClient 路径一致；<= 0 表示不限制
+// N-1：统一默认值（10240），与 EnhancedHttpClient 路径一致；<= 0 表示不限制
  private readonly int _maxExceptionContentLength =
  maxExceptionContentLength ?? HttpExecutionConstants.DefaultMaxExceptionContentLength;
  private readonly bool _captureRequestContent = captureRequestContent;
@@ -487,7 +487,7 @@ public class DefaultHttpRequestExecutor(
 
 /// <inheritdoc/>
 /// <remarks>
- // /M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
+ /// F-1（M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
 /// <c>[Cache]</c> 与文件下载组合），故此处仅应用弹性策略（Retry/CircuitBreaker/Timeout），
 /// 编排口径与 <see cref="ExecuteAsync(HttpRequestMessage, IBaseHttpClient, ExecutionDescriptor, CancellationToken)"/> 保持一致。
 /// </remarks>
@@ -642,7 +642,7 @@ public class DefaultHttpRequestExecutor(
 
  if (progress == null)
  {
-// ns2.0 快速路径改为分块拷贝（逐块携带 CT）。原 CopyToAsync(stream, bufferSize)
+// G9-01：ns2.0 快速路径改为分块拷贝（逐块携带 CT）。原 CopyToAsync(stream, bufferSize)
 // 无 CT 重载，取消令牌在大文件 body 拷贝主耗时段不被观察——取消要等下载完成才生效，
 // 与 NET6+ 分支（CopyToAsync(ct)）构成跨 TFM 语义差异。
  bytesWritten = await CopyToWithCancellationAsync(contentStream, fileStream, effectiveBufferSize, cancellationToken).ConfigureAwait(false);
@@ -909,7 +909,7 @@ public class DefaultHttpRequestExecutor(
  {
  var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
 // 透传滑动过期语义
- // 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
+ // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
  var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
  return await _cacheProvider.GetOrFetchAsync(
  scopedKey,
@@ -928,7 +928,7 @@ public class DefaultHttpRequestExecutor(
  {
  var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
 // 透传滑动过期语义
- // 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
+ // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
  var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
  return await _cacheProvider.GetOrFetchAsync(
  scopedKey,

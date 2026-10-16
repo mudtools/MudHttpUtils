@@ -34,7 +34,7 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
     private readonly ConcurrentDictionary<string, FailedRefresh> _recentFailures = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// 刷新失败负缓存窗口（秒），默认 5；0 = 关闭（恢复"每个等待者各刷一次"的旧行为）。
+    /// TMX-04：刷新失败负缓存窗口（秒），默认 5；0 = 关闭（恢复"每个等待者各刷一次"的旧行为）。
     /// </summary>
     protected virtual int NegativeCacheSeconds => 5;
 
@@ -69,7 +69,7 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     public event EventHandler<TokenInvalidatedEventArgs>? TokenInvalidated;
 
-    // 级联重入抑制：级联传播（本管理器失效 → 依赖管理器失效）期间置位，
+    // F-7 级联重入抑制：级联传播（本管理器失效 → 依赖管理器失效）期间置位，
     // 依赖管理器的 InvalidateTokenAsync 不再二次传播，防互相依赖图（A↔B）无限递归。
     private static readonly AsyncLocal<bool> s_cascadeInProgress = new();
 
@@ -81,7 +81,7 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
     public virtual TokenDependencyGraph DependencyGraph => TokenDependencyGraph.Empty;
 
     /// <summary>
-    /// 级联失效开关（<b>默认 false</b>，独立开关：不声明依赖图/不开开关即零行为变化）。
+    /// F-7 级联失效开关（<b>默认 false</b>，独立开关：不声明依赖图/不开开关即零行为变化）。
     /// 开启后 <see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 会把失效沿
     /// <see cref="DependencyGraph"/> 传播到依赖令牌的管理器（解析经
     /// <see cref="ResolveTokenManagerForType(string)"/>）。
@@ -89,7 +89,7 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
     protected virtual bool EnableTokenDependencyCascade => false;
 
     /// <summary>
-    /// 按令牌类型解析其管理器（级联传播用）。默认返回 null（未接线 = 不传播，fail-safe）；
+    /// F-7：按令牌类型解析其管理器（级联传播用）。默认返回 null（未接线 = 不传播，fail-safe）；
     /// 宿主可覆写为 <c>ITokenManagerRegistry.Resolve(tokenManagerKey)</c> 或 per-app 注册表查询。
     /// </summary>
     /// <param name="tokenType">依赖图中的令牌类型。</param>
@@ -98,7 +98,7 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 获取令牌刷新失败时的最大重试次数，默认 0（不重试）。
-    /// 重试语义显式化：此值是重试的唯一主控门，
+    /// P2.10（TK-20）重试语义显式化：此值是重试的唯一主控门，
     /// ShouldRetry（TokenRefreshFailedEventArgs）默认为 true 仅用于提前取消；
     /// 子类覆写此属性或事件处理器设 ShouldRetry=false 与 MaxRefreshRetryCount 正交协作。
     /// </summary>
@@ -125,12 +125,12 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
     protected virtual TimeSpan RefreshLeaseTime => TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// 未抢到租约时的限时等待上界（毫秒），默认 10000ms。超时后 fail-open 放行本机刷新。
+    /// U-3：未抢到租约时的限时等待上界（毫秒），默认 10000ms。超时后 fail-open 放行本机刷新。
     /// </summary>
     protected virtual int RefreshLeaseWaitTimeoutMilliseconds => 10_000;
 
     /// <summary>
-    /// 未抢到租约时的读穿透轮询间隔（毫秒），默认 250ms。
+    /// U-3：未抢到租约时的读穿透轮询间隔（毫秒），默认 250ms。
     /// </summary>
     protected virtual int RefreshLeasePollIntervalMilliseconds => 250;
 
@@ -207,7 +207,7 @@ public abstract partial class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 获取此令牌管理器在可观测性（指标 tag、Activity、健康检查）中使用的键。
-    /// 指标键可配置：默认回落到 CLR 类型名 <see cref="object.GetType"/>().Name。
+    /// P3.4（C4，TK-23）指标键可配置：默认回落到 CLR 类型名 <see cref="object.GetType"/>().Name。
     /// 当多个逻辑上不同的管理器共享同一实现类型、或同一类型多实例需要区隔维度时，
     /// 子类可覆写本属性返回可区分（且稳定）的键，例如 DI 注册名、配置区段名或业务键。
     /// 覆写时应保证返回值稳定且不含敏感信息，因为它会作为指标维度/日志维度被持久化。

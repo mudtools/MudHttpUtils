@@ -29,7 +29,7 @@ internal class InterfaceImplementationGenerator
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();
 
     /// <summary>
-    /// 源码命名空间名单缓存（块级 + 文件级）——以 Compilation 为主键的 ConditionalWeakTable，
+    /// G9-05：源码命名空间名单缓存（块级 + 文件级）——以 Compilation 为主键的 ConditionalWeakTable，
     /// 键亡即释（与 <see cref="_typeResolveCache"/> 同失效语义）。避免 N 个未命中快速路径的简单类型名
     /// 各自重复执行全 SyntaxTrees 枚举。
     /// </summary>
@@ -95,7 +95,7 @@ internal class InterfaceImplementationGenerator
 
         var configuration = ExtractConfigurationFromAttributes();
 
-        // 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
+        // GEN-04 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
         // 生成器会使用默认值（GetDefaultTokenType），多接口共享同一 TokenManager 场景下可能产生注册冲突。
         // 注意：此处使用 !string.IsNullOrEmpty(configuration.TokenManager) 而非 GeneratorContext.HasTokenManager，
         // 因为 GeneratorContext 尚未构造（在 ExtractConfigurationFromAttributes 之后、new GeneratorContext 之前）。
@@ -587,7 +587,7 @@ internal class InterfaceImplementationGenerator
             context.MarkMemberProvided(AppSwitchMemberNames.UseAppScope);
             context.MarkMemberProvided(AppSwitchMemberNames.UseDefaultAppScope);
 
-            //  旧入口（UseApp / UseDefaultApp）仅在使用方接口自行声明时发射 ⇒
+            // [BC-27] 旧入口（UseApp / UseDefaultApp）仅在使用方接口自行声明时发射 ⇒
             // 登记必须与发射**同门控**：多登记会「登记了没发射」（契约补全避让一个并不存在的成员 ⇒ 静默缺失 ⇒ CS0535），
             // 少登记会「发射了没登记」（契约补全重复发射 ⇒ CS0111/CS0102）。
             if (context.DeclaresUseAppMember)
@@ -671,7 +671,7 @@ internal class InterfaceImplementationGenerator
         // 自动检测 InheritedFrom：如果未显式指定，检查是否有带 [HttpClientApi(IsAbstract = true)] 的基接口
         var baseHasTokenManager = false;
         var baseHasAppAuthorizer = false;
-        // 基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
+        // G7-01：基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
         var baseHasAppManager = false;
         // 基类是否需要 currentUserContext 参数，按与 ComputeAnyMethodRequiresUserId 同口径求值。
         var baseRequiresUserId = false;
@@ -1262,7 +1262,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    ///  构建接口的嵌套类型路径后缀（如 "Outer`1+Inner+_"），用于 hintName 唯一化。
+    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer`1+Inner+_"），用于 hintName 唯一化。
     /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名（含泛型元数）用 "+" 连接。
     /// </summary>
     /// <remarks>

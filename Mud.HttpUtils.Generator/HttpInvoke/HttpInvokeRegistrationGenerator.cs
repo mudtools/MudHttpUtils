@@ -177,7 +177,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
             : null;
 
-        // 扫描接口（含继承链）方法级特性，判定 cacheProvider / resilienceResolver 在
+        // F-04：扫描接口（含继承链）方法级特性，判定 cacheProvider / resilienceResolver 在
         // 工厂注册中是否必需解析，与 ConstructorGenerator 的 needsCacheParam / needsResilienceParam
         // 口径一致（HasCache || 基接口存在 [Cache]）。AllInterfaces 已覆盖继承链。
         var hasCache = false;
@@ -592,7 +592,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var httpClientName = $"{api.InterfaceName}_HttpClient";
         var timeoutSeconds = api.Timeout;
 
-        //：原实现调用裸 services.AddHttpClient，绕过 AddMudHttpClient 的整套接线，
+        // MT-14（BC-21）：原实现调用裸 services.AddHttpClient，绕过 AddMudHttpClient 的整套接线，
         // 导致：① 无 keyed IEnhancedHttpClient 注册；② CreateEnhancedClient 的配置覆盖
         // （AllowCustomBaseUrls / DefaultHeaders / BaseAddress）对生成客户端不生效；
         // ③ 不注册 TracingDelegatingHandler、IAppContextHolder 等基础设施。
@@ -609,7 +609,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
         codeBuilder.AppendLine($"            }});");
 
-        // 默认模式（无 HttpClient / TokenManager）构造必需 IMudAppContext，裸 AddTransient<IFoo, Impl>
+        // F-04：默认模式（无 HttpClient / TokenManager）构造必需 IMudAppContext，裸 AddTransient<IFoo, Impl>
         // 在 DI 容器无法解析该参数（空容器或未注册 IMudAppContext 时激活即抛）。
         // 工厂化注册：以「DI 注入的默认应用」语义显式化 GetDefaultApp()（未注册默认应用时 fail-closed，
         // 异常消息指向注册应用），必需依赖 GetRequiredService（缺注册报错清晰）、可选依赖 GetService

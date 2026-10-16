@@ -169,7 +169,7 @@ internal class QueryParameterBinder : IParameterBinder
             else
             {
                 // 无专用重载的类型（如 byte, char, DateTimeOffset, TimeSpan 等）：回退到 ToString()
-                // B-2）：回退分支显式 Invariant，避免按 CurrentCulture 生成区域敏感串
+                // GEN-06（B-2）：回退分支显式 Invariant，避免按 CurrentCulture 生成区域敏感串
                 // （DateTimeOffset/TimeSpan/DateOnly/TimeOnly 已被 IsSimpleType 收录但不在 WithFormat 白名单）。
                 // 仅对「可格式化值类型」追加 provider 参数；object 等非 IFormattable 引用类型保持 .ToString()，
                 // 避免 object.ToString(IFormatProvider) 不存在导致 CS0117。
@@ -295,7 +295,7 @@ internal class QueryParameterBinder : IParameterBinder
             ? ".Where(__item => __item != null)"
             : string.Empty;
 
-        // B-2）/元素格式化的统一口径 —— 非可空值类型显式 Invariant，
+        // GEN-06（B-2）/元素格式化的统一口径 —— 非可空值类型显式 Invariant，
         // 避免按 CurrentCulture 生成区域敏感串（TimeSpan[]、DateTimeOffset[] 等）；非可格式化类型保持 .ToString()。
         var elementIsFormattable = TypeDetectionHelper.IsValueType(elementType)
                                    && !TypeDetectionHelper.IsNullableType(elementType);
@@ -488,7 +488,7 @@ internal class QueryParameterBinder : IParameterBinder
         bool useJsonSerialization, bool urlEncode, int depth = 0)
     {
         var propName = prop.Name;
-        // prefix 为「原始前缀」（已含尾部分隔符）；未设置 Prefix 时 prefix 为空串，key = propName（与旧版一致）。
+        // CFG-04：prefix 为「原始前缀」（已含尾部分隔符）；未设置 Prefix 时 prefix 为空串，key = propName（与旧版一致）。
         var key = prefix + propName;
         var escapedKey = StringEscapeHelper.EscapeString(key);
         var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
@@ -626,7 +626,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         codeBuilder.AppendLine($"{indent}foreach (var __kvp in {objExpr}.ToQueryParameters())");
         codeBuilder.AppendLine($"{indent}{{");
-        // keyPrefix 为「原始前缀」（已含尾部分隔符）；无前缀时直接使用 kvp.Key。
+        // CFG-04：keyPrefix 为「原始前缀」（已含尾部分隔符）；无前缀时直接使用 kvp.Key。
         if (string.IsNullOrEmpty(keyPrefix))
         {
             codeBuilder.AppendLine($"{indent}    var __subKey = __kvp.Key;");
@@ -718,7 +718,7 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static string GetQueryParameterName(ParameterAttributeInfo attr, string defaultName)
     {
-        // / / 优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
+        // CFG-04 / B-3 / GEN-05：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
         // Name 与首参（[Query("name")]）一致，经 AttributeArgumentReader 统一读取，避免此前 QueryParameterBinder.cs:671-684
         // 与 MethodAnalyzer 接口属性路径的口径分叉。
         var name = AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveNamePosition(attr.Name), "Name");

@@ -56,7 +56,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
  private readonly ILogger<TokenRefreshHostedService> _logger;
  private readonly TokenRefreshLoopState _loopState = new(); // TK-10-max）跨周期保留连续失败计数
 
-// 主动停止（StopOnError / MaxConsecutiveFailures）后的可观测与恢复通道。
+// L-9：主动停止（StopOnError / MaxConsecutiveFailures）后的可观测与恢复通道。
  private readonly SemaphoreSlim _restartGate = new(1, 1);
  private volatile bool _stopped;
 
@@ -96,7 +96,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
 /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例（向后兼容 IOptions 重载，不支持热更新）。
 /// </summary>
 /// <remarks>
- // /P0）：internal —— 容器默认构造选择要求「唯一公共构造」。
+ /// TMX-19（P0）：internal —— 容器默认构造选择要求「唯一公共构造」。
 /// 多个公共构造会使 <c>AddSingleton&lt;TokenRefreshHostedService&gt;()</c> 在解析时抛
 /// "The following constructors are ambiguous"（<see cref="ActivatorUtilitiesConstructorAttribute"/>
 /// 仅对 <c>ActivatorUtilities</c> 生效，不参与容器默认构造选择）。
@@ -152,7 +152,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
  if (tokenManager == null)
  throw new ArgumentNullException(nameof(tokenManager));
 
-// 注册守卫统一：经 TokenRefreshHelper.TryRegisterTokenManager 单一实现，
+// SR-M4（P3.2，D14）注册守卫统一：经 TokenRefreshHelper.TryRegisterTokenManager 单一实现，
 // 与 TokenRefreshBackgroundService（netstandard2.0）同源，消除双实现行为漂移。
  TokenRefreshHelper.TryRegisterTokenManager(_tokenManagers, tokenManager, name, _logger);
  }
@@ -213,7 +213,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
  _tokenManagers, _logger, current, stoppingToken, _loopState);
  if (!shouldContinue)
  {
- // TK-10）StopOnError / MaxConsecutiveFailures 触发停止：记录 Critical 后优雅 break。
+ // P1.6（TK-10）StopOnError / MaxConsecutiveFailures 触发停止：记录 Critical 后优雅 break。
 // 刻意不抛异常——.NET 6+ BackgroundServiceExceptionBehavior 默认 StopHost 会将宿主一并停止。
 // 本服务停止后宿主继续运行，其余托管服务不受影响。
 // 置位 IsStopped，使运维侧能区分「服务在跑但没活干」与「已停止调度」，
@@ -228,7 +228,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
  MudHttpClientLog.TokenRefreshServiceStopping(_logger);
  break;
  }
-// StopOnError=true 时原 when 过滤器不成立（!StopOnError 为 false），异常会逃出 ExecuteAsync，
+// MT-15：StopOnError=true 时原 when 过滤器不成立（!StopOnError 为 false），异常会逃出 ExecuteAsync，
 // 由 BackgroundService 按 BackgroundServiceExceptionBehavior 处理（默认 StopHost —— 连同宿主一起停止），
 // 与本节注释「刻意不抛异常」直接矛盾。这里补上该分支：记 Critical 后优雅 break。
  catch (Exception ex) when (Options.StopOnError)

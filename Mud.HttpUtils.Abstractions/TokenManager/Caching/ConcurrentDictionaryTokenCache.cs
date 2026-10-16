@@ -137,7 +137,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
         if (targetRemoval <= 0)
             return;
 
-        // 修复：按最后访问时间升序（最久未使用优先）选取并驱逐，实现 LRU 语义
+        // TM-1 修复：按最后访问时间升序（最久未使用优先）选取并驱逐，实现 LRU 语义
         var keysToRemove = _cache
             .OrderBy(kvp => Interlocked.Read(ref kvp.Value.LastAccessTicks))
             .Take(targetRemoval)

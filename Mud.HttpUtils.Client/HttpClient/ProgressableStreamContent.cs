@@ -77,7 +77,7 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
 /// 进度报告通过 <see cref="IProgress{T}.Report"/> 方法实现。
 /// 仅 netstandard2.0 / 旧重载路径可达，故使用 <see cref="CancellationToken.None"/>（#28 同理）。
 /// 无进度回调时走 <see cref="Stream.CopyToAsync(Stream)"/> 快路径，避免每缓冲区的进度开销。
-/// 不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
+/// M6-HC-31：不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
 /// </remarks>
  protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
  => SerializeToStreamCoreAsync(stream, CancellationToken.None);

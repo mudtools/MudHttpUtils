@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 以<b>外部标识</b>反查<b>多个</b>应用标识（appKey）的可选查询契约 ——
+/// U-5：以<b>外部标识</b>反查<b>多个</b>应用标识（appKey）的可选查询契约 ——
 /// 同一外部标识（如企业微信 SuiteId）可能注册在多个应用，回调场景需要<b>多命中枚举 + 歧义上抛</b>。
 /// </summary>
 /// <remarks>

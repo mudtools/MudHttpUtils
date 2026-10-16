@@ -15,7 +15,7 @@ namespace Mud.HttpUtils.HttpInvoke.Implementation;
 internal class RequestBuilder
 {
     /// <summary>
-    /// B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
+    /// GEN-04（B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
     /// （<c>PathAttribute</c> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
     /// 移除了此前对 <see cref="HttpClientGeneratorConstants.PathAttributes"/> 的显式排除（源于「Path 首参是 name」的错误假设，
     /// 参见文档 §7.1 修复点 3 / PathAttribute.cs 构造签名）。
@@ -79,7 +79,7 @@ internal class RequestBuilder
             // 令牌占位符的「模式」与「名称」统一取有效级（方法级 > 接口级）；
             // 替换值为 URI 编码后的令牌（与下方 [Path] 参数的 Uri.EscapeDataString 同口径，
             // 防止令牌中的 ?/#/&// 改写请求目标）。
-            // 免令牌方法（EffectiveTokenDisabled）不取令牌，占位符不替换
+            // F-1：免令牌方法（EffectiveTokenDisabled）不取令牌，占位符不替换
             //（保留 {{name}} 转义形态，发射后为 {name} 字面量，同 未匹配占位符的字面量语义）。
             var isTokenPathMode = !methodInfo.EffectiveTokenDisabled
                 && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
@@ -304,7 +304,7 @@ internal class RequestBuilder
     {
         if (methodInfo.HttpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
         {
-            // GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；HttpMethod.PATCH 是 .NET 5+ 能力符号）。
+            // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；HttpMethod.PATCH 是 .NET 5+ 能力符号）。
             codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine($"            using var __httpRequest = new HttpRequestMessage(HttpMethod.{methodInfo.HttpMethod}, __url);");
             codeBuilder.AppendLine(GeneratedCodeGuards.Else);
@@ -321,7 +321,7 @@ internal class RequestBuilder
         // 全局路径 ResilientHttpClient 与方法级路径 ResiliencePolicyResolver 均识别）
         if (methodInfo.RetryEnabled && methodInfo.RetryAllowNonIdempotent)
         {
-            // GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
+            // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
             codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine($"            __httpRequest.Options.TryAdd(HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey, true);");
             codeBuilder.AppendLine(GeneratedCodeGuards.Else);
@@ -777,7 +777,7 @@ internal class RequestBuilder
 
             if (!string.IsNullOrEmpty(contentType))
             {
-                // 不能使用 `using var` —— 其作用域为 if 块，会在请求构造完成（发送）前 Dispose，
+                // G7-19：不能使用 `using var` —— 其作用域为 if 块，会在请求构造完成（发送）前 Dispose，
                 // 底层流被提前释放 → MultipartFormDataContent 发送时抛 ObjectDisposedException。
                 // 正确形态：仅异常路径 Dispose（MediaTypeHeaderValue 构造/Add 抛异常时回收包装对象），
                 // 成功路径所有权已转移给 __multipartContent。
@@ -891,7 +891,7 @@ internal class RequestBuilder
 
     private bool ShouldGenerateTokenQuery(MethodAnalysisResult methodInfo)
     {
-        // 免令牌方法（EffectiveTokenDisabled）零令牌代码 —— 不发射 access_token 查询参数，
+        // F-1：免令牌方法（EffectiveTokenDisabled）零令牌代码 —— 不发射 access_token 查询参数，
         // 否则会引用未声明的 access_token 局部变量（CS0103）。
         if (methodInfo.EffectiveTokenDisabled)
             return false;

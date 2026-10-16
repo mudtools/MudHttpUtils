@@ -191,7 +191,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
  catch (OperationCanceledException) { throw; }
  catch (Exception ex)
  {
- // C4）：只记异常类型名，不记异常对象（异常消息可能内嵌密钥服务的敏感报文）。
+ // R-P2-05（C4）：只记异常类型名，不记异常对象（异常消息可能内嵌密钥服务的敏感报文）。
  MudHttpClientLog.SecretProviderFallback(_logger, ex.GetType().Name);
  }
  }
@@ -214,7 +214,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
 /// <summary>
 /// 校验端点是否满足 HTTPS 要求。
- // /C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
+ // P3.1（C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
 /// 与 OAuth2OptionsValidator 共用同一逻辑（Uri.TryCreate + DNS 解析 + IsLoopback）。
 /// </summary>
  private void ValidateEndpointHttps(string endpoint, string endpointName)
@@ -408,7 +408,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 /// <remarks>
  // 缓存写入统一由 <see cref="TokenManagerBase"/> 的 <c>GetOrRefreshTokenAsync</c> 在 scope 锁内完成；
 /// 本方法仅负责刷新并返回新令牌，不自行写缓存。
-/// invalid_grant 清除 + 回退：轮换型 IdP 响应丢失后旧 refresh_token 已被消费，
+/// SR-M2（P2.3，D8）invalid_grant 清除 + 回退：轮换型 IdP 响应丢失后旧 refresh_token 已被消费，
 /// 继续用其请求形成无限失败循环——捕获 invalid_grant 时清除可疑 refresh_token 并回退 client_credentials。
 /// </remarks>
  protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
@@ -440,7 +440,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 /// <inheritdoc/>
 /// <remarks>
  // 同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
- // 按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token。
+ /// P2.3（TK-02）按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token。
 /// 跨作用域回退默认关闭（<see cref="OAuth2Options.AllowDefaultScopeRefreshTokenFallback"/>）：
 /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，默认作用域凭据换取当前 scope 令牌 = 越权。
 /// invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
@@ -565,7 +565,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
  using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-// ：非 2xx 响应解析 error 载荷后抛结构化 OAuth2TokenException（继承
+// SR-M2（P2.3，D8）：非 2xx 响应解析 error 载荷后抛结构化 OAuth2TokenException（继承
 // InvalidOperationException，既有 catch 兼容），携带状态码与 error 字段。
  if (!response.IsSuccessStatusCode)
  {
@@ -607,7 +607,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
  throw new InvalidOperationException("令牌响应反序列化失败");
 
  if (!string.IsNullOrEmpty(tokenResponse.Error))
-// ：错误分支抛类型化异常（原 InvalidOperationException），调用方可
+// SR-M2（P2.3，D8）：错误分支抛类型化异常（原 InvalidOperationException），调用方可
 // 按 ErrorCode 区分 invalid_grant（清除回退）与 invalid_client（配置错误）等。
  throw new OAuth2TokenException(tokenResponse.Error, tokenResponse.ErrorDescription, (int)response.StatusCode);
 
@@ -615,12 +615,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
  {
  AccessToken = tokenResponse.AccessToken ?? string.Empty,
  RefreshToken = tokenResponse.RefreshToken,
- // TK-04）记录签发时间，供 TTL 感知阈值的有效提前量钳位
+ // P2.4（TK-04）记录签发时间，供 TTL 感知阈值的有效提前量钳位
  IssuedAt = UtcNow.ToUnixTimeMilliseconds(),
  Expire = CalculateExpire(tokenResponse.ExpiresIn)
  };
 
- // TK-02）删除跨锁写入默认作用域。
+ // P1.2（TK-02）删除跨锁写入默认作用域。
 // 缓存写入统一由 TokenManagerBase.GetOrRefreshTokenAsync 在获取 scope 锁后，
 // 通过 UpdateToken(scopeKey, token) 完成；此处若再写 DefaultScopeKey，
 // 会：(1) 在 scope 锁之外无保护地写入默认作用域，破坏作用域隔离；(2) 触发 MaxCacheLifetimeSeconds 截断逻辑重复执行，
@@ -635,8 +635,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 /// <param name="parameters">令牌请求参数字典。公共客户端（空 Secret）时 <c>client_id</c> 补入此字典（走请求体）。</param>
 /// <param name="clientSecret">已解析的客户端密钥（由调用方通过 <see cref="GetClientSecretAsync"/> 获取后传入）。</param>
 /// <remarks>
- // /修复：密钥由调用方异步解析后传入，消除 Lazy 路径的阻塞与竞态。
-// 修复：useClientAuth 且 Secret 为空时不再发送
+ /// TM-04 修复：密钥由调用方异步解析后传入，消除 Lazy 路径的阻塞与竞态。
+/// SR-L7（P2.3，D8-3）修复：useClientAuth 且 Secret 为空时不再发送
 /// <c>"Basic base64(clientId:)"</c> 弱凭据头，改为 <c>client_id</c> 走请求体
 /// （RFC 6749 §2.3.1 公共客户端标准行为）。
 /// </remarks>
@@ -680,7 +680,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
  }
 
 /// <summary>
- // /C3）：释放管理器 —— 先清除客户端密钥缓存中的明文，再委托基类释放（令牌缓存 / 定时器 / 锁表）。
+ /// R-P2-05（C3）：释放管理器 —— 先清除客户端密钥缓存中的明文，再委托基类释放（令牌缓存 / 定时器 / 锁表）。
 /// </summary>
 /// <param name="disposing">是否由 <see cref="IDisposable.Dispose"/> 调用（<c>false</c> 为终结器路径）。</param>
 /// <remarks>
@@ -707,7 +707,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
  }
 
 /// <summary>
- // /测试观测钩子：客户端密钥缓存中是否仍持有明文（释放后应为 <c>false</c>）。
+ /// R-P2-05 测试观测钩子：客户端密钥缓存中是否仍持有明文（释放后应为 <c>false</c>）。
 /// </summary>
  internal bool ClientSecretCacheHasValueForTest => _clientSecretCache.HasCachedValueForTest;
 

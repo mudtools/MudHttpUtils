@@ -45,7 +45,7 @@ public class MudHttpClientApplicationOptions
 /// <remarks>
 /// <para>键为客户端名称，值为该客户端的配置选项。</para>
 /// <para>
-/// ：客户端名称<b>区分大小写</b>（<see cref="StringComparer.Ordinal"/>）。
+/// <b>MT-13（BC-25）</b>：客户端名称<b>区分大小写</b>（<see cref="StringComparer.Ordinal"/>）。
 /// 此前本字典使用 <c>OrdinalIgnoreCase</c>，而命名 HttpClient（<c>AddHttpClient</c>）、
 /// keyed DI 注册、<see cref="IEnhancedHttpClientFactory"/> 缓存与
 /// <see cref="DefaultAppManager{TAppContext}"/> 均使用 <c>Ordinal</c> ——

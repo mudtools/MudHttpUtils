@@ -51,7 +51,7 @@ public abstract partial class TokenManagerBase
 
     /// <summary>
     /// 从缓存中获取默认作用域的令牌信息，如果不存在或已过期则返回 null。
-    /// 保留兼容层：委托 <see cref="GetCachedCredentialToken(string)"/> 读取默认作用域。
+    /// P2.3（TK-02）保留兼容层：委托 <see cref="GetCachedCredentialToken(string)"/> 读取默认作用域。
     /// </summary>
     /// <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
     protected CredentialToken? GetCachedCredentialToken()
@@ -98,7 +98,7 @@ public abstract partial class TokenManagerBase
     {
         if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
         {
-            // 写时复制（字段级保留 refresh_token），避免与锁内刷新交错时
+            // R-P1-07：写时复制（字段级保留 refresh_token），避免与锁内刷新交错时
             // 让派生类读到 RefreshToken == null 而静默降级为 client_credentials。
             _tokenCache.Set(scopeKey, existing.WithAccessTokenInvalidated());
         }
@@ -109,7 +109,7 @@ public abstract partial class TokenManagerBase
     internal void InvalidateCachedAccessToken(string[]? scopes)
         => InvalidateCachedAccessToken(GetScopeKey(scopes));
 
-    // 凭据字段级合并：刷新响应缺省字段时保留既有凭据，避免静默降级到错误授权流程。
+    // P1.1（TK-01）凭据字段级合并：刷新响应缺省字段时保留既有凭据，避免静默降级到错误授权流程。
     // 语义与 UserTokenInfo.UpdateFromCredentialToken 对齐（仅当新值缺失/无效时保留旧值，服务端返回的新值必须优先）。
     private void UpdateToken(string scopeKey, CredentialToken? token)
     {
@@ -145,7 +145,7 @@ public abstract partial class TokenManagerBase
 
         _tokenCache.Set(scopeKey, token);
 
-        // 硬上限 LRU 收敛：阻断攻击者/失控代码以海量 scope 组合
+        // SR-M5（P3.3，D11）硬上限 LRU 收敛：阻断攻击者/失控代码以海量 scope 组合
         // 制造无界缓存+锁表膨胀（有效期内 CleanupExpiredTokens 清不掉未过期条目）。
         // 常态收敛<b>移出锁内</b> —— 本方法处于【持有 scope 锁】的关键区内，而
         // CleanupExpiredTokens（全表遍历）与 Compact（OrderBy 全排序）在条目多时是 O(n log n)，

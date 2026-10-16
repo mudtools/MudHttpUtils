@@ -167,7 +167,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
                     bool ownsRequest;
                     if (isRetry)
                     {
-                        // (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障，避免掩盖根因
+                        // M5-HC-05 (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障，避免掩盖根因
                         var cloned = await HttpRequestMessageCloner
                             .TryCloneAsync(request, MaxCloneContentSize, ct).ConfigureAwait(false);
                         if (cloned == null)
@@ -363,7 +363,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 #endif
 
     /// <summary>
-    /// 共享流式核心：对<b>首次 MoveNextAsync（连接建立 + 首个元素产出）</b>施加
+    /// H-9 共享流式核心：对<b>首次 MoveNextAsync（连接建立 + 首个元素产出）</b>施加
     /// <see cref="TimeoutOptions.StreamConnectTimeoutSeconds"/> 超时守卫（原生 CTS，绕开 Polly）。
     /// </summary>
     /// <remarks>

@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 令牌存储的<b>原生 CAS（Compare-And-Swap）</b>能力探测式可选接口 ——
+/// U-7：令牌存储的<b>原生 CAS（Compare-And-Swap）</b>能力探测式可选接口 ——
 /// 「比对旧令牌相等才写入/删除」的原子原语（组件级可选接口，不进 <see cref="ITokenStore"/> 最小 SPI）。
 /// </summary>
 /// <remarks>

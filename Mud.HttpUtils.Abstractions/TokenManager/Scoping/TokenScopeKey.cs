@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 令牌归属键的公开契约：<b>tokenType + appKey + scopeKey</b> 三段式归属模型，
+/// F-2（TK-1）令牌归属键的公开契约：<b>tokenType + appKey + scopeKey</b> 三段式归属模型，
 /// 把下游自拼 <c>{tokenType}:{appKey}:{scopeKey}</c> 的需求收敛为一等类型。
 /// </summary>
 /// <remarks>

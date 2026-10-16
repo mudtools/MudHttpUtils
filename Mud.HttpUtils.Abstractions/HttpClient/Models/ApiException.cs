@@ -58,7 +58,7 @@ public class ApiException : HttpRequestException
     /// <param name="content">响应内容。</param>
     /// <param name="requestUri">请求 URI。</param>
     /// <remarks>
-    /// 异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数（如 access_token）随 Message 泄漏。
+    /// FIX-12：异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数（如 access_token）随 Message 泄漏。
     /// <see cref="RequestUri"/> 由各构造点在传入前统一经 <c>SensitiveUrlRedactor</c> 脱敏
     /// （剥离 userinfo、掩码敏感 query 值），与 <see cref="ApiRequestException"/> 口径一致；
     /// 仍可由 <see cref="IExceptionRedactor"/> 在传播前进一步擦除。
@@ -100,7 +100,7 @@ public class ApiException : HttpRequestException
     /// <param name="requestUri">请求 URI。</param>
     /// <param name="innerException">内部异常。</param>
     /// <remarks>
-    /// 异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数泄漏。
+    /// FIX-12：异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数泄漏。
     /// </remarks>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri, Exception innerException)
 #if NET5_0_OR_GREATER

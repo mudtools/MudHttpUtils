@@ -103,7 +103,7 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         var sourceText = syntax.WithoutTrivia().ToString();
 
         // 使用 ValueStringBuilder（栈分配 + ArrayPool 回退）替代 StringBuilder，减少 GC 压力（W5 修复）
-        // try/finally 保证 Append/Grow 抛异常（如 OOM）时池租用归还；ToString 成功路径已归还，Dispose 幂等。
+        // G7-18：try/finally 保证 Append/Grow 抛异常（如 OOM）时池租用归还；ToString 成功路径已归还，Dispose 幂等。
         var sb = new ValueStringBuilder(stackalloc char[512]);
         try
         {

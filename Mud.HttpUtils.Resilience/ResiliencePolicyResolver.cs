@@ -104,7 +104,7 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
                         bool ownsRequest;
                         if (isRetry)
                         {
-                            // (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障
+                            // M5-HC-05 (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障
                             var cloned = await HttpRequestMessageCloner
                                 .TryCloneAsync(requestTemplate, _maxCloneContentSize, ct).ConfigureAwait(false);
                             if (cloned == null)

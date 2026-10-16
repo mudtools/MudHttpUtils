@@ -37,7 +37,7 @@ public sealed class MudHttpAppManagementOptions
  public bool RequireRegisteredAppKeys { get; set; }
 
 /// <summary>
-/// 是否允许令牌管理器键重复注册（<see cref="TokenManagerKeyRegistry"/> 的逃生开关）。默认 <c>false</c>。
+/// B-1：是否允许令牌管理器键重复注册（<see cref="TokenManagerKeyRegistry"/> 的逃生开关）。默认 <c>false</c>。
 /// </summary>
 /// <remarks>
 /// <para>

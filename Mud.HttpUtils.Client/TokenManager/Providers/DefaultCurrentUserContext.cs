@@ -32,7 +32,7 @@ public class DefaultCurrentUserContext<TUser> : ICurrentUserContext
 
 /// <inheritdoc />
 /// <remarks>
-// 副本语义：每次派生新实例而非就地突变共享实例。
+/// SR-L4（P3.7，D14）副本语义：每次派生新实例而非就地突变共享实例。
 /// AsyncLocal 值在异步分叉（fork）的兄弟分支间共享同一引用，就地突变会跨分支可见；
 /// 派生副本使各分支的 SetUserId 互不影响（CurrentUserInfo 字段拷贝成本可忽略）。
 /// </remarks>

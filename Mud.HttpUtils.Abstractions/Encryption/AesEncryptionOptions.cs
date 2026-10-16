@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// 从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成 IV 并附加到密文前。
-/// 仅用于向后兼容的 <c>IV</c> 属性已移除（运行时无消费点），新代码不应再设置 IV。
+/// CFG-27：仅用于向后兼容的 <c>IV</c> 属性已移除（运行时无消费点），新代码不应再设置 IV。
 /// </remarks>
 public class AesEncryptionOptions
 {
@@ -61,7 +61,7 @@ public class AesEncryptionOptions
     public bool RequireCrossRuntimePortable { get; set; }
 
     /// <summary>
-    /// 是否启用 AES/HMAC 密钥分离（HKDF 派生 enc/mac 子密钥），默认 <c>true</c>。
+    /// M5-HC-13：是否启用 AES/HMAC 密钥分离（HKDF 派生 enc/mac 子密钥），默认 <c>true</c>。
     /// </summary>
     /// <remarks>
     /// 启用后 CBC+HMAC 路径产出信封 <c>0x04</c>（<c>[0x04][IV(16)][MAC(32)][密文]</c>），
@@ -88,7 +88,7 @@ public class AesEncryptionOptions
     /// <summary>
     /// 安全清除密钥，防止敏感数据残留在内存中。
     /// 注意：此方法会清零 Key 数组，调用后此实例将不可用。
-    /// 修订：DefaultAesEncryptionProvider 不再调用此方法（IOptions&lt;T&gt;.Value 视为只读）。
+    /// TMR-06 修订：DefaultAesEncryptionProvider 不再调用此方法（IOptions&lt;T&gt;.Value 视为只读）。
     /// 此方法保留供用户显式调用（如启动期一次性构造后销毁 options）。
     /// </summary>
     public void ClearSensitiveData()

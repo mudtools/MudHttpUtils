@@ -107,7 +107,7 @@ public class CredentialToken
     };
 
     /// <summary>
-    /// 安全的调试字符串：对敏感字段（AccessToken / RefreshToken）做脱敏，
+    /// P2.9（TK-22）安全的调试字符串：对敏感字段（AccessToken / RefreshToken）做脱敏，
     /// 仅展示前缀与长度，绝不输出完整令牌值，防止结构化日志或断言信息中泄漏凭据。
     /// </summary>
     public override string ToString()

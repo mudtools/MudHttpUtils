@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// OAuth2 令牌请求失败的类型化异常：调用方可编程区分故障类别。
+/// SR-M2（P2.3，D8）OAuth2 令牌请求失败的类型化异常：调用方可编程区分故障类别。
 /// </summary>
 /// <remarks>
 /// <para>

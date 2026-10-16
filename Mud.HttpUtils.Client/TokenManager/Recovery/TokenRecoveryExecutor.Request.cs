@@ -83,7 +83,7 @@ public partial class TokenRecoveryExecutor
 
 /// <summary>
 /// 令牌值净化——CR/LF 一律拒绝（防 header 注入）。
-/// 扩展为拒绝所有 C0 控制字符（含 \0）与 DEL，避免 FormatException 诊断歧义。
+/// TMX-12：扩展为拒绝所有 C0 控制字符（含 \0）与 DEL，避免 FormatException 诊断歧义。
 /// </summary>
  private static bool IsSafeTokenValue(string? token)
  {
@@ -277,7 +277,7 @@ public partial class TokenRecoveryExecutor
 #endif
 // 注意：不 dispose 该流 —— ReadAsStreamAsync 返回的是 HttpContent 自有流，
 // 生命周期归 HttpContent 所有（与 LimitedContentReader 同一惯例）。
-// 容量按实际声明长度估算（declared 此处必为有值），不再回退到 maxBytes。
+// R-P1-03：容量按实际声明长度估算（declared 此处必为有值），不再回退到 maxBytes。
  var capacity = (int)Math.Min(declared!.Value, maxBytes);
  using var buffered = capacity > 0
  ? new MemoryStream(capacity)
@@ -374,7 +374,7 @@ public partial class TokenRecoveryExecutor
  }
 
 /// <summary>
- // /TK-~redirect）跨主机校验：比较原始请求与重试请求的 scheme + host + port 是否一致。
+ /// P1.4（TK-~redirect）跨主机校验：比较原始请求与重试请求的 scheme + host + port 是否一致。
 /// 不一致说明发生了重定向到不受信任的地址，恢复流程应放弃，避免把刷新令牌注入到第三方主机。
 /// 任一 URI 为 null 时不认为相同。
 /// </summary>
@@ -389,7 +389,7 @@ public partial class TokenRecoveryExecutor
  }
 
 /// <summary>
- // /说明：原 <c>WaitForTaskAsync</c>（等待者在自身 CT 取消时提前脱离共享刷新任务）已随
+ /// MT-05 说明：原 <c>WaitForTaskAsync</c>（等待者在自身 CT 取消时提前脱离共享刷新任务）已随
 /// 「条目即任务」改造一并移除 —— 现在所有等待者与赢者 await 同一个 <see cref="Task"/>，
 /// 共享刷新不受任一调用方取消影响（取消隔离语义保持一致），异常也必然被观察。
 /// 移除后同时消除了 ns2.0 路径 <c>Task.Delay(Timeout.Infinite, ct)</c> 的取消注册滞留

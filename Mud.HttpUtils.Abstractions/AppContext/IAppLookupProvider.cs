@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 以<b>外部标识</b>（external id）反查应用标识（appKey）的查询契约。
+/// F-4：以<b>外部标识</b>（external id）反查应用标识（appKey）的查询契约。
 /// </summary>
 /// <remarks>
 /// <para><b>典型场景</b>：第三方回调（如企业微信 SuiteId、开放平台 suite_ticket 推送）只携带外部标识，

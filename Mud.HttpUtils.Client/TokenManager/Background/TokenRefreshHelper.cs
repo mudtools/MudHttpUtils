@@ -6,7 +6,7 @@ namespace Mud.HttpUtils;
 internal static class TokenRefreshHelper
 {
 /// <summary>
-// 后台刷新注册守卫的单一实现：<see cref="ITokenManager.SupportsBackgroundRefresh"/>
+/// SR-M4（P3.2，D14）后台刷新注册守卫的单一实现：<see cref="ITokenManager.SupportsBackgroundRefresh"/>
 /// 为 false 的管理器静默跳过并记日志。两个后台服务（net6+ <c>TokenRefreshHostedService</c> 与
 /// netstandard2.0 <see cref="TokenRefreshBackgroundService"/>）共用，消除双实现行为漂移（单一真相原则）。
 /// </summary>
@@ -34,7 +34,7 @@ internal static class TokenRefreshHelper
 /// 刷新所有已注册的令牌管理器，返回是否应继续后台刷新调度。
 /// </summary>
 /// <remarks>
- // ：<see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c> 时任一管理器刷新失败即
+ /// P1.6（TK-10）：<see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c> 时任一管理器刷新失败即
 /// 返回 <c>false</c>（停止调度）；为 <c>false</c> 时记录错误并继续，返回 <c>true</c>。
 /// 本重载为单次调用的简便形式（内部使用临时状态），供无需跨调度周期保留"连续失败计数"的调用方使用。
 /// </remarks>
@@ -88,7 +88,7 @@ internal static class TokenRefreshHelper
  MudHttpClientLog.TokenRefreshCompleted(logger, kvp.Key);
  }
  }
-// 调用方取消（BackgroundService Dispose / 宿主 stoppingToken）不是"刷新失败"——
+// M7-HC-04：调用方取消（BackgroundService Dispose / 宿主 stoppingToken）不是"刷新失败"——
 // 原样上抛交由调用方按优雅关闭口径处理（Background 回调与 Hosted RunLoopAsync 均已单独 catch OCE），
 // 不得落入下方通用 catch 被记为 Error（TokenRefreshFailed）或在 StopOnError 下误触发停止调度。
 // when 过滤确保管理器内部超时等"自身取消"（本 CT 未触发）仍按普通失败计数。

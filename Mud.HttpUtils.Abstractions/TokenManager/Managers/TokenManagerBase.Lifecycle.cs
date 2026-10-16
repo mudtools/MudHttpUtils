@@ -19,7 +19,7 @@ public abstract partial class TokenManagerBase
     // 2. _keyedLockTable.Dispose() 与 KeyedLockTable 内部"不 Dispose SemaphoreSlim"决策一致：
     //    SemaphoreSlim.Dispose 与在途 WaitAsync/Release 并存会抛 ObjectDisposedException，
     //    破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
-    // Dispose 链重构：可重入 + 每步幂等。
+    // SR-H1（P1.3，D3）Dispose 链重构：可重入 + 每步幂等。
     // 原实现第一行 if (_disposed) return; 在派生类（如 UserTokenManagerBase）先行置位 _disposed 后
     // 调 base.Dispose 时直接早退，导致基类维护 Timer / 锁表 / 缓存永不释放（修复引入的回归）。
     // 新契约（写入基类 XML 文档，见本类 remarks）：
@@ -40,7 +40,7 @@ public abstract partial class TokenManagerBase
     }
 
     /// <summary>
-    /// 测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
+    /// SR-H1（P1.3）测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
     /// </summary>
     internal bool TimersActive => !_timersStopped;
 
@@ -51,17 +51,17 @@ public abstract partial class TokenManagerBase
     internal bool IsDisposed => _disposed;
 
     /// <summary>
-    /// 测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。
+    /// SR-M5（P3.3）测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。
     /// </summary>
     internal int CacheCountInternal => _tokenCache.Count;
 
     /// <summary>
-    /// 测试观测钩子：当前是否已置下"待 LRU 收敛"脏标记（常态超限应置位、锁内不应已收敛）。
+    /// R-P2-03 测试观测钩子：当前是否已置下"待 LRU 收敛"脏标记（常态超限应置位、锁内不应已收敛）。
     /// </summary>
     internal bool CompactRequestedForTest => Volatile.Read(ref _compactRequested) == 1;
 
     /// <summary>
-    /// 测试观测钩子：在<b>测试线程</b>上同步执行一次维护回调（等价于定时器触发一次），
+    /// R-P2-03 测试观测钩子：在<b>测试线程</b>上同步执行一次维护回调（等价于定时器触发一次），
     /// 使"锁外收敛"可被确定性断言，而不必等待真实定时器周期。
     /// </summary>
     internal void RunMaintenanceForTest() => CleanupExpiredTokens(null);

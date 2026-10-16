@@ -131,7 +131,7 @@ internal static class AotDtoCoverageAnalyzer
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
-        //  语法级预筛前移：无 [HttpClientApi] 文本的项目（如纯 DTO 项目）
+        // [F-2c 修复·B-4] 语法级预筛前移：无 [HttpClientApi] 文本的项目（如纯 DTO 项目）
         // 直接返回，成本 O(文本 token) 且按 SyntaxTree 缓存（见 SyntaxPrefilter）。
         // 保守性：目标接口必然在源文本中以标识符形式出现特性名，别名/完全限定/生成文件均含目标 token。
         if (!SyntaxPrefilter.MayContain(compilation, "HttpClientApi"))
@@ -180,7 +180,7 @@ internal static class AotDtoCoverageAnalyzer
                 if (interfaceSymbol == null)
                     continue;
 
-                //  两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较。
+                // [F-2c] 两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较。
                 // 语义与原全量符号比较逐条一致（名字不匹配的属性精确比较必为 false）。
                 var hasHttpClientApi = interfaceSymbol.GetAttributes()
                     .Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
@@ -367,7 +367,7 @@ internal static class AotDtoCoverageAnalyzer
             var root = syntaxTree.GetRoot();
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
-                //  纯语法属性名预检：特性名文本不含目标标记的类型声明
+                // [F-2b 修复·B-2] 纯语法属性名预检：特性名文本不含目标标记的类型声明
                 // 跳过 GetDeclaredSymbol（昂贵）。2000+ 类型的项目 >99% 在文本层即被跳过。
                 if (!SyntaxPrefilter.MayHaveAttribute(typeDecl, "HttpJsonSerializable"))
                     continue;
@@ -571,7 +571,7 @@ internal static class AotDtoCoverageAnalyzer
         // 扫描引用程序集中的 JsonSerializerContext 子类
         foreach (var reference in compilation.References)
         {
-            //  CompilationReference（IDE 项目引用，内容随击键变化）不入静态缓存，直接扫描；
+            // [F-1] CompilationReference（IDE 项目引用，内容随击键变化）不入静态缓存，直接扫描；
             // PortableExecutableReference 走「Display + MVID」键控的静态缓存，仅首次付费。
             if (reference is CompilationReference compRef)
             {

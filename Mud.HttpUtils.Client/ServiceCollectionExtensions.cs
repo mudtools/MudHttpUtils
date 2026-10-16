@@ -123,7 +123,7 @@ public static class HttpClientServiceCollectionExtensions
 // TracingDelegatingHandler 本身无状态（所有数据从 request 参数获取），新实例不增加运行时开销。
  httpClientBuilder.AddHttpMessageHandler(() => new TracingDelegatingHandler());
 
- // C5）：默认注册敏感字段异常擦除器 —— 未注册时 ApiException 会长期持有
+ // R-P2-05（C5）：默认注册敏感字段异常擦除器 —— 未注册时 ApiException 会长期持有
 // 请求体 / 响应体明文（含 access_token、password、client_secret 等），随异常日志与 APM 外泄。
 // TryAddSingleton 语义：宿主先显式注册 IExceptionRedactor 时以其为准。
  services.TryAddSingleton<IExceptionRedactor, DefaultSensitiveFieldExceptionRedactor>();
@@ -198,7 +198,7 @@ public static class HttpClientServiceCollectionExtensions
  if (builder == null)
  throw new ArgumentNullException(nameof(builder));
 
-// 登记显式 opt-in（按容器 + 客户端名），使严格模式自动接线跳过该客户端；
+// M6-HC-03：登记显式 opt-in（按容器 + 客户端名），使严格模式自动接线跳过该客户端；
 // 本调用的 ConfigurePrimaryHttpMessageHandler 追加在自动配置之后（后者胜出），双保险幂等。
  lock (SsrfExplicitOptInFor(builder.Services))
  {
@@ -216,7 +216,7 @@ public static class HttpClientServiceCollectionExtensions
  string clientName,
  bool setAsDefault)
  {
-// 重复注册同一 clientName 时，keyed 路径（AddKeyedSingleton，后者胜）与非 keyed 默认路径
+// MT-23：重复注册同一 clientName 时，keyed 路径（AddKeyedSingleton，后者胜）与非 keyed 默认路径
 // （TryAddTransient，前者胜）会解析出**不同**实例，行为不确定；同时每次重复调用都会向
 // IHttpClientFactory 的 handler 管道再叠加一个 TracingDelegatingHandler。
 // 这里只做可观测性提示（不改变既有"胜者"语义，避免引入额外破坏性变更）。
@@ -998,7 +998,7 @@ public static class HttpClientServiceCollectionExtensions
  var factory = sp.GetRequiredService<IHttpClientFactory>();
  var encryptionProvider = sp.GetService<IEncryptionProvider>();
 
-// 以编程式配置（IOptions<EnhancedHttpClientOptions>）为基线克隆出「每客户端独立实例」，
+// CFG-01：以编程式配置（IOptions<EnhancedHttpClientOptions>）为基线克隆出「每客户端独立实例」，
 // 修正原实现 new EnhancedHttpClientOptions() 丢弃全部编程式配置（RequestBodySerialization /
 // UrlResolution / JsonTypeInfoResolver 等静默失效）的反直觉行为。
 // 克隆（而非直接使用 IOptions.Value）保证后续覆盖不污染共享单例，避免多客户端串味。
@@ -1011,12 +1011,12 @@ public static class HttpClientServiceCollectionExtensions
  options.ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
  options.SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
  options.AppAccessAuthorizer = sp.GetService<IAppAccessAuthorizer>();
- // C5）：异常擦除器同样从容器解析，使 EnhancedHttpClient 路径与生成代码路径
+ // R-P2-05（C5）：异常擦除器同样从容器解析，使 EnhancedHttpClient 路径与生成代码路径
 // （DefaultHttpRequestExecutor）行为一致 —— 否则"默认擦除"只覆盖一半调用面。
 // 与相邻行同口径：服务依赖来自容器，优先级高于编程式配置。
  options.ExceptionRedactor = sp.GetService<IExceptionRedactor>();
 
-// 强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
+// CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
  _ = sp.GetService<AllowedDomainsReloader>();
 
 // 强制解析「只注册未解析」的接线组件。
@@ -1037,7 +1037,7 @@ public static class HttpClientServiceCollectionExtensions
  var appOptions = optionsMonitor.CurrentValue;
  if (appOptions.Clients.TryGetValue(clientName, out var clientOptions))
  {
-// 覆盖是单向的（配置节未设置时也会被重置为 false），记录 Debug 便于排查。
+// CFG-19：覆盖是单向的（配置节未设置时也会被重置为 false），记录 Debug 便于排查。
  if (options.AllowCustomBaseUrls != clientOptions.AllowCustomBaseUrls && options.Logger != null)
  {
  MudHttpClientLog.AllowCustomBaseUrlsOverridden(
@@ -1210,7 +1210,7 @@ public static class HttpClientServiceCollectionExtensions
 
 // 委托签名只接受 tokenManagerKey（无 IServiceProvider），故以工厂委托捕获 sp；
 // TryAddSingleton 与 AddTokenManagerRegistry 的既有语义一致（不覆盖宿主注册）。
- // 诊断 A：TryAdd 会静默丢弃后注册者，此处登记"被忽略"事实，由启动期校验告警（EventId 194）。
+ // B-1 诊断 A：TryAdd 会静默丢弃后注册者，此处登记"被忽略"事实，由启动期校验告警（EventId 194）。
  NoteTokenManagerRegistryRegistrationSuppressed(services);
  services.TryAddSingleton<ITokenManagerRegistry>(sp =>
  new DelegateTokenManagerRegistry(tokenManagerKey =>
@@ -1267,7 +1267,7 @@ public static class HttpClientServiceCollectionExtensions
 // 避免 per-app 能力因缺少一次 AddCurrentUserContext 调用而静默失效。
  services.AddMudHttpAppContextHolder();
 
-// 启动期校验（DefaultClientName 指向无 BaseAddress 客户端 → Fail）+ 后置警告（其余跳过项）。
+// CFG-02：启动期校验（DefaultClientName 指向无 BaseAddress 客户端 → Fail）+ 后置警告（其余跳过项）。
  services.TryAddSingleton<IValidateOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsValidator>();
  services.TryAddSingleton<IPostConfigureOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsPostConfigure>();
 
@@ -1545,7 +1545,7 @@ public static class HttpClientServiceCollectionExtensions
 // ITokenCache<T> 的 DI 回退注册（显式注册优先，自动桥接 ITokenStore）。
  services.TryAddTokenCacheStoreFallback();
 
- // 诊断 B）：同类型重复注册会静默叠加（services.Add 非 TryAdd），登记后由启动期校验告警（EventId 195）。
+ // B-1（诊断 B）：同类型重复注册会静默叠加（services.Add 非 TryAdd），登记后由启动期校验告警（EventId 195）。
  if (services.Any(d => d.ServiceType == typeof(TManager)))
  GetOrCreateTokenRegistrationDiagnostics(services).DuplicatedManagerTypes.Add(typeof(TManager));
 
@@ -1630,7 +1630,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
-// 注册令牌管理器查找注册表：401 恢复执行器按
+/// SR-M6（P2.4，D9）注册令牌管理器查找注册表：401 恢复执行器按
 /// <see cref="TokenRecoveryContext.TokenManagerKey"/> 经 <see cref="ITokenManagerRegistry"/>
 /// 路由到正确的管理器实例（执行器跨应用共享场景的凭据错配防线）。
 /// </summary>
@@ -1647,14 +1647,14 @@ public static class HttpClientServiceCollectionExtensions
  if (resolver == null)
  throw new ArgumentNullException(nameof(resolver));
 
- // 诊断 A：TryAdd 会静默丢弃后注册者，此处登记"被忽略"事实，由启动期校验告警（EventId 194）。
+ // B-1 诊断 A：TryAdd 会静默丢弃后注册者，此处登记"被忽略"事实，由启动期校验告警（EventId 194）。
  NoteTokenManagerRegistryRegistrationSuppressed(services);
  services.TryAddSingleton<ITokenManagerRegistry>(new DelegateTokenManagerRegistry(resolver));
  return services;
  }
 
 /// <summary>
- // /诊断 C）：注册字典式 <see cref="TokenManagerKeyRegistry"/> 作为 <see cref="ITokenManagerRegistry"/>（下游私有注册表的官方替代）。
+ /// B-1（诊断 C）：注册字典式 <see cref="TokenManagerKeyRegistry"/> 作为 <see cref="ITokenManagerRegistry"/>（下游私有注册表的官方替代）。
 /// </summary>
 /// <param name="services">服务集合。</param>
 /// <param name="configure">注册键 → 管理器映射的配置委托（可选；重复键在此阶段检出）。</param>
@@ -1698,7 +1698,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
- // /诊断 A）：登记「<see cref="ITokenManagerRegistry"/> 已注册、本次注册被 TryAdd 忽略」的事实
+ /// B-1（诊断 A）：登记「<see cref="ITokenManagerRegistry"/> 已注册、本次注册被 TryAdd 忽略」的事实
 /// （注册期无日志器，交由启动期校验输出 EventId 194 告警）。
 /// </summary>
  private static void NoteTokenManagerRegistryRegistrationSuppressed(IServiceCollection services)
@@ -1710,7 +1710,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
- // /诊断 A/B）：注册期诊断事实的按容器暂存（随 <see cref="IServiceCollection"/> 隔离，不跨容器污染）。
+ /// B-1（诊断 A/B）：注册期诊断事实的按容器暂存（随 <see cref="IServiceCollection"/> 隔离，不跨容器污染）。
 /// </summary>
  private static TokenManagerRegistrationDiagnostics GetOrCreateTokenRegistrationDiagnostics(IServiceCollection services)
  {
@@ -1775,7 +1775,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
-/// 租户维度（<see cref="CredentialToken"/>）回退缓存的解析期决策。
+/// B-2：租户维度（<see cref="CredentialToken"/>）回退缓存的解析期决策。
 /// </summary>
  private static ITokenCache<CredentialToken> ResolveCredentialTokenCacheFallback(IServiceProvider serviceProvider)
  {
@@ -1794,7 +1794,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
-/// 用户维度（<see cref="UserTokenInfo"/>）回退缓存的解析期决策。
+/// B-2：用户维度（<see cref="UserTokenInfo"/>）回退缓存的解析期决策。
 /// </summary>
  private static ITokenCache<UserTokenInfo> ResolveUserTokenCacheFallback(IServiceProvider serviceProvider)
  {
@@ -2076,7 +2076,7 @@ public static class HttpClientServiceCollectionExtensions
  "请调用 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()。");
  }
 
- // 诊断 C）：TokenManagerKeyRegistry 重复键检查 —— 默认 Error（随本次校验一起抛出），
+ // B-1（诊断 C）：TokenManagerKeyRegistry 重复键检查 —— 默认 Error（随本次校验一起抛出），
 // 逃生开关（AllowDuplicateTokenManagerKeys = true）降级为 Warning。
  if (serviceProvider.GetService<ITokenManagerRegistry>() is TokenManagerKeyRegistry keyRegistry && keyRegistry.DuplicateKeys.Count > 0)
  {
@@ -2110,7 +2110,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
- // /语义（2026-10-13）：检测「已注册令牌存储（持久化 SPI）但因显式 <c>ITokenCache&lt;T&gt;</c>
+ /// B-2 语义（2026-10-13）：检测「已注册令牌存储（持久化 SPI）但因显式 <c>ITokenCache&lt;T&gt;</c>
 /// 覆盖而未自动桥接」的状态并给出指引（EventId 191，信息级）。
 /// </summary>
 /// <remarks>

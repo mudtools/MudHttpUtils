@@ -31,13 +31,13 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 // 即使 CTS 已 Dispose 也不会因访问 .Token 抛 ObjectDisposedException（消除竞态窗口）。
  private readonly CancellationTokenSource _disposeCts = new();
  private readonly CancellationToken _disposeToken;
-// ：Timer 交换加锁；_timer 读取处 Volatile.Read。
+// SR-L3（P3.6，D14）：Timer 交换加锁；_timer 读取处 Volatile.Read。
  private readonly object _timerLock = new();
  private Timer? _timer;
  private int _running; // TK-11）重入闸：同一时刻只允许一个刷新编排在运行
  private bool _disposed;
 
-// 主动停止（StopOnError / MaxConsecutiveFailures）后的可观测与恢复通道。
+// L-9：主动停止（StopOnError / MaxConsecutiveFailures）后的可观测与恢复通道。
  private readonly SemaphoreSlim _restartGate = new(1, 1);
  private volatile bool _stopped;
 
@@ -49,7 +49,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 /// 初始化 TokenRefreshBackgroundService 实例。
 /// </summary>
 /// <remarks>
- // /P0）：internal —— 容器默认构造选择要求「唯一公共构造」，
+ /// TMX-19（P0）：internal —— 容器默认构造选择要求「唯一公共构造」，
 /// 多个公共构造会使 DI 解析抛 "The following constructors are ambiguous"。
 /// 外部直接 <c>new</c> 场景请使用唯一公共构造（<see cref="TokenRefreshBackgroundService(IOptions{TokenRefreshBackgroundOptions}, ILogger{TokenRefreshBackgroundService}?)"/>）。
 /// </remarks>
@@ -118,7 +118,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
  if (tokenManager == null)
  throw new ArgumentNullException(nameof(tokenManager));
 
-// 注册守卫统一：经 TokenRefreshHelper.TryRegisterTokenManager 单一实现，
+// SR-M4（P3.2，D14）注册守卫统一：经 TokenRefreshHelper.TryRegisterTokenManager 单一实现，
 // 与 TokenRefreshHostedService（net6+）同源，消除 ns2.0 / net6+ 双实现行为漂移。
  TokenRefreshHelper.TryRegisterTokenManager(_tokenManagers, tokenManager, name, _logger);
  }
@@ -142,8 +142,8 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
  MudHttpClientLog.TokenRefreshNoManagersRegistered(_logger);
  }
 
- // TK-11）StartAsync 幂等：先停止旧 Timer 再创建新 Timer，避免重复启动导致多 Timer 并发刷新
-// Timer 交换加锁：并发 StartAsync 下双 Timer 交换竞态（读旧引用/泄漏）消除。
+ // P1.6（TK-11）StartAsync 幂等：先停止旧 Timer 再创建新 Timer，避免重复启动导致多 Timer 并发刷新
+// SR-L3（P3.6，D14）Timer 交换加锁：并发 StartAsync 下双 Timer 交换竞态（读旧引用/泄漏）消除。
  lock (_timerLock)
  {
  var oldTimer = _timer;
@@ -205,7 +205,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
  private async void RefreshTokenCallback(object? state)
  {
- // TK-11）重入闸：Timer 可能在上一轮刷新尚未结束时再次触发，
+ // P1.6（TK-11）重入闸：Timer 可能在上一轮刷新尚未结束时再次触发，
 // 通过 Interlocked.CompareExchange 保证同一时刻只有一个刷新编排在运行，
 // 避免共享令牌被并发刷新或刷新风暴。
  if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -222,7 +222,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
  {
 // 置位 IsStopped，使运维侧可探测"已停止调度"并可通过 RestartAsync 恢复。
  _stopped = true;
-// /：回调读 Timer 引用经 Volatile.Read（锁外安全读）
+// SR-L3：回调读 Timer 引用经 Volatile.Read（锁外安全读）
  Volatile.Read(ref _timer)?.Change(Timeout.Infinite, Timeout.Infinite);
  }
  }
@@ -251,7 +251,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
  return;
 
  _disposed = true;
-// 顺序为 置位 → Cancel（取消在途刷新的 HTTP 调用）→ 停表 → Dispose CTS。
+// M7-HC-04：顺序为 置位 → Cancel（取消在途刷新的 HTTP 调用）→ 停表 → Dispose CTS。
 // Cancel 先于 CTS.Dispose：在途回调持有的 _disposeToken（构造期捕获）在 CTS 释放后
 // 读取 IsCancellationRequested 仍安全；若反序则取消信号丢失，拖尾请求无法被中断。
  _disposeCts.Cancel();

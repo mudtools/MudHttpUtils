@@ -156,7 +156,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
 
     /// <inheritdoc />
     /// <remarks>
-    /// G3：<b>改为 <c>virtual</c></b>（二进制兼容加法，仅扩展 vtable）。
+    /// <b>改为 <c>virtual</c></b>（二进制兼容加法，仅扩展 vtable）。
     /// 此前"查询入口是 virtual、注册入口不是"的不对称，使派生类覆盖查询入口后
     /// <c>RegisterApp</c> 仍写入基类私有注册表 ⇒ 形成<b>影子注册表</b>，
     /// 派生类的查询视图看不到基类注册项，只能整体弃用基类继承。
@@ -312,7 +312,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        // 原实现为 TryGetValue（判存在）+ 索引器赋值，属典型 check-then-act。
+        // MT-08：原实现为 TryGetValue（判存在）+ 索引器赋值，属典型 check-then-act。
         // 并发窗口内若 RemoveApp 抢先执行，索引器赋值会"复活"一个已被删除的应用
         // （已撤销的凭据重新可被取用）。TryUpdate 以旧值为 CAS 条件原子替换。
         if (!_registry.TryGet(appKey, out var existing))
@@ -443,7 +443,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
 
     /// <inheritdoc />
     /// <remarks>
-    /// 修复：标记为 virtual，允许子类（如 FeishuAppManager）override 而非使用 new 隐藏。
+    /// MA-03 修复：标记为 virtual，允许子类（如 FeishuAppManager）override 而非使用 new 隐藏。
     /// 此前该方法非 virtual，子类使用 new 隐藏后，通过 IAppManager 接口调用时仍执行基类方法，导致 FeishuAppManager 的默认应用解析逻辑被绕过。
     /// B2：二次读取容忍"默认应用刚被移除"的并发窗口，避免把"默认应用已被移除"
     /// 误报为"未找到应用标识 xxx"。
@@ -827,7 +827,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// 从已实例化应用（注册表）整体重建外部标识反查索引。
+    /// F-4：从已实例化应用（注册表）整体重建外部标识反查索引。
     /// </summary>
     /// <remarks>
     /// <list type="bullet">

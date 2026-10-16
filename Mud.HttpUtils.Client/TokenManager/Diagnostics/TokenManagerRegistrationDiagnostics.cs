@@ -10,7 +10,7 @@ using System.Collections.Generic;
 namespace Mud.HttpUtils;
 
 /// <summary>
-// /诊断 A/B）：令牌管理器注册期诊断事实的按容器暂存（注册期无日志器，
+/// B-1（诊断 A/B）：令牌管理器注册期诊断事实的按容器暂存（注册期无日志器，
 /// 由 <c>AppManagementStartupValidator</c> 在启动期消费并输出 EventId 194/195 告警）。
 /// </summary>
 /// <remarks>

@@ -8,7 +8,7 @@ using System.Net;
 namespace Mud.HttpUtils;
 
 /// <summary>
-// /C1）OAuth2 端点的 HTTPS 安全校验器：Validator 与运行期共用的唯一判定入口。
+/// P3.1（C1）OAuth2 端点的 HTTPS 安全校验器：Validator 与运行期共用的唯一判定入口。
 /// 收敛 <see cref="OAuth2OptionsValidator"/>（启动期 StartsWith 前缀检查）与
 /// <see cref="StandardOAuth2TokenManager.ValidateEndpointHttps"/>（运行期 localhost 豁免）的不一致，
 /// 统一为：<c>Uri.TryCreate</c> + DNS 主机名解析 + <c>IsLoopback</c>。

@@ -811,7 +811,7 @@ public abstract partial class EnhancedHttpClient
 
  try
  {
-// 截断日志照旧（:1511 之前已写入），但反序列化必须读全量 ——
+// M7-HC-01：截断日志照旧（:1511 之前已写入），但反序列化必须读全量 ——
 // 以"32KB 截断缓冲 + 原始流剩余"顺序拼接（组合流），杜绝以截断 JSON 做业务反序列化
 //（>32KB 合法响应在 Trace 开启时必然 JsonException，日志级别改变业务行为）。
  using var responseContent = new StreamContent(

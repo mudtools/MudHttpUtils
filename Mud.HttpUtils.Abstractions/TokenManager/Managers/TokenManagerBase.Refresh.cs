@@ -71,7 +71,7 @@ public abstract partial class TokenManagerBase
             return probedToken.AccessToken!;
         }
 
-        // 修复：使用 TryGetValidToken 合并 IsTokenValid + TryGet 为单次查找，避免冗余的双字典访问
+        // TM-02 修复：使用 TryGetValidToken 合并 IsTokenValid + TryGet 为单次查找，避免冗余的双字典访问
         if (TryGetValidToken(scopeKey, out var fastToken))
         {
             return fastToken!.AccessToken!;
@@ -178,12 +178,12 @@ public abstract partial class TokenManagerBase
                     throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
 
                 UpdateToken(scopeKey, token);
-                // 修复：token 已是有效凭证，无需再次字典查找，直接返回。
+                // TM-05 修复：token 已是有效凭证，无需再次字典查找，直接返回。
                 return token.AccessToken!;
             }
             finally
             {
-                // 租约释放按所有权校验（compare-and-del），失败吞异常（不得掩盖刷新结果 / 阻断主路径）
+                // U-3：租约释放按所有权校验（compare-and-del），失败吞异常（不得掩盖刷新结果 / 阻断主路径）
                 if (leaseAcquired && refreshLeaseHandle != null)
                 {
                     try
@@ -259,7 +259,7 @@ public abstract partial class TokenManagerBase
 
                 return token;
             }
-            // 修复：取消操作必须立即传播，不进入重试/降级逻辑。
+            // NEW-TM-12 修复：取消操作必须立即传播，不进入重试/降级逻辑。
             // 原实现将 OperationCanceledException 视为普通刷新失败，可能错误返回 FallbackToken，
             // 违背 .NET 异步编程规范（取消应立即传播，不应被业务逻辑拦截）。
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -309,7 +309,7 @@ public abstract partial class TokenManagerBase
             }
         }
 
-        // 修复：移除不可达的死代码。
+        // NEW-TM-05 修复：移除不可达的死代码。
         // while 循环内 catch 块在达到最大重试次数时必然 throw，循环永不自然退出。
         // 此处通过 throw 确保编译器控制流分析通过，且语义清晰。
         throw new InvalidOperationException("令牌刷新失败：达到最大重试次数。");

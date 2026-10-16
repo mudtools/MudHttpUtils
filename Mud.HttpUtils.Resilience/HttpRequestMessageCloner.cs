@@ -26,7 +26,7 @@ internal static class HttpRequestMessageCloner
 
         if (request.Content != null)
         {
-            // (2)：已有快照 → 直接复用（不再触碰源内容，消除"第 N 次克隆空体"）
+            // M5-HC-05 (2)：已有快照 → 直接复用（不再触碰源内容，消除"第 N 次克隆空体"）
             if (TryGetSnapshot(request, out var snapshot))
             {
                 clone.Content = new ByteArrayContent(snapshot);
@@ -84,7 +84,7 @@ internal static class HttpRequestMessageCloner
     }
 
     /// <summary>
-    /// (1)：重试不可行性预判（声明超限 / 不可重放且无长度）。
+    /// M5-HC-05 (1)：重试不可行性预判（声明超限 / 不可重放且无长度）。
     /// 命中时调用方应走 ExecuteWithoutRetryAsync（保留超时/熔断）。
     /// </summary>
     internal static bool ShouldSkipRetryForContent(HttpRequestMessage request, long maxCloneContentSize, out string reason)
@@ -259,7 +259,7 @@ internal static class HttpRequestMessageCloner
         if (total > maxBytes)
             return (ms.ToArray(), true, false);
 
-        // 兜底守卫：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"一次性源流已耗尽"，
+        // M6-HC-11 兜底守卫：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"一次性源流已耗尽"，
         // 返回失败以阻止缓存空快照（避免重试静默发送空体）。
         if (total == 0 && !declared.HasValue)
             return (Array.Empty<byte>(), false, true);

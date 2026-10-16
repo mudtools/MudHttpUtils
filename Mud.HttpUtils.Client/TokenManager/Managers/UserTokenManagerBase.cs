@@ -30,7 +30,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 // 后锁键为 userId 或 userId + "\u001F" + scopeKey 复合键，按作用域隔离。
  private readonly KeyedLockTable _userLockTable = new();
 
-// 用户级刷新闸：锁键为**裸 userId**（跨作用域共享）。
+// TR-06（R-P0-03）用户级刷新闸：锁键为**裸 userId**（跨作用域共享）。
 // 缺陷（B3）：复合键锁只隔离到"用户 × 作用域"，而刷新调用 RefreshUserTokenAsync(userId) 是
 // **用户级**的 —— 同一用户两个作用域并发时持有两把不同的复合键锁，却会并发使用同一个
 // refresh_token，在轮换型 IdP 下触发 invalid_grant / 令牌丢失，
@@ -71,7 +71,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  private readonly Timer? _userMaintenanceTimer;
 
 /// <summary>
-/// 退避状态（连续失败次数 + 截止时间）。值类型，无堆分配。
+/// TMX-06：退避状态（连续失败次数 + 截止时间）。值类型，无堆分配。
 /// </summary>
  private readonly struct BackoffState
  {
@@ -263,7 +263,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  {
  if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
 
-// 索引快路径（O(该用户条目数)）→ 未命中回退全量前缀扫描（语义不劣于引入索引前）。
+// R-P2-04：索引快路径（O(该用户条目数)）→ 未命中回退全量前缀扫描（语义不劣于引入索引前）。
  return Task.FromResult(AnyUserEntrySatisfies(userId, IsUserTokenValid));
  }
 
@@ -289,7 +289,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
 /// <inheritdoc />
 /// <remarks>
-// ：有 scopes 重载按 userId × scope 复合键隔离缓存与锁，
+/// SR-M1（P2.2，D7）：有 scopes 重载按 userId × scope 复合键隔离缓存与锁，
 /// 修复"先以 ['read:admin'] 获取的令牌被后续 ['read:basic'] 调用直接复用"的权限范围错配。
 /// </remarks>
  public virtual async Task<string?> GetOrRefreshTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
@@ -308,7 +308,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
-// 核心路径：<paramref name="cacheKeyOverride"/> 为 null 时键 = userId（默认作用域），
+/// SR-M1（P2.2，D7）核心路径：<paramref name="cacheKeyOverride"/> 为 null 时键 = userId（默认作用域），
 /// 非空时键 = userId + "\u001F" + scopeKey 复合键。缓存与 _userLockTable 键同步隔离。
 /// </summary>
  private async Task<string?> GetOrRefreshTokenCoreAsync(string? userId, string? cacheKeyOverride, CancellationToken cancellationToken)
@@ -333,7 +333,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  var cachedInfo = GetUserTokenFromCache(cacheKey);
  if (IsUserTokenValid(cachedInfo))
  {
-// /触发面收敛：删除缓存命中路径上的 TryCleanupUserLock。
+// SR-C1触发面收敛：删除缓存命中路径上的 TryCleanupUserLock。
 // 锁回收由三重承担：① 缓存驱逐回调 OnUserTokenEvicted → TryRetire；
 // ② 失败/退避分支显式 TryRetire；③ 宿主或派生类可调用 CleanupExpiredUserTokens 兜底
 // （框架不保证调用：用户令牌管理器不启动租户维护 Timer，见 SupportsTenantMaintenance）。
@@ -364,11 +364,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 // 本次刷新的结果必须被丢弃，否则用户已登出但令牌被写回（"令牌复活"）。
 // 注：代际捕获刻意保留在**用户闸之前**（与既有语义一致，更保守）——
 // 闸门等待期间发生的登出同样使本次写回被丢弃。
- // 补强：先登记该键，使"刷新在途时登出"也能被作废（否则登出的前缀清扫扫不到未落缓存的键）。
+ // R-P0-03 补强：先登记该键，使"刷新在途时登出"也能被作废（否则登出的前缀清扫扫不到未落缓存的键）。
  EnsureWriteGeneration(cacheKey);
  var generationAtStart = CurrentWriteGeneration(cacheKey);
 
-// 用户级刷新闸：同一 userId 的并发刷新串行化（refresh_token 轮换安全）。
+// TR-06（R-P0-03）用户级刷新闸：同一 userId 的并发刷新串行化（refresh_token 轮换安全）。
 // 签名零变化：RefreshUserTokenAsync(string, CancellationToken) 抽象签名不变，串行化由基类承担。
  using (var userGate = await _userRefreshGate.AcquireAsync(userId!, cancellationToken).ConfigureAwait(false))
  {
@@ -449,7 +449,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
 /// <summary>
 /// 从缓存中移除用户令牌。
-// ：userId 为裸 userId 时同步清除该用户<b>全部作用域</b>条目（登出语义）。
+/// SR-M1（P2.2，D7）：userId 为裸 userId 时同步清除该用户<b>全部作用域</b>条目（登出语义）。
 /// </summary>
 /// <param name="userId">用户标识。</param>
  protected void RemoveUserTokenFromCache(string userId)
@@ -624,7 +624,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
- // /补强：确保 cacheKey 已在代际表中登记（不改变当前值）。
+ /// TR-04 补强（R-P0-03）：确保 cacheKey 已在代际表中登记（不改变当前值）。
 /// </summary>
 /// <remarks>
 /// 原实现仅在"移除缓存条目"时递增代际，而登出的 scoped 清扫是**按缓存键前缀**扫描的；
@@ -635,7 +635,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  => _writeGenerations.GetOrAdd(cacheKey, static _ => new StrongBox<long>(0));
 
 /// <summary>
-/// 测试观测钩子（经 InternalsVisibleTo）—— 写入代际表当前条目数，
+/// TR-04：测试观测钩子（经 InternalsVisibleTo）—— 写入代际表当前条目数，
 /// 供断言 CleanupOrphanedLocks 清扫后代际表不无界增长。
 /// </summary>
  internal int WriteGenerationCountForTest => _writeGenerations.Count;
@@ -704,17 +704,17 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  protected int CachedUserTokenCount => _userTokenCache.Count;
 
 /// <summary>
-//测试观测钩子：用户锁表当前条目数（经 InternalsVisibleTo 供测试断言锁条目不 churn）。
+/// SR-C1测试观测钩子：用户锁表当前条目数（经 InternalsVisibleTo 供测试断言锁条目不 churn）。
 /// </summary>
  internal int UserLockTableCountForTest => _userLockTable.Count;
 
 /// <summary>
- // 测试观测钩子：用户级刷新闸当前条目数（断言闸条目在刷新结束后被退休回收，不无界增长）。
+ /// TR-06（R-P0-03）测试观测钩子：用户级刷新闸当前条目数（断言闸条目在刷新结束后被退休回收，不无界增长）。
 /// </summary>
  internal int UserRefreshGateCountForTest => _userRefreshGate.Count;
 
 /// <summary>
- // /诊断/测试观测钩子：用户令牌缓存是否<b>实际</b>启用了加密包装。
+ /// R-P1-06 诊断/测试观测钩子：用户令牌缓存是否<b>实际</b>启用了加密包装。
 /// </summary>
 /// <remarks>
 /// DI 层据此在"管理器回退到明文缓存"时发出显式告警 —— 以实例状态判定，不做构造函数签名反射
@@ -725,7 +725,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 /// <inheritdoc />
  public override Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
  {
- // TK-14）语义收敛：用户令牌管理器无法仅凭 scopes 定位到具体用户，租户级
+ // P2.8（TK-14）语义收敛：用户令牌管理器无法仅凭 scopes 定位到具体用户，租户级
 // InvalidateTokenAsync 对用户令牌无意义。若实现静默调用 base（清空共享凭据缓存）或
 // 紧凑用户缓存，会产生"调用方以为用户令牌已失效，实则其他用户令牌也被连带影响"的歧义。
 //
@@ -846,7 +846,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
- // /用户级对称入口）仅失效指定用户 + 作用域条目的<b>访问令牌字段</b>，
+ /// TR-02（用户级对称入口）仅失效指定用户 + 作用域条目的<b>访问令牌字段</b>，
 /// 保留 RefreshToken 等其余字段，供 401 恢复链路自愈使用（整条移除会把 refresh_token 一并销毁，
 /// 迫使恢复降级为重新授权）。同时递增写入代际，丢弃并发在途刷新的写回。
 /// 空条目为 no-op（无需补偿）。
@@ -871,7 +871,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
- // /受保护入口）仅失效指定用户（与作用域）条目的<b>访问令牌字段</b>，
+ /// TR-02（受保护入口）仅失效指定用户（与作用域）条目的<b>访问令牌字段</b>，
 /// 保留 RefreshToken 等其余字段 —— 供派生类实现"失效但不撤销 IdP 侧凭据"的语义使用。
 /// </summary>
 /// <remarks>
@@ -917,7 +917,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
- // /内部写入：与 <see cref="UpdateUserTokenCache"/> 相同的过期语义（绝对过期 = 剩余有效期），
+ /// TR-02 内部写入：与 <see cref="UpdateUserTokenCache"/> 相同的过期语义（绝对过期 = 剩余有效期），
 /// 但写入方为本管理器的失效操作（非刷新结果），不重置 LastRefreshedAt。
 /// </summary>
  private void UpdateUserTokenCachePreservingExpiry(string key, UserTokenInfo tokenInfo)
@@ -937,10 +937,10 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken) || tokenInfo.AccessTokenExpireTime <= 0)
  return false;
 
- // TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
+ // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
 // 改用 TTL 感知的 4 参重载，避免短 TTL 用户令牌"刚签发即被判为需刷新"
 // （原 3 参版本下，TTL=300s 且阈值=300s 的令牌 expire-threshold <= now 恒成立，缓存永不命中）。
- // P1）：直接透传 IdP 填充的 IssuedAt，缺失（<=0）时由 EffectiveThresholdSeconds
+ // TMX-22（P1）：直接透传 IdP 填充的 IssuedAt，缺失（<=0）时由 EffectiveThresholdSeconds
 // 退化为配置阈值。此前回退 LastRefreshedAt/CreatedAt 的代理语义错误（CreatedAt 是记录
 // 创建时间且自动初始化为 UtcNow，并非令牌签发时间），会把临近过期令牌误判为有效。
  var now = UtcNow.ToUnixTimeMilliseconds();
@@ -948,7 +948,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
-// 构建用户 × 作用域复合缓存键：userId + US + ScopeKeyBuilder 规范化 scope 键。
+/// SR-M1（P2.2，D7）构建用户 × 作用域复合缓存键：userId + US + ScopeKeyBuilder 规范化 scope 键。
 /// 无 scopes 时不经此方法（键 = 裸 userId，保持既有键）。
 /// </summary>
  private static string GetUserCacheKey(string userId, string[] scopes)
@@ -1038,7 +1038,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
-/// 测试观测钩子（经 InternalsVisibleTo）—— 用户退避表的当前条目数。
+/// MT-06：测试观测钩子（经 InternalsVisibleTo）—— 用户退避表的当前条目数。
 /// </summary>
  internal int UserRefreshFailureCountForTest => _userRefreshFailures.Count;
 
@@ -1105,7 +1105,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
 
 /// <summary>
-//测试观测桥：暴露基类 TimersActive（internal，经 Abstractions→Client
+/// SR-H1测试观测桥：暴露基类 TimersActive（internal，经 Abstractions→Client
 /// InternalsVisibleTo 可见）供测试断言 Dispose 后 Timer 停止。
 /// </summary>
  internal bool TimersActiveForTest => base.TimersActive;
@@ -1122,7 +1122,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 // 若派生类先置 _disposed 再调 base.Dispose，基类释放会被整体跳过。
  if (!_disposed)
  {
-// /修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
+// NEW-修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
  _disposed = true;
 
  if (disposing)

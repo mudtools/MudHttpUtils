@@ -17,7 +17,7 @@ public abstract partial class TokenManagerBase
 {
     /// <summary>
     /// 触发令牌刷新失败事件。
-    /// 修复：捕获订阅者异常，避免掩盖原始令牌刷新失败的根因。
+    /// NEW-TM-04 修复：捕获订阅者异常，避免掩盖原始令牌刷新失败的根因。
     /// </summary>
     /// <param name="e">事件参数。</param>
     private void OnRefreshFailed(TokenRefreshFailedEventArgs e)

@@ -16,7 +16,7 @@ namespace Mud.HttpUtils.Attributes;
 /// 指示该属性包含敏感数据（如密码、令牌、信用卡号等），在日志记录和监控中应进行掩码处理以防止数据泄露。
 /// </para>
 /// <para>
-/// ：本特性<strong>仅对对象属性生效</strong>——<c>DefaultSensitiveDataMasker</c> 通过反射遍历
+/// <b>CFG-11</b>：本特性<strong>仅对对象属性生效</strong>——<c>DefaultSensitiveDataMasker</c> 通过反射遍历
 /// <c>Type.GetProperties()</c> 读取本特性；<c>AotSafeSensitiveDataMasker</c> 则由编译期注册驱动（忽略本特性）。
 /// </para>
 /// <para>

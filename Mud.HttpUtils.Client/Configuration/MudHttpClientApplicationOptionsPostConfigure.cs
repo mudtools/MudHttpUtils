@@ -50,7 +50,7 @@ internal sealed class MudHttpClientApplicationOptionsPostConfigure
  }
  }
 
-// 客户端名区分大小写（Ordinal）。若配置中存在仅大小写不同的多个键，
+// MT-13：客户端名区分大小写（Ordinal）。若配置中存在仅大小写不同的多个键，
 // 它们会被视为不同客户端 —— 极易误配（例如同时写 Default 与 default 时只有一个被解析到）。
 // 注意：此处迭代的是大小写敏感字典，重复实例仍会各自进入循环，故用显式分组检测。
  var caseCollisions = options.Clients.Keys

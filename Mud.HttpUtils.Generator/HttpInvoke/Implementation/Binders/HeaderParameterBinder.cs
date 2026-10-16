@@ -14,7 +14,7 @@ internal class HeaderParameterBinder : IParameterBinder
     public void GenerateBindingCode(StringBuilder codeBuilder, ParameterInfo parameter, MethodAnalysisResult methodInfo, string indent)
     {
         var headerAttr = parameter.Attributes.First(a => a.Name == HttpClientGeneratorConstants.HeaderAttribute);
-        // B-1）：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
+        // GEN-05（B-1）：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
         // 此前只读 Arguments[0]，导致 [Header(Name = "X-Tenant")] / [Header(AliasAs = "...")] 落回参数名。
         var explicitHeaderName = AttributeArgumentReader.GetString(headerAttr, AttributeArgumentReader.ResolveNamePosition(headerAttr.Name), "Name")
             ?? AttributeArgumentReader.GetString(headerAttr, null, "AliasAs");
@@ -25,7 +25,7 @@ internal class HeaderParameterBinder : IParameterBinder
         var isTokenParam = parameter.Attributes.Any(attr =>
             HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
 
-        // 令牌参数（[Token] + [Header]，且未显式给头名）的默认头名 = **令牌注入头名**
+        // G8-20：令牌参数（[Token] + [Header]，且未显式给头名）的默认头名 = **令牌注入头名**
         //（与注入路径共享 TokenMethodHelper.GetTokenHeaderName —— 有效级 Name，仅 Header/ApiKey 模式消费；
         // 未声明时回退 Authorization）。
         // 修复前：本分支读接口级 InterfaceTokenName 并把 Name 与 Scheme 字面量（"Bearer"/"Basic"）比对 ⇒

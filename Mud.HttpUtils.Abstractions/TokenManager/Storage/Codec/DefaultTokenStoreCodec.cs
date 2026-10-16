@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 内建默认编解码器：<c>{expiresInSeconds}|{token}</c>（与下游既有的"过期戳 + 令牌"形态等价，
+/// G2 内建默认编解码器：<c>{expiresInSeconds}|{token}</c>（与下游既有的"过期戳 + 令牌"形态等价，
 /// 但格式由库定义并文档化，可安全替换）。
 /// </summary>
 /// <remarks>

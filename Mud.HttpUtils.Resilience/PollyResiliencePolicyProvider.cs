@@ -78,9 +78,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private const string PolicyKeyGlobalTimeout = "global:timeout";
 
 #if NET6_0_OR_GREATER
-    // 修复：重试抖动随机数生成器（NET6+ 使用线程安全的 Random.Shared）
+    // M-1 修复：重试抖动随机数生成器（NET6+ 使用线程安全的 Random.Shared）
 #else
-    // 修复：重试抖动随机数生成器（netstandard2.0 使用 ThreadLocal 保证线程安全）
+    // M-1 修复：重试抖动随机数生成器（netstandard2.0 使用 ThreadLocal 保证线程安全）
     private static readonly System.Threading.ThreadLocal<Random> _jitterRandom =
         new(() => new Random(Guid.NewGuid().GetHashCode()));
 #endif
@@ -197,7 +197,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return Policy<TResult>
             .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
             .Or<TimeoutRejectedException>()
-            // 平台超时（HttpClient.Timeout）计入重试；用户取消（inner 为 TCE 而非 TimeoutException）排除
+            // M4-H-3：平台超时（HttpClient.Timeout）计入重试；用户取消（inner 为 TCE 而非 TimeoutException）排除
             .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
@@ -276,7 +276,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
-    /// 获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
+    /// M6-HC-22：获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
     /// 容量为 <see cref="SharedPolicyCacheFloor"/> 与 <see cref="ResilienceOptions.MaxPolicyCacheSize"/> 的较大者，
     /// 仅作 scope 基数异常膨胀时的内存兜底（见 <see cref="_sharedPolicyCache"/> 备注）。
     /// </summary>
@@ -306,7 +306,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
-    /// 按插入序淘汰最旧条目（每轮淘汰 <c>max/8</c>，至少 1 条），使缓存容量成为软上限，
+    /// M6-HC-22：按插入序淘汰最旧条目（每轮淘汰 <c>max/8</c>，至少 1 条），使缓存容量成为软上限，
     /// 避免原实现"超限即完全放弃缓存"导致的熔断计数丢失与策略实例每次重建。
     /// </summary>
     /// <param name="cache">目标缓存。</param>
@@ -354,7 +354,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         var policyKey = scope == "global" ? PolicyKeyGlobalTimeout : $"{scope}:timeout";
 
-        // 超时策略可配置（默认 Optimistic），经共享策略缓存 —— 策略为全局单例配置，缓存键不变
+        // M7-HC-03：超时策略可配置（默认 Optimistic），经共享策略缓存 —— 策略为全局单例配置，缓存键不变
         return Policy.TimeoutAsync(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
             _options.TimeoutStrategy,
@@ -695,7 +695,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
-    /// 修复：计算重试退避抖动量，范围为 [0, baseDelayMs/4)。
+    /// M-1 修复：计算重试退避抖动量，范围为 [0, baseDelayMs/4)。
     /// 抖动用于避免多实例在高并发下同步重试导致的"重试风暴"（Thundering Herd）。
     /// </summary>
     /// <param name="baseDelayMs">基础退避毫秒数。</param>

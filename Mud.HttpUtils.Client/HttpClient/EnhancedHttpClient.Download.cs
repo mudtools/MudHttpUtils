@@ -272,7 +272,7 @@ public abstract partial class EnhancedHttpClient
  }
  catch (Exception ex)
  {
-// 构造期 IOException（目标已存在等）尚未写入任何文件 → 维持既有语义直接重抛
+// M6-HC-12：构造期 IOException（目标已存在等）尚未写入任何文件 → 维持既有语义直接重抛
  if (ex is IOException && !fileStreamOpened)
  {
  throw;

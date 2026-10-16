@@ -72,7 +72,7 @@ public class MemoryEncryptedTokenStore : MemoryTokenStore, IEncryptedTokenStore
  if (encrypted == null)
  return null;
 
-// /修复：包装解密异常，使调用方可区分"令牌不存在"（返回 null）与"解密失败"（抛 InvalidOperationException）。
+// NEW-修复：包装解密异常，使调用方可区分"令牌不存在"（返回 null）与"解密失败"（抛 InvalidOperationException）。
 // 密钥轮换、密文损坏、IV 不匹配等场景下原始 CryptographicException 直接上抛，上层难以区分故障类型。
 // 包装后触发上层走重新获取令牌路径，而非误判为系统故障。
  try
@@ -119,7 +119,7 @@ public class MemoryEncryptedTokenStore : MemoryTokenStore, IEncryptedTokenStore
  if (encrypted == null)
  return null;
 
-// /修复：与 GetAccessTokenAsync 一致，包装解密异常为 InvalidOperationException。
+// NEW-修复：与 GetAccessTokenAsync 一致，包装解密异常为 InvalidOperationException。
  try
  {
  return _encryptionProvider.Decrypt(encrypted);

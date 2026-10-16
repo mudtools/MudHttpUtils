@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// 基于内存的 HTTP 响应缓存默认实现，支持 LRU 淘汰策略。
 /// </summary>
 /// <remarks>
-/// 条目元数据不可变 + CAS（M2-#14）；值对象按引用共享 —— 命中返回同一实例，请勿修改。
+/// M5-HC-08：条目元数据不可变 + CAS（M2-#14）；值对象按引用共享 —— 命中返回同一实例，请勿修改。
 /// </remarks>
 public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 {
@@ -214,7 +214,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
  _disposed = true;
  _cleanupTimer?.Dispose();
 
-// /修复：不立即 Dispose fetchLock，避免在途 GetOrFetchAsync 的 finally 中 Release 抛 ObjectDisposedException
+// NEW-修复：不立即 Dispose fetchLock，避免在途 GetOrFetchAsync 的 finally 中 Release 抛 ObjectDisposedException
 // 仅清空字典引用，SemaphoreSlim 由 GC 终结器释放
  _fetchLocks.Clear();
  _cache.Clear();
@@ -267,7 +267,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
  private void CleanupExpiredEntries(object? state)
  {
-// /修复：Timer 回调包裹 try-catch，避免未捕获异常导致进程崩溃
+// NEW-修复：Timer 回调包裹 try-catch，避免未捕获异常导致进程崩溃
  try
  {
  var now = DateTimeOffset.UtcNow;
@@ -279,7 +279,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
  }
  }
 
-// /修复：仅从字典移除 fetchLock，不立即 Dispose，避免在途操作抛异常。
+// NEW-修复：仅从字典移除 fetchLock，不立即 Dispose，避免在途操作抛异常。
 // 与 GetOrFetchAsync 共用同一回收方法（含"无人持锁"判定）。
  PruneFetchLocks();
  }

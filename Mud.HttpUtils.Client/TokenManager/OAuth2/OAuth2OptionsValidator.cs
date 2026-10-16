@@ -23,7 +23,7 @@ public class OAuth2OptionsValidator : IValidateOptions<OAuth2Options>
  if (string.IsNullOrWhiteSpace(options.ClientId))
  failures.Add("OAuth2Options: ClientId 不能为空。");
 
- // C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
+ // P3.1（C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
 // 替代原 StartsWith("https://") 前缀检查——前者会误拒绝合法的 localhost 开发端点，
 // 后者无法识别畸形字符串。IsSecure 允许 HTTPS 或本机回环 HTTP。
 // 收紧开关透传（默认 false ⇒ 与 2.0.x 行为一致，内部 IdP 不受影响）。

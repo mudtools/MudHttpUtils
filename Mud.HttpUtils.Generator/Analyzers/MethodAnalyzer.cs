@@ -680,7 +680,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         }
     }
 
-    // /说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
+    // NEW-GEN-02 说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
     // 在 IDE 场景下 Compilation 可能保持较长时间引用，但这是 Roslyn 源生成器的标准缓存模式。
     // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<INamedTypeSymbol, InterfaceDeclarationSyntax?>> _interfaceSyntaxCache = new();
@@ -967,7 +967,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
             Name = property.Name,
             Type = TypeSymbolHelper.GetTypeFullName(property.Type),
             AttributeType = attributeType,
-            // 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
+            // GEN-05 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
             IsReadOnly = property.IsReadOnly
             // [继承模式 CS0108 修复] IsFromInheritedBase 由基接口分支（见 AnalyzeInterfaceProperties）按
             // InheritedFrom 目标链单独标记，默认 false 表示由当前接口自身（或派生侧新增基接口）声明。
@@ -1510,7 +1510,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         var maxRetries = AttributeDataHelper.GetIntValuePreferNamed(
             retryAttr, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 0) ?? 3;
 
-        // High，回归修复）：双参构造函数 [Retry(a, b)] 的位置参数 b 必须被读取
+        // CFG-28（High，回归修复）：双参构造函数 [Retry(a, b)] 的位置参数 b 必须被读取
         // —— 修复前此读取点只查 NamedArguments，导致 b 自诞生起从未生效（恒回退 1000）。
         var delayMilliseconds = AttributeDataHelper.GetIntValuePreferNamed(
             retryAttr, HttpClientGeneratorConstants.RetryDelayMillisecondsProperty, 1) ?? 1000;

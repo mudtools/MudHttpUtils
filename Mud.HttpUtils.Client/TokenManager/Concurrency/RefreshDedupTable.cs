@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ：以「条目即任务」（<see cref="Lazy{T}"/> + <c>ExecutionAndPublication</c>）替代原先的
+/// <b>MT-05</b>：以「条目即任务」（<see cref="Lazy{T}"/> + <c>ExecutionAndPublication</c>）替代原先的
 /// <see cref="TaskCompletionSource{T}"/>。原实现中赢者线程在失败路径调用
 /// <c>tcs.SetException(ex)</c> 后自行 <c>throw</c>；若无任何等待者 await 该 <c>tcs.Task</c>，
 /// 其异常将永不成为已观察异常，触发 <see cref="TaskScheduler.UnobservedTaskException"/>
@@ -22,7 +22,7 @@ namespace Mud.HttpUtils;
 /// 改为「任务即条目」后，赢者与等待者 await 同一个 <see cref="Task"/>，异常天然被观察。
 /// </para>
 /// <para>
-/// ：原实现的成功条目仅在「同键再次命中且已过期」时惰性移除，高基数键（用户级键含 userId）
+/// <b>MT-06</b>：原实现的成功条目仅在「同键再次命中且已过期」时惰性移除，高基数键（用户级键含 userId）
 /// 下构成无界增长。本表在每次新增条目后执行有界收缩：先清过期，仍超限则按最久未到期者淘汰。
 /// </para>
 /// <para>
@@ -72,7 +72,7 @@ internal sealed class RefreshDedupTable
  }
 
 /// <summary>
-/// ：以委托形式提供条目上限，使 <c>TokenRecoveryOptions.MaxDedupEntries</c> 的
+/// R-P3-02②：以委托形式提供条目上限，使 <c>TokenRecoveryOptions.MaxDedupEntries</c> 的
 /// <b>配置热更新</b>在去重表上即时生效（原实现把上限在构造时固化为只读字段）。
 /// </summary>
 /// <param name="maxEntriesProvider">返回当前生效上限的委托（每次收缩时读取）。小于等于 0 视为 <c>1</c>。</param>
@@ -85,7 +85,7 @@ internal sealed class RefreshDedupTable
 /// <summary>G1：时钟接缝（默认真实系统时钟）。</summary>
  private readonly ISystemClock _clock;
 
-/// <summary>：当前生效的条目上限（读热值，恒 ≥ 1）。</summary>
+/// <summary>R-P3-02②：当前生效的条目上限（读热值，恒 ≥ 1）。</summary>
  private int MaxEntries
  {
  get
@@ -372,7 +372,7 @@ internal sealed class RefreshDedupTable
 /// <remarks>
 /// 只在新增条目后调用，属于 O(n) 的偶发操作，不进入热路径。
 /// 淘汰在途条目不会造成问题：其 <see cref="Task"/> 仍被发起方 await，结果照常返回。
-/// <para>：上限经 <c>_maxEntriesProvider</c> 每次读取（支持配置热更新）。</para>
+/// <para>R-P3-02②：上限经 <c>_maxEntriesProvider</c> 每次读取（支持配置热更新）。</para>
 /// </remarks>
  private void TrimIfNeeded()
  {

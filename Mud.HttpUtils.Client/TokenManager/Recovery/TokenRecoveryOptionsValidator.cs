@@ -30,7 +30,7 @@ public class TokenRecoveryOptionsValidator : IValidateOptions<TokenRecoveryOptio
  if (options.MaxCachedRequestBodyBytes < 0)
  failures.Add($"TokenRecoveryOptions: MaxCachedRequestBodyBytes 不能为负数，当前值为 {options.MaxCachedRequestBodyBytes}。");
 
- // Phase A）响应体捕获上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
+ // WX-01（Phase A）响应体捕获上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
  if (options.MaxCapturedResponseBodyBytes < 0)
  failures.Add($"TokenRecoveryOptions: MaxCapturedResponseBodyBytes 不能为负数，当前值为 {options.MaxCapturedResponseBodyBytes}。");
 
@@ -38,7 +38,7 @@ public class TokenRecoveryOptionsValidator : IValidateOptions<TokenRecoveryOptio
  if (options.RefreshWaitHardTimeoutSeconds < 0)
  failures.Add($"TokenRecoveryOptions: RefreshWaitHardTimeoutSeconds 不能为负数，当前值为 {options.RefreshWaitHardTimeoutSeconds}。");
 
- // ①：补齐既有属性的取值校验（此前仅校验 RecoveryMaxRetries / TokenScheme / 两个字节上限）
+ // R-P3-02 ①：补齐既有属性的取值校验（此前仅校验 RecoveryMaxRetries / TokenScheme / 两个字节上限）
  if (options.RefreshTimeoutSeconds <= 0)
  failures.Add($"TokenRecoveryOptions: RefreshTimeoutSeconds 必须大于 0，当前值为 {options.RefreshTimeoutSeconds}。");
 

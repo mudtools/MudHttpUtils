@@ -80,7 +80,7 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeInterface(SyntaxNodeAnalysisContext context)
     {
-        //  分析器异常护栏（对齐 AOT 侧），AD0001 会整轮禁用分析器
+        // FIX-09: 分析器异常护栏（对齐 AOT 侧），AD0001 会整轮禁用分析器
         try
         {
             var interfaceDecl = (InterfaceDeclarationSyntax)context.Node;
