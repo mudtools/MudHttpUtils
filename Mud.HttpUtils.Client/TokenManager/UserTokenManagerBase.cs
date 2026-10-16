@@ -25,7 +25,7 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
-/修复（裸 GetOrAdd 并发多执行工厂导致互斥失效）→ TK-05/09/24）升级为
+/修复（裸 GetOrAdd 并发多执行工厂导致互斥失效）→升级为
 // KeyedLockTable（retire 协议 + 引用计数），与基类 TokenManagerBase 统一锁生命周期实现。
 后锁键为 userId 或 userId + "\u001F" + scopeKey 复合键，按作用域隔离。
  private readonly KeyedLockTable _userLockTable = new();
@@ -41,7 +41,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  private readonly ITokenCache<UserTokenInfo> _userTokenCache;
  private readonly UserTokenCacheOptions _cacheOptions;
 
-/（P3.1，D10-B）用户刷新负缓存：键 → (连续失败次数, 下次允许刷新的 UTC ticks)。
+用户刷新负缓存：键 → (连续失败次数, 下次允许刷新的 UTC ticks)。
 // 退避表结构由"截止时间"升级为"计数 + 截止时间"，AddOrUpdate 用 prev.Count + 1 推进，
 // 使 UserBackoffSeconds(n) 的指数能力生效（原实现两分支均用 UserBackoffSeconds(1) = 恒定 30s）。
 // 与租户路径 _consecutiveFallbacks 指数退避模式对齐，阻断 IdP 故障时的按 userId 刷新风暴。
@@ -340,7 +340,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  return cachedInfo!.AccessToken;
  }
 
- TK-05/09/24）从键控锁表获取用户锁，retire 协议保证互斥（SR-M1 后按复合键隔离）。
+从键控锁表获取用户锁，retire 协议保证互斥按复合键隔离）。
  using (var releaser = await _userLockTable.AcquireAsync(cacheKey, cancellationToken).ConfigureAwait(false))
  {
 // S2-2：锁内二次探测 —— 等待锁期间其他实例写入 store 的新令牌经读穿透直接命中
@@ -352,7 +352,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  if (IsUserTokenValid(cachedInfo))
  return cachedInfo!.AccessToken;
 
-/（P3.1，D10-B）刷新负缓存：退避窗口内不发起刷新（IdP 故障时阻断按 userId 的刷新风暴）
+刷新负缓存：退避窗口内不发起刷新（IdP 故障时阻断按 userId 的刷新风暴）
  if (IsInUserRefreshBackoff(cacheKey))
  {
 // 窗口内不发请求，且该 key 当前无可用条目 → 退休锁，避免孤儿条目累积
@@ -438,7 +438,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
  private void OnUserTokenEvicted(string cacheKey)
  {
- TK-05/09/24）统一走 retire 协议：TryRetire 内部保证
+统一走 retire 协议：TryRetire 内部保证
 // 仅当无等待者时移除；若锁正被占用则仅标记退休，由最后一个 Releaser 完成移除。
 // 彻底消除原实现中“缓存驱逐时移除在途锁导致互斥失效”的缺陷。
  _userLockTable.TryRetire(cacheKey);
@@ -659,14 +659,14 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 /// </summary>
  protected void CleanupOrphanedLocks()
  {
- TK-05/09/24）经 retire 协议统一回收缓存中已不存在的用户锁。
+经 retire 协议统一回收缓存中已不存在的用户锁。
  foreach (var key in _userLockTable.Keys.ToList())
  {
  if (!_userTokenCache.TryGet(key, out _))
  _userLockTable.TryRetire(key);
  }
 
-/（P3.1，D10-B）顺带清扫退避表：已无缓存条目或窗口已过期的条目移除，防无界增长。
+顺带清扫退避表：已无缓存条目或窗口已过期的条目移除，防无界增长。
  var nowTicks = UtcNow.UtcTicks;
  foreach (var kvp in _userRefreshFailures.ToList())
  {
@@ -709,7 +709,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  internal int UserLockTableCountForTest => _userLockTable.Count;
 
 /// <summary>
- /R-P0-03）测试观测钩子：用户级刷新闸当前条目数（断言闸条目在刷新结束后被退休回收，不无界增长）。
+ 测试观测钩子：用户级刷新闸当前条目数（断言闸条目在刷新结束后被退休回收，不无界增长）。
 /// </summary>
  internal int UserRefreshGateCountForTest => _userRefreshGate.Count;
 
@@ -729,7 +729,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 // InvalidateTokenAsync 对用户令牌无意义。若实现静默调用 base（清空共享凭据缓存）或
 // 紧凑用户缓存，会产生"调用方以为用户令牌已失效，实则其他用户令牌也被连带影响"的歧义。
 //
-// R-P3-01**不再抛 NotSupportedException** —— 接口
+不再抛 NotSupportedException** —— 接口
 // <see cref="ITokenManager.InvalidateTokenAsync"/> 的契约是"返回失效前的令牌信息"，
 // 抛异常会破坏契约，使"统一遍历所有管理器使其失效"这类通用调用方（登出编排、运维脚本）
 // 必须在调用点分支处理异常类型。改为返回 TokenResult.Empty + 引导日志：
@@ -993,22 +993,22 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  }
  }
 
-/// <summary>SR-M3（P3.1，D10-B）退避序列：30s → 60s → 120s → 240s → 300s（封顶）。</summary>
+退避序列：30s → 60s → 120s → 240s → 300s（封顶）。</summary>
  private static int UserBackoffSeconds(int n)
  => Math.Min(30 << Math.Min(n - 1, 3), MaxUserRefreshBackoffSeconds);
 
-/// <summary>SR-M3：是否处于刷新退避窗口内（窗口内不发起刷新，直接返回 null——既有契约）。</summary>
+是否处于刷新退避窗口内（窗口内不发起刷新，直接返回 null——既有契约）。</summary>
  private bool IsInUserRefreshBackoff(string cacheKey)
  {
  return _userRefreshFailures.TryGetValue(cacheKey, out var s)
  && UtcNow.UtcTicks < s.UntilTicks;
  }
 
-/// <summary>SR-M3：刷新成功即清除退避条目。</summary>
+刷新成功即清除退避条目。</summary>
  private void RecordUserRefreshSuccess(string cacheKey)
  => _userRefreshFailures.TryRemove(cacheKey, out _);
 
-/// <summary>SR-M3：刷新失败记录退避窗口（按 cacheKey 维护连续失败计数）。</summary>
+刷新失败记录退避窗口（按 cacheKey 维护连续失败计数）。</summary>
  private void RecordUserRefreshFailure(string cacheKey)
  {
 // AddOrUpdate 用 prev.Count + 1 推进，使 UserBackoffSeconds(n) 的指数能力生效
@@ -1074,7 +1074,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
  internal int RefreshFailureCountForTest => _userRefreshFailures.Count;
 
 /// <summary>
-//（P3.10，D14-V5）：用户令牌管理器不支持租户层维护 Timer——
+用户令牌管理器不支持租户层维护 Timer——
 /// 用户令牌经 IMemoryCache 自带过期/驱逐，两个租户 Timer（300s/600s）对其无意义，跳过分配。
 /// </summary>
  protected override bool SupportsTenantMaintenance => false;
@@ -1133,7 +1133,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
  _userTokenCache?.Dispose();
 
- TK-05/09/24）KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
+KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
 // 保证在途 Releaser 的 Release 安全（修复 TK-08）。
  _userLockTable.Dispose();
 

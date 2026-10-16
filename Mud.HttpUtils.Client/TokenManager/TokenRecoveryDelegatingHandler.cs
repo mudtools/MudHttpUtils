@@ -18,7 +18,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>此处理器应添加到 HttpClient 的消息处理管道中，位于所有其他 DelegatingHandler 之后（最靠近网络层）。</para>
 /// <para>
-/// <b>硬性约束（架构不变式 I2，R-P0-01）</b>：<b>不得</b>把本处理器挂载到 OAuth2 令牌端点所使用的
+<b>不得</b>把本处理器挂载到 OAuth2 令牌端点所使用的
 /// <see cref="System.Net.Http.HttpClient"/> 上。否则令牌端点的 401 会重新进入令牌恢复、
 /// 命中同一去重键的"在途刷新"条目并 <c>await</c> 自身 ⇒ <b>永久死锁</b>。
 /// 库已通过 <see cref="TokenRefreshAmbient"/>（刷新调用栈环境标记）在执行器入口建立熔断，

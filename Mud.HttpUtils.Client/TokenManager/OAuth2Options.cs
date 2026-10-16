@@ -102,7 +102,7 @@ public class OAuth2Options
  private int _expirySafetyMarginSeconds = 60;
 
 /// <summary>
-/// （P2.6，D11-2）是否允许在当前作用域缺少 refresh_token 时回退默认作用域的 refresh_token。默认 false。
+/// 是否允许在当前作用域缺少 refresh_token 时回退默认作用域的 refresh_token。默认 false。
 /// <para>
 /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，跨作用域回退等于拿 A 授权的凭据换 B scope
 /// 的令牌（越权令牌落地），故默认关闭。仅当 IdP 明确支持"统一刷新令牌"（所有 scope 共享一个

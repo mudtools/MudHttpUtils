@@ -16,7 +16,7 @@ namespace Mud.HttpUtils;
 
 /// <summary>
 /// 令牌恢复执行器，封装 401 Unauthorized（默认语义）及经
-/// <see cref="ITokenInvalidationDetector"/> 识别的业务错误码失效（WX-01，如企业微信 HTTP 200 + errcode）时的令牌刷新与请求重试逻辑。
+/// <see cref="ITokenInvalidationDetector"/> 识别的业务错误码失效 HTTP 200 + errcode）时的令牌刷新与请求重试逻辑。
 /// </summary>
 /// <remarks>
 /// <para>

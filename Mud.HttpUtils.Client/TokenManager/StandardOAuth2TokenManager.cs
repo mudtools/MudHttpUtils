@@ -441,7 +441,7 @@ invalid_grant 清除 + 回退：轮换型 IdP 响应丢失后旧 refresh_token �
 /// <remarks>
  同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
  按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token。
-/// （P2.6，D11-2）跨作用域回退默认关闭（<see cref="OAuth2Options.AllowDefaultScopeRefreshTokenFallback"/>）：
+/// 跨作用域回退默认关闭（<see cref="OAuth2Options.AllowDefaultScopeRefreshTokenFallback"/>）：
 /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，默认作用域凭据换取当前 scope 令牌 = 越权。
 invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 /// </remarks>
@@ -553,7 +553,7 @@ invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 
  using var request = new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint);
 
-/（P2.3，D8-3）：先建参数字典 → 认证注入（可能向字典补 client_id）→ 再建 FormUrlEncodedContent。
+// 先建参数字典 → 认证注入（可能向字典补 client_id）→ 再建 FormUrlEncodedContent。
 // 重构前：Content 先行创建，公共客户端（空 Secret）的 client_id 无法走请求体。
  if (useClientAuth)
  {
@@ -636,7 +636,7 @@ invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
 /// <param name="clientSecret">已解析的客户端密钥（由调用方通过 <see cref="GetClientSecretAsync"/> 获取后传入）。</param>
 /// <remarks>
  /修复：密钥由调用方异步解析后传入，消除 Lazy 路径的阻塞与竞态。
-//（P2.3，D8-3）修复：useClientAuth 且 Secret 为空时不再发送
+// 修复：useClientAuth 且 Secret 为空时不再发送
 /// <c>"Basic base64(clientId:)"</c> 弱凭据头，改为 <c>client_id</c> 走请求体
 /// （RFC 6749 §2.3.1 公共客户端标准行为）。
 /// </remarks>

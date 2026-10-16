@@ -392,7 +392,7 @@ public partial class TokenRecoveryExecutor
  /说明：原 <c>WaitForTaskAsync</c>（等待者在自身 CT 取消时提前脱离共享刷新任务）已随
 /// 「条目即任务」改造一并移除 —— 现在所有等待者与赢者 await 同一个 <see cref="Task"/>，
 /// 共享刷新不受任一调用方取消影响（取消隔离语义保持一致），异常也必然被观察。
-/// 移除后同时消除了 ns2.0 路径 <c>Task.Delay(Timeout.Infinite, ct)</c> 的取消注册滞留（SR-L8 已知问题）。
+/// 移除后同时消除了 ns2.0 路径 <c>Task.Delay(Timeout.Infinite, ct)</c> 的取消注册滞留
 /// </summary>
  private static string ReplaceQueryParameter(string? queryString, string paramName, string newValue)
  {
