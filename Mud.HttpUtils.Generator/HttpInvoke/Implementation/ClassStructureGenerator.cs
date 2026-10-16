@@ -27,8 +27,8 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
     // 的消费项目上编译失败（本仓库 Demo 因 ImplicitUsings=enable 掩盖了缺失）。
     public void Generate(StringBuilder codeBuilder, GeneratorContext context)
     {
-        // [D-03 修复] 传递 EmitNullableEnable 以条件化发射 #nullable enable
-        // [D-06 修复] 传递 EmitGeneratedCodeMarkers 以条件化发射 [GeneratedCode] 特性
+        // [修复] 传递 EmitNullableEnable 以条件化发射 #nullable enable
+        // [修复] 传递 EmitGeneratedCodeMarkers 以条件化发射 [GeneratedCode] 特性
         TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, GeneratedCodeConsts.ImplementationFileUsings, context.EmitNullableEnable);
         codeBuilder.AppendLine();
         GenerateNamespaceDeclaration(codeBuilder, context);
@@ -37,7 +37,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
 
     private void GenerateNamespaceDeclaration(StringBuilder codeBuilder, GeneratorContext context)
     {
-        // NEW-GEN-04 说明：生成代码使用块作用域命名空间以兼容 netstandard2.0（file-scoped namespace 需 C# 10+）。
+        // NEW-说明：生成代码使用块作用域命名空间以兼容 netstandard2.0（file-scoped namespace 需 C# 10+）。
         // AGENTS.md 的 file-scoped namespace 规范适用于手写代码，生成代码受目标框架约束豁免。
         codeBuilder.AppendLine($"namespace {context.NamespaceName}".Trim());
         codeBuilder.AppendLine("{");
@@ -82,7 +82,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         }
 
         string inheritance = string.Empty;
-        // [E-1 修复] typeParams 由接口类型参数名拼接（如 <T>，本身无命名空间歧义）。
+        // [修复] typeParams 由接口类型参数名拼接（如 <T>，本身无命名空间歧义）。
         // 接口名使用 global:: 完全限定，避免 X.Internal 子命名空间中存在同名类型时静默绑定到错误类型。
         var interfaceFullName = _interfaceSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
@@ -102,7 +102,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         //   1. !HasHttpClient —— HttpClient 模式不发射任何切换成员，追加会导致编译失败；
         //   2. 仅当接口继承 IAppContextSwitcher —— 若接口已（直接或间接）继承 IAppScopeSwitcher，
         //      生成类已通过接口传递获得该契约，无需重复列出；
-        //   3. 不因"接口未声明 UseAppScope"而给所有生成类挂接口，避免制造新的接口膨胀（与 SW-10 诉求一致）。
+        //   3. 不因"接口未声明 UseAppScope"而给所有生成类挂接口，避免制造新的接口膨胀（与 诉求一致）。
         //
         // 生成类无需新增成员：ConstructorGenerator 在非 HttpClient 模式下无条件发射
         // `UseAppScope(string)` / `UseDefaultAppScope()`，签名与 IAppScopeSwitcher 完全一致（verbatim implementation）。
@@ -113,7 +113,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
             inheritance += ", global::Mud.HttpUtils.IAppScopeSwitcher";
         }
 
-        // [D-06 修复] EmitGeneratedCodeMarkers=false 时不标注 [GeneratedCode]，便于调试生成代码中的警告
+        // [修复] EmitGeneratedCodeMarkers=false 时不标注 [GeneratedCode]，便于调试生成代码中的警告
         // T5.4: DynamicDependency 标注移至构造函数（ConstructorGenerator），因为该特性仅允许用于构造函数、方法、字段声明
         if (context.EmitGeneratedCodeMarkers)
         {

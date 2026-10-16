@@ -132,7 +132,7 @@ public class TokenRecoveryOptions
     public bool AllowNonIdempotentRecovery { get; set; }
 
     /// <summary>
-    /// TMR-12：令牌刷新去重窗口（秒），默认 2。
+    /// 令牌刷新去重窗口（秒），默认 2。
     /// <para>
     /// 在去重窗口内，多个并发 401 共享同一次刷新结果，避免刷新风暴。
     /// 窗口过期后，后续 401 会触发新一轮刷新。

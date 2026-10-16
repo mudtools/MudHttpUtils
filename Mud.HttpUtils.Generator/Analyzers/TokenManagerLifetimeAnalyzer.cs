@@ -14,7 +14,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
-/// <c>ITokenManager</c> 生命周期诊断分析器（P3.5 / C5，TK-24）。
+/// <c>ITokenManager</c> 生命周期诊断分析器（/ C5，TK-24）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -63,17 +63,17 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
-        // SR-L6（P3.9，D13）：Query 令牌注入模式诊断（Info 级，可抑制）
+        ：Query 令牌注入模式诊断（Info 级，可抑制）
         context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
     }
 
     /// <summary>
-    /// SR-L6（P3.9，D13）：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
+    ：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
     /// 报 Info 诊断——Query 模式令牌进入 URL，代理/访问日志/浏览器历史不可控，生产环境建议 Header。
     /// </summary>
     private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
     {
-        // FIX-09: 分析器异常护栏
+        //  分析器异常护栏
         try
         {
             if (context.Node is not MethodDeclarationSyntax method)
@@ -92,7 +92,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (!hasHttpClientApi)
                 return;
 
-            // MT-21：方法级优先，其次回退到接口级 [Token] —— 生成器解析作用域/注入模式时
+            // 方法级优先，其次回退到接口级 [Token] —— 生成器解析作用域/注入模式时
             // 同样遵循「方法级覆盖接口级」语义（MethodTokenScopes ?? InterfaceTokenScopes），
             // 原实现只看方法级，导致接口级 [Token(InjectionMode = Query/Path)] 完全无提示。
             var tokenAttribute =
@@ -104,7 +104,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (tokenAttribute == null)
                 return;
 
-            // F-1（G-1）：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）不取令牌、
+            // ：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）不取令牌、
             // 不注入 —— URL 承载面不存在，豁免 MUD005。
             if (IsTokenDisabled(method, interfaceDecl))
                 return;
@@ -158,7 +158,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// F-1（G-1）：判定方法的有效 <c>[Token(Disabled = ...)]</c> 是否为 <c>true</c>（免令牌 opt-out）。
+    /// ：判定方法的有效 <c>[Token(Disabled = ...)]</c> 是否为 <c>true</c>（免令牌 opt-out）。
     /// 有效级与生成器一致（MT-21「方法级覆盖接口级」）：方法级显式取值优先，未标注时取接口级。
     /// 仅认布尔字面量 —— 非字面量保守视为未禁用（安全告警不得默认静音，与 <see cref="HasJustification"/> 同口径）。
     /// </summary>
@@ -173,7 +173,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// F-1：读取 <c>[Token]</c> 上 <c>Disabled = …</c> 的布尔字面量取值；未标注或非字面量返回 null。
+    /// 读取 <c>[Token]</c> 上 <c>Disabled = …</c> 的布尔字面量取值；未标注或非字面量返回 null。
     /// </summary>
     private static bool? TryGetDisabledLiteral(AttributeSyntax? tokenAttribute)
     {
@@ -216,13 +216,13 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
     {
-        // FIX-09: 分析器异常护栏
+        //  分析器异常护栏
         try
         {
             if (context.Node is not InvocationExpressionSyntax invocation)
                 return;
 
-            // FIX-14: 语法级快速过滤——仅当调用方为已知的 DI 注册方法名时才继续，
+            //  语法级快速过滤——仅当调用方为已知的 DI 注册方法名时才继续，
             // 避免对全量 InvocationExpression 做 GetSymbolInfo（零语义成本过滤）。
             if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
             {

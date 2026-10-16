@@ -129,7 +129,7 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    // CFG-23：原 HTTPCLIENT010（HttpClientApiAttribute.BaseAddress 已弃用）为死诊断 ——
+    // 原 HTTPCLIENT010（HttpClientApiAttribute.BaseAddress 已弃用）为死诊断 ——
     // 该属性/构造函数已标注 [Obsolete(error: true)]，使用处直接产生编译错误 CS0619，生成器无需重复提示。
     // 描述符已删除，ID HTTPCLIENT010 保留为未使用占位（不重新分配）。
 
@@ -241,7 +241,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// F-03：[Cache(VaryByUser=true)] 但接口既未继承 ICurrentUserId 也无 [Token(RequiresUserId=true)]，
+    /// [Cache(VaryByUser=true)] 但接口既未继承 ICurrentUserId 也无 [Token(RequiresUserId=true)]，
     /// 用户维度退化为 "user:anonymous"（全体用户共享同一缓存）。
     /// <para>
     /// 级别为 Warning（非 Error）：实现类的可写属性 CurrentUserId 是合法的宿主手动赋值通道，
@@ -291,7 +291,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor HttpClientTypeNotFound = new(
         id: "HTTPCLIENT014",
         title: "HttpClient 类型未找到",
-        // F-07：双错可诊断性——014 不阻断生成（可抑制策略），类型缺失必然在后续产生指向生成文件的
+        // 双错可诊断性——014 不阻断生成（可抑制策略），类型缺失必然在后续产生指向生成文件的
         // CS0246。追加引导语句把两个错误显式关联，避免用户把它们当独立问题分别排查。
         messageFormat: "接口 {0} 指定的 HttpClient 类型 '{1}' 在当前编译中未找到。请确认类型名称是否正确，或确保已通过 AddMudHttpClient 注册了对应的命名客户端。实现类生成将继续进行，随后可能出现指向生成文件的 CS0246（类型 '{1}' 未找到），两者为同一根因，无需分别排查。",
         category: "代码生成",
@@ -330,7 +330,7 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    // CFG-27：原 HTTPCLIENT019（CacheAttribute 属性被生成器忽略）描述符已删除 ——
+    // 原 HTTPCLIENT019（CacheAttribute 属性被生成器忽略）描述符已删除 ——
     // 其唯一触发点 CacheAttribute.Priority 已随 [Obsolete] 残留清理一并移除；
     // UseSlidingExpiration 早已受支持。[Cache] 当前无被忽略的属性。
     // ID HTTPCLIENT019 保留为未使用占位（不重新分配）。
@@ -345,9 +345,9 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    // CFG-07：方法级 [Timeout(ms)] 超过接口级 [HttpClientApi(Timeout=秒)] 声明的 HttpClient 超时。
+    // 方法级 [Timeout(ms)] 超过接口级 [HttpClientApi(Timeout=秒)] 声明的 HttpClient 超时。
     // HttpClient.Timeout 是硬上限，会使 Polly 方法级超时永不触发（配置静默失效）。
-    // 仅在「方法级显式声明 [Timeout]」且「接口级 Timeout 显式声明」时报告（R-9 抑制误报）。
+    // 仅在「方法级显式声明 [Timeout]」且「接口级 Timeout 显式声明」时报告（抑制误报）。
     public static readonly DiagnosticDescriptor MethodTimeoutExceedsHttpClientTimeout = new(
         id: "HTTPCLIENT021",
         title: "方法级 [Timeout] 超过 HttpClient 超时，将不会生效",
@@ -358,13 +358,13 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    // P3.3（TK-18）：Path / HmacSignature 注入模式不被 TokenRecoveryDelegatingHandler /
+    ：Path / HmacSignature 注入模式不被 TokenRecoveryDelegatingHandler /
     // TokenRecoveryEnhancedClient 的恢复执行器支持（ApplyTokenToRequest 对这两种模式直接返回 false），
     // 令牌过期触发 401 后刷新出的新令牌无法重新注入，恢复将静默失败。编译期以 Warning 提醒开发者。
     public static readonly DiagnosticDescriptor TokenRecoveryUnsupportedInjectionMode = new(
         id: "HTTPCLIENT022",
         title: "Path/HmacSignature 令牌注入模式不支持令牌恢复",
-        // DP-5（G8-02）：Path 已补 URL 编码（RFC 3986），文案须同步说明「编码已补齐、但 URL 留存面仍在」，
+        // G8-02）：Path 已补 URL 编码（RFC 3986），文案须同步说明「编码已补齐、但 URL 留存面仍在」，
         // 避免诊断文案与实际能力脱节（MUD005 另覆盖「令牌进入 URL」的留存风险）。
         messageFormat: "接口 {0} 的方法 {1} 使用令牌注入模式 '{2}'。该模式不被令牌恢复处理器（TokenRecoveryDelegatingHandler / TokenRecoveryEnhancedClient）支持：令牌过期触发 401 后，刷新得到的新令牌无法重新注入（Path 无法重写 URL 中的令牌，HmacSignature 无法用新令牌重算签名）。恢复将静默失败并返回 401。另请注意：Path 模式的令牌值会进入请求 URL（已按 RFC 3986 做 URI 编码，可防止改写请求目标，但无法避免代理/访问日志/浏览器历史中的留存）。如需令牌恢复能力，请改用 Header/Query/ApiKey/Cookie/BasicAuth 注入模式。",
         category: "代码生成",
@@ -372,7 +372,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     // [F4] 强制失效逃生舱提示：-p:ForceHttpGenerator=true 时下游增量步骤必然 Modified，产出一行可观测提示。
-    // 合并注记：本诊断原与 P3.3(TK-18) 的 TokenRecoveryUnsupportedInjectionMode 争用 HTTPCLIENT022；
+    // 合并注记：本诊断原与 TK-18) 的 TokenRecoveryUnsupportedInjectionMode 争用 HTTPCLIENT022；
     // 先落库并占用 022，故 [F4] 让位改用 023（ID 一经分配即保留，不再回收复用）。
     public static readonly DiagnosticDescriptor IncrementalCacheForcedInvalidation = new(
         id: "HTTPCLIENT023",
@@ -419,7 +419,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// CFG-29（v3.1）：<c>[CircuitBreaker]</c> 特性参数取值超出该字段的有效域。
+    /// v3.1）：<c>[CircuitBreaker]</c> 特性参数取值超出该字段的有效域。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -455,7 +455,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// CFG-32（v3.1）：<c>[Timeout]</c> 特性有效值 <c>&lt;= 0</c>。
+    /// v3.1）：<c>[Timeout]</c> 特性有效值 <c>&lt;= 0</c>。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -583,7 +583,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// F-1（G-1）：方法级 <c>[Token(Disabled = true)]</c>（有效级：方法级 &gt; 接口级）与令牌注入参数同用。
+    /// ：方法级 <c>[Token(Disabled = true)]</c>（有效级：方法级 &gt; 接口级）与令牌注入参数同用。
     /// 免令牌方法不取令牌、不注入、不参与令牌恢复，<c>TokenType</c>/<c>TokenManagerKey</c>/<c>InjectionMode</c>/
     /// <c>Name</c>/<c>Scopes</c>/<c>Scheme</c>/<c>RequiresUserId</c> 等注入参数一律不写入生成代码 ——
     /// 静默忽略会让「配置以为生效、实际被丢弃」不可见，故以 Warning 提示参数被忽略。
@@ -597,7 +597,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// F-1（G-1）：参数级 <c>[Token(Disabled = true)]</c>。<c>Disabled</c> 语义是「阻断接口级 <c>[Token]</c> 继承」，
+    /// ：参数级 <c>[Token(Disabled = true)]</c>。<c>Disabled</c> 语义是「阻断接口级 <c>[Token]</c> 继承」，
     /// 仅在方法级/接口级有意义；参数级 <c>[Token]</c> 是「令牌参数」标记，不涉及继承，
     /// 该设置无意义并被忽略（参数仍按令牌参数语义处理），故告警并指引改到方法级标注。
     /// </summary>
@@ -670,9 +670,9 @@ internal static class Diagnostics
     #region AOT JSON 序列化诊断信息 (AOT001-007)
     // 诊断由 HttpJsonContextScaffolder（pre-build 工具）或独立分析器报告。
     // 前缀 AOT 遵循仓库 XXXNNN 约定（3-6 字符前缀 + 3 位数字）。
-    // GEN-15（§8.3）：AOT001/AOT002/AOT003 描述符已迁移到
+    // §8.3）：AOT001/AOT002/AOT003 描述符已迁移到
     // Tools/Mud.HttpUtils.JsonContextScaffolder/ (ScaffolderAotDiagnostics)，由脚手架在生成期报告，
-    // 不再参与本生成器/分析器分发。此处不保留其字段，避免「貌似已实现」的错觉（I-20 可达性守卫兜底）。
+    // 不再参与本生成器/分析器分发。此处不保留其字段，避免「貌似已实现」的错觉（可达性守卫兜底）。
     // 生成器/分析器侧仅登记 AOT004/AOT005/AOT006/AOT007。
 
     public static readonly DiagnosticDescriptor AotDtoNotCoveredByContext = new(
@@ -783,9 +783,9 @@ internal static class Diagnostics
         isEnabledByDefault: true,
         description: "ITokenManager 实现应注册为 Singleton，以避免并发安全机制失效与冗余令牌刷新.");
 
-    // SR-L6（P3.9，D13）：Query 注入模式令牌进入 URL → 代理 / 访问日志 / 浏览器历史不可控。
+    ：Query 注入模式令牌进入 URL → 代理 / 访问日志 / 浏览器历史不可控。
     // 库内遥测已由 SensitiveUrlRedactor 脱敏，外部系统不受控；生产环境建议 Header。
-    // MT-21（BC-22）：级别由 Info 提升为 Warning（Info 在默认构建下几乎不可见，等于没有提示），
+    //：级别由 Info 提升为 Warning（Info 在默认构建下几乎不可见，等于没有提示），
     // 并把覆盖范围从 Query 扩展到 Path（令牌进 URL 路径，留存面与 Query 等同）。
     // 不在生成物发射 #warning（避免污染消费方构建），仍然可抑制。
     public static readonly DiagnosticDescriptor MudQueryTokenInjectionMode = new(

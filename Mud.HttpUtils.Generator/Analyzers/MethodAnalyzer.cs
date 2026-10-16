@@ -95,7 +95,7 @@ internal static class MethodAnalyzer
 
         var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme, methodTokenName, methodTokenDisabled) = AnalyzeMethodTokenExtended(methodAttributes);
 
-        // F-1：免令牌 opt-out 的「有效级」取值（方法级 > 接口级 > 默认 false）。
+        // 免令牌 opt-out 的「有效级」取值（方法级 > 接口级 > 默认 false）。
         // 有效 Disabled = true 时注入语义一律不写入生成代码，被忽略的显式注入参数收集起来供 HTTPCLIENT039 上报。
         var effectiveTokenDisabled = methodTokenDisabled ?? interfaceTokenDisabled ?? false;
         List<string> tokenDisabledIgnoredParameters = [];
@@ -107,7 +107,7 @@ internal static class MethodAnalyzer
                 tokenDisabledIgnoredParameters = GetExplicitTokenInjectionParameterNames(methodTokenAttr);
         }
 
-        // F-1：参数级 [Token(Disabled = true)] 无意义（参数级 [Token] 是「令牌参数」标记，不涉及继承），
+        // 参数级 [Token(Disabled = true)] 无意义（参数级 [Token] 是「令牌参数」标记，不涉及继承），
         // 收集参数名供 HTTPCLIENT040 上报；Disabled 设置被忽略，参数仍按令牌参数语义处理。
         var parameterTokenDisabledNames = parameters
             .Where(p => p.Attributes.Any(attr =>
@@ -126,7 +126,7 @@ internal static class MethodAnalyzer
         var interfaceProperties = cachedInterfaceProperties ?? AnalyzeInterfaceProperties(interfaceDecl, compilation, semanticModel);
         var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, methodAttributes, interfaceAttrs);
         var serializationMethod = AnalyzeSerializationMethod(methodSymbol, methodAttributes, interfaceAttrs);
-        // GEN-03：分析方法的固定 [Header] / [Query] 特性（方法级）
+        // 分析方法的固定 [Header] / [Query] 特性（方法级）
         var (methodHeaderAttributes, methodQueryParameters) = AnalyzeMethodLevelFixedAttributes(methodAttributes);
 
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
@@ -444,7 +444,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// <summary>
     /// 从 <see cref="TypedConstant"/>（TokenInjectionMode 枚举参数）获取注入模式字符串。
     /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
-    /// [D-3 选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值），
+    /// [选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值），
     /// 使 reader 能按枚举类型反解成员名。
     /// </summary>
     private static string GetTokenInjectionModeName(TypedConstant value)
@@ -680,7 +680,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         }
     }
 
-    // NEW-GEN-02 说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
+    // NEW-说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
     // 在 IDE 场景下 Compilation 可能保持较长时间引用，但这是 Roslyn 源生成器的标准缓存模式。
     // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<INamedTypeSymbol, InterfaceDeclarationSyntax?>> _interfaceSyntaxCache = new();
@@ -779,7 +779,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
-    /// GEN-03：分析方法级固定 [Header] / [Query] 特性。
+    /// 分析方法级固定 [Header] / [Query] 特性。
     /// Header 复用 <c>GetHeaderName</c>/<c>GetHeaderValue</c>/<c>GetHeaderReplace</c> 读取
     /// Name/AliasAs/Value/Replace；Query 仅支持常量值（两个位置参数 或 Name+Value）。
     /// </summary>
@@ -967,7 +967,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
             Name = property.Name,
             Type = TypeSymbolHelper.GetTypeFullName(property.Type),
             AttributeType = attributeType,
-            // GEN-05 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
+            // 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
             IsReadOnly = property.IsReadOnly
             // [继承模式 CS0108 修复] IsFromInheritedBase 由基接口分支（见 AnalyzeInterfaceProperties）按
             // InheritedFrom 目标链单独标记，默认 false 表示由当前接口自身（或派生侧新增基接口）声明。
@@ -1071,7 +1071,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
-    /// I-17 / GEN-02：读取 [HeaderMerge] 的模式，走 <see cref="AttributeArgumentReader.GetEnumMemberName"/>
+    /// / 读取 [HeaderMerge] 的模式，走 <see cref="AttributeArgumentReader.GetEnumMemberName"/>
     /// 反解枚举成员名。兼容位置参数与命名参数 <c>Mode</c>。
     /// </summary>
     private static string? ReadHeaderMergeMode(AttributeData headerMergeAttr)
@@ -1128,7 +1128,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// 读取 <c>[SerializationMethod]</c> 的枚举名（<c>Json</c> / <c>Xml</c> / <c>FormUrlEncoded</c>）。
     /// </summary>
     /// <remarks>
-    /// <b>重要 [D-3 选项 1]</b>：Roslyn 的 <c>TypedConstant.Value</c> 对枚举参数返回的是<b>底层整数值</b>，
+    /// <b>重要 [选项 1]</b>：Roslyn 的 <c>TypedConstant.Value</c> 对枚举参数返回的是<b>底层整数值</b>，
     /// 直接 <c>ToString()</c> 会得到 "0"/"1"/"2"。历史实现正是如此，导致生成器与 AOT007 中所有
     /// <c>== "Xml"</c> / <c>== "FormUrlEncoded"</c> 比较全部失效（[SerializationMethod(Xml)] 声明的
     /// 方法被当作 JSON 处理，AOT007 也不会触发）。
@@ -1223,7 +1223,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 var tokenName = GetTokenName(tokenAttr);
                 var tokenScopes = GetTokenScopes(tokenAttr);
                 var tokenScheme = GetTokenScheme(tokenAttr);
-                // F-1：接口级 [Token(Disabled = ...)]（方法级未标注时按「有效级」回退到此处）
+                // 接口级 [Token(Disabled = ...)]（方法级未标注时按「有效级」回退到此处）
                 interfaceTokenDisabled = GetTokenDisabled(tokenAttr);
                 if (!string.IsNullOrEmpty(injectionMode))
                 {
@@ -1354,17 +1354,17 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         bool? requiresUserId = requiresUserIdValue is bool b ? b : (bool?)null;
         var injectionMode = GetTokenInjectionMode(tokenAttr);
         var scheme = GetTokenScheme(tokenAttr);
-        // GEN-09：方法级 [Token(Name = "...")] 名称提取（与接口级 GetInterfaceTokenName 同口径，
+        // 方法级 [Token(Name = "...")] 名称提取（与接口级 GetInterfaceTokenName 同口径，
         // 仅读 NamedArguments["Name"]）。
         var tokenName = AttributeDataHelper.GetStringValueFromAttribute(tokenAttr, ["Name"]);
-        // F-1：方法级 [Token(Disabled = ...)]（三态：null = 未显式标注，回退到接口级）
+        // 方法级 [Token(Disabled = ...)]（三态：null = 未显式标注，回退到接口级）
         var disabled = GetTokenDisabled(tokenAttr);
 
         return (tokenManagerKey, requiresUserId, injectionMode, scheme, tokenName, disabled);
     }
 
     /// <summary>
-    /// F-1：读取 <c>[Token(Disabled = ...)]</c> 的显式取值（仅认命名参数字面量；未标注返回 null）。
+    /// 读取 <c>[Token(Disabled = ...)]</c> 的显式取值（仅认命名参数字面量；未标注返回 null）。
     /// </summary>
     private static bool? GetTokenDisabled(AttributeData tokenAttr)
     {
@@ -1378,7 +1378,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
-    /// F-1：收集 <c>[Token]</c> 上显式设置的「令牌注入语义」参数名（HTTPCLIENT039 消息实参）。
+    /// 收集 <c>[Token]</c> 上显式设置的「令牌注入语义」参数名（HTTPCLIENT039 消息实参）。
     /// 仅统计注入语义（TokenType/TokenManagerKey/InjectionMode/Name/Scopes/Scheme/RequiresUserId）；
     /// <c>Disabled</c> 本身与 <c>Justification</c>（诊断豁免理由）不属注入语义，不计。
     /// 位置构造参数（<c>[Token("UserAccessToken")]</c>）即显式 TokenType。
@@ -1410,7 +1410,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
-    /// F-1：判定 <c>[Token]</c> 是否<b>显式</b>传入了位置构造参数（即显式 TokenType）。
+    /// 判定 <c>[Token]</c> 是否<b>显式</b>传入了位置构造参数（即显式 TokenType）。
     /// </summary>
     /// <remarks>
     /// 不能用 <c>AttributeData.ConstructorArguments.Length</c> 判定：主构造参数带默认值
@@ -1481,7 +1481,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (cacheAttr == null)
             return (false, 300, null, false, false);
 
-        // CFG-28 / I-9：统一为「命名参数优先」口径（C# 特性赋值语义）
+        // / 统一为「命名参数优先」口径（C# 特性赋值语义）
         var durationSeconds = AttributeDataHelper.GetIntValuePreferNamed(
             cacheAttr, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 0) ?? 300;
 
@@ -1506,11 +1506,11 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (retryAttr == null)
             return (false, 3, 1000, true, false);
 
-        // CFG-28 / I-9：位置参数与命名参数并存时命名参数优先
+        // / 位置参数与命名参数并存时命名参数优先
         var maxRetries = AttributeDataHelper.GetIntValuePreferNamed(
             retryAttr, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 0) ?? 3;
 
-        // CFG-28（High，回归修复）：双参构造函数 [Retry(a, b)] 的位置参数 b 必须被读取
+        // High，回归修复）：双参构造函数 [Retry(a, b)] 的位置参数 b 必须被读取
         // —— 修复前此读取点只查 NamedArguments，导致 b 自诞生起从未生效（恒回退 1000）。
         var delayMilliseconds = AttributeDataHelper.GetIntValuePreferNamed(
             retryAttr, HttpClientGeneratorConstants.RetryDelayMillisecondsProperty, 1) ?? 1000;
@@ -1533,7 +1533,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (cbAttr == null)
             return (false, 5, 30, 0, 10);
 
-        // CFG-28 / I-9：统一为「命名参数优先」口径
+        // / 统一为「命名参数优先」口径
         var failureThreshold = AttributeDataHelper.GetIntValuePreferNamed(
             cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 0) ?? 5;
 
@@ -1559,7 +1559,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (timeoutAttr == null)
             return (false, 0);
 
-        // CFG-28 / CFG-32 / I-9：统一为「命名参数优先」口径。
+        // / / 统一为「命名参数优先」口径。
         // 旧实现为「先位置参数，仅当 <= 0 时才回退命名参数」——命名参数不是后写优先，而是"补位"，
         // 与 C# 特性赋值语义相反；且非正值被静默接受（值域校验见 HTTPCLIENT027）。
         var timeoutMilliseconds = AttributeDataHelper.GetIntValuePreferNamed(

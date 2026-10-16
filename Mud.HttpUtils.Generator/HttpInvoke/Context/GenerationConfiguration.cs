@@ -38,7 +38,7 @@ internal class GenerationConfiguration
 
     public string DefaultContentType { get; set; } = "application/json";
 
-    // CFG-21：原 Timeout 属性为死字段（赋值于 InterfaceImplementationGenerator，全仓无读取点），已删除。
+    // 原 Timeout 属性为死字段（赋值于 InterfaceImplementationGenerator，全仓无读取点），已删除。
     // 接口级超时由 HttpInvokeRegistrationGenerator 直接从 [HttpClientApi(Timeout=…)] 读取
     // （默认值 HttpClientGeneratorConstants.DefaultHttpClientTimeoutSeconds = 50）。
 
@@ -107,7 +107,7 @@ internal class GenerationConfiguration
     public bool BaseHasTokenManager { get; set; }
 
     /// <summary>
-    /// FIX-06：基类是否需要 currentUserContext 参数。
+    /// 基类是否需要 currentUserContext 参数。
     /// 为 true 时派生类 base(...) 调用必须传入 currentUserContext（位置实参顺序敏感），
     /// 否则基类需 userId 时实参错位（CS1503 + CS7036）。
     /// 与 <see cref="AnyMethodRequiresUserId"/>（派生类自身判定）同口径，

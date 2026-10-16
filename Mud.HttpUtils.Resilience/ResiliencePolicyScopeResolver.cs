@@ -15,7 +15,7 @@ internal static class ResiliencePolicyScopeResolver
     /// <summary>
     /// P2-4：应用维度属性键（<see cref="ResilienceConstants.AppKeyPropertyKey"/>）。
     /// 由执行器在调用弹性包装前写入；存在时追加进作用域键，使多应用共用同名客户端与
-    /// 同一 host 时熔断/超时计数不跨应用共享（F-01 层B 同口径）。
+    /// 同一 host 时熔断/超时计数不跨应用共享（层B 同口径）。
     /// </summary>
     private const string AppKeyPropertyKey = ResilienceConstants.AppKeyPropertyKey;
 

@@ -63,7 +63,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         // 该分析器自行经 AotModeResolver 读取同一份配置，本处不再需要 isAotAnalyzerOnly。
         var isAotEnabled = configSnapshot.AotMode == AotRuntimeMode.Aot;
 
-        // [D-06 修复] 读取 MudEmitGeneratedCodeMarkers 开关，控制生成代码 [GeneratedCode] 标注
+        // [修复] 读取 MudEmitGeneratedCodeMarkers 开关，控制生成代码 [GeneratedCode] 标注
         var emitGeneratedCodeMarkers = configSnapshot.EmitMarkers;
 
         var interfaceDecl = model.Syntax;

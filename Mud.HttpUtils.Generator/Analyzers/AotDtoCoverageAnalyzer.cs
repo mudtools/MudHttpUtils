@@ -68,7 +68,7 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// [F-5 修复] 继承方法的 SerializationMethod 判定——与生成器语义对齐（G-1 勘误）：
+    /// [修复] 继承方法的 SerializationMethod 判定——与生成器语义对齐（勘误）：
     /// 生成器的 <c>GeneratorContext.InterfaceAttributes</c> 仅取派生接口自身特性，接口级
     /// <c>[SerializationMethod]</c> 不随继承生效，取值顺序为「方法级 → 派生接口级 → 默认 Json」。
     /// </summary>
@@ -131,7 +131,7 @@ internal static class AotDtoCoverageAnalyzer
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
-        // [F-2c 修复·B-4] 语法级预筛前移：无 [HttpClientApi] 文本的项目（如纯 DTO 项目）
+        //  语法级预筛前移：无 [HttpClientApi] 文本的项目（如纯 DTO 项目）
         // 直接返回，成本 O(文本 token) 且按 SyntaxTree 缓存（见 SyntaxPrefilter）。
         // 保守性：目标接口必然在源文本中以标识符形式出现特性名，别名/完全限定/生成文件均含目标 token。
         if (!SyntaxPrefilter.MayContain(compilation, "HttpClientApi"))
@@ -180,7 +180,7 @@ internal static class AotDtoCoverageAnalyzer
                 if (interfaceSymbol == null)
                     continue;
 
-                // [F-2c] 两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较。
+                //  两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较。
                 // 语义与原全量符号比较逐条一致（名字不匹配的属性精确比较必为 false）。
                 var hasHttpClientApi = interfaceSymbol.GetAttributes()
                     .Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
@@ -192,7 +192,7 @@ internal static class AotDtoCoverageAnalyzer
                 if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
                     continue;
 
-                // [F-5 修复] 元数据继承方法无语法时的定位回退（派生接口声明）。
+                // [修复] 元数据继承方法无语法时的定位回退（派生接口声明）。
                 var interfaceFallbackLocation = interfaceDecl.GetLocation();
 
                 // 4. 检查每个方法的 DTO 覆盖情况
@@ -209,11 +209,11 @@ internal static class AotDtoCoverageAnalyzer
                     CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes, analysisContext, interfaceFallbackLocation);
                 }
 
-                // [F-5 修复] 基接口继承方法的 DTO 覆盖补扫：生成器经 TypeSymbolHelper.GetAllMethods
+                // [修复] 基接口继承方法的 DTO 覆盖补扫：生成器经 TypeSymbolHelper.GetAllMethods
                 // (includeParentInterfaces: true) 为继承方法生成调用代码（经 AllInterfaces 收集，含跨程序集、
                 // 无 [HttpClientApi] 过滤），而上方循环仅遍历声明成员 → 继承方法的请求/响应 DTO 完全不检
-                // 覆盖，AOT 下运行时 NotSupportedException 静默放行。与 F-2 同一扫描骨架（跳过规则、
-                // 菱形去重一致），复用 CheckMethodDtoCoverage 全逻辑（含 F-1 派生类型校验、AOT005）。
+                // 覆盖，AOT 下运行时 NotSupportedException 静默放行。与 同一扫描骨架（跳过规则、
+                // 菱形去重一致），复用 CheckMethodDtoCoverage 全逻辑（含 派生类型校验、AOT005）。
                 var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);   // 防菱形继承重复诊断
                 try
                 {
@@ -222,7 +222,7 @@ internal static class AotDtoCoverageAnalyzer
                         if (cancellationToken.IsCancellationRequested)
                             return diagnostics.ToImmutable();
 
-                        // 与 F-2 同款跳过规则：本编译且自身带 [HttpClientApi] 的基接口已被独立访问，跳过避免重复诊断
+                        // 与 同款跳过规则：本编译且自身带 [HttpClientApi] 的基接口已被独立访问，跳过避免重复诊断
                         if (SymbolEqualityComparer.Default.Equals(baseIface.ContainingAssembly, compilation.Assembly)
                             && baseIface.GetAttributes().Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
                                 && SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr)))
@@ -235,7 +235,7 @@ internal static class AotDtoCoverageAnalyzer
                             if (!visited.Add(baseMethod))
                                 continue;
 
-                            // 与生成器语义对齐（G-1 勘误）的 SerializationMethod 判定。
+                            // 与生成器语义对齐（勘误）的 SerializationMethod 判定。
                             var serializationMethodOverride = GetInheritedMethodSerializationMethod(baseMethod, interfaceSymbol);
 
                             CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, baseMethod,
@@ -245,7 +245,7 @@ internal static class AotDtoCoverageAnalyzer
                 }
                 catch (Exception ex)
                 {
-                    // [F-5 修复] 异常护栏：宁少报不可抛；异常时保留已收集诊断返回。
+                    // [修复] 异常护栏：宁少报不可抛；异常时保留已收集诊断返回。
                     GeneratorDebugLogger.LogError("AOT004_InheritedDtoCoverage", ex);
                 }
             }
@@ -311,7 +311,7 @@ internal static class AotDtoCoverageAnalyzer
         if (httpJsonSerializableAttr == null)
             return diagnostics.ToImmutable();
 
-        // [F-3 修复·B-3] 门控顺序对调：TFM 判定（CWT+StrongBox 已缓存的 defines 检查）最便宜，
+        // [修复·B-3] 门控顺序对调：TFM 判定（CWT+StrongBox 已缓存的 defines 检查）最便宜，
         // 放最前；netstandard2.0 / net6.0 编译直接归零成本，不再白付全类型扫描后丢弃结果。
         // [AOT006 误报修复] 低版本 TFM 门控：脚手架生成的 Context 整体包裹在 #if NET8_0_OR_GREATER 中
         // （见 Tools/Mud.HttpUtils.JsonContextScaffolder/JsonContextGenerator.cs——net8.0 以下走反射兜底，
@@ -322,7 +322,7 @@ internal static class AotDtoCoverageAnalyzer
 
         // [P1-3 修复] 先做 O(语法树) 探测收集本编译标注类型列表，空则直接返回；
         // 非空才计算覆盖集合（避免无标注类型的项目白付全量引用程序集扫描），对齐 T7 范式。
-        // [F-2b 修复·B-2] 收集内部在符号绑定前加纯语法属性名预检，未标注类型跳过 GetDeclaredSymbol。
+        //  收集内部在符号绑定前加纯语法属性名预检，未标注类型跳过 GetDeclaredSymbol。
         var annotatedTypes = GetLocalAnnotatedTypes(compilation, httpJsonSerializableAttr);
         if (annotatedTypes.Count == 0)
             return diagnostics.ToImmutable();
@@ -367,7 +367,7 @@ internal static class AotDtoCoverageAnalyzer
             var root = syntaxTree.GetRoot();
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
-                // [F-2b 修复·B-2] 纯语法属性名预检：特性名文本不含目标标记的类型声明
+                //  纯语法属性名预检：特性名文本不含目标标记的类型声明
                 // 跳过 GetDeclaredSymbol（昂贵）。2000+ 类型的项目 >99% 在文本层即被跳过。
                 if (!SyntaxPrefilter.MayHaveAttribute(typeDecl, "HttpJsonSerializable"))
                     continue;
@@ -531,7 +531,7 @@ internal static class AotDtoCoverageAnalyzer
     private static readonly ConditionalWeakTable<Compilation, HashSet<string>> _coveredTypesCache = new();
 
     /// <summary>
-    /// [F-1 修复·B-1] 引用程序集级静态缓存：被引用元数据程序集 → 覆盖类型名字键集合。
+    /// [修复·B-1] 引用程序集级静态缓存：被引用元数据程序集 → 覆盖类型名字键集合。
     /// 「全引用程序集递归 GlobalNamespace」只在首次见到某程序集内容时执行一次，
     /// IDE 稳态与多 TFM 编译近零成本。
     /// </summary>
@@ -571,7 +571,7 @@ internal static class AotDtoCoverageAnalyzer
         // 扫描引用程序集中的 JsonSerializerContext 子类
         foreach (var reference in compilation.References)
         {
-            // [F-1] CompilationReference（IDE 项目引用，内容随击键变化）不入静态缓存，直接扫描；
+            //  CompilationReference（IDE 项目引用，内容随击键变化）不入静态缓存，直接扫描；
             // PortableExecutableReference 走「Display + MVID」键控的静态缓存，仅首次付费。
             if (reference is CompilationReference compRef)
             {
@@ -735,7 +735,7 @@ internal static class AotDtoCoverageAnalyzer
         var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
         if (syntax is MethodDeclarationSyntax methodDecl && methodDecl.ReturnType is { } returnType)
             return returnType.GetLocation();
-        // [F-5 修复] 元数据继承方法无语法 → 回退派生接口声明，再退 Location.None。
+        // [修复] 元数据继承方法无语法 → 回退派生接口声明，再退 Location.None。
         return method.Locations.FirstOrDefault() ?? interfaceFallbackLocation ?? Location.None;
     }
 
@@ -757,7 +757,7 @@ internal static class AotDtoCoverageAnalyzer
         var queryMapAttr = analysisContext.QueryMapAttribute;
 
         // [P1-5 修复] 每方法只调用一次 GetMethodSerializationMethod，存局部变量复用。
-        // [F-5 修复] serializationMethodOverride：继承方法由调用方传入与生成器语义对齐的判定值
+        // [修复] serializationMethodOverride：继承方法由调用方传入与生成器语义对齐的判定值
         //（见 GetInheritedMethodSerializationMethod），不能用 GetMethodSerializationMethod——
         // 其读取 method.ContainingType（对继承方法即基接口）的接口级特性，会误把基接口级 Xml 当豁免依据。
         var serializationMethod = serializationMethodOverride ?? GetMethodSerializationMethod(method);
@@ -771,7 +771,7 @@ internal static class AotDtoCoverageAnalyzer
             {
                 var paramLocation = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
                     ?? method.Locations.FirstOrDefault()
-                    ?? interfaceFallbackLocation;   // [F-5 修复] 元数据继承方法无语法 → 回退派生接口声明
+                    ?? interfaceFallbackLocation;   // [修复] 元数据继承方法无语法 → 回退派生接口声明
 
                 // 仅对 [Body] 数组做 AOT004 检查（[Query] 数组走逐元素 ToString，不走 JSON 序列化）
                 if (bodyAttr != null && param.GetAttributes()
@@ -793,7 +793,7 @@ internal static class AotDtoCoverageAnalyzer
                                 method.Name,
                                 arrayElem.ToDisplayString()));
                         }
-                        // [F-1 修复] 与响应端 [P0-2] 同源：请求体序列化派生实例同样需要派生类型元数据。
+                        // [修复] 与响应端 [P0-2] 同源：请求体序列化派生实例同样需要派生类型元数据。
                         // 守卫为 else if：IsSimple 参数即使未覆盖也走查询管线、不进 STJ 多态管线，避免空跑。
                         else if (IsCovered(arrayElem, coveredTypes))
                         {
@@ -819,7 +819,7 @@ internal static class AotDtoCoverageAnalyzer
 
             var paramLocation2 = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
                 ?? method.Locations.FirstOrDefault()
-                ?? interfaceFallbackLocation;   // [F-5 修复] 元数据继承方法无语法 → 回退派生接口声明
+                ?? interfaceFallbackLocation;   // [修复] 元数据继承方法无语法 → 回退派生接口声明
 
             // 检查 [Body] 请求体 DTO — AOT004
             if (bodyAttr != null && param.GetAttributes()
@@ -840,7 +840,7 @@ internal static class AotDtoCoverageAnalyzer
                         method.Name,
                         paramType.ToDisplayString()));
                 }
-                // [F-1 修复] 与响应端 [P0-2] 同源：请求体序列化派生实例同样需要派生类型元数据。
+                // [修复] 与响应端 [P0-2] 同源：请求体序列化派生实例同样需要派生类型元数据。
                 // 守卫为 else if：IsSimple 参数即使未覆盖也走查询管线、不进 STJ 多态管线，避免空跑。
                 else if (IsCovered(paramType, coveredTypes))
                 {
@@ -1036,7 +1036,7 @@ internal static class AotDtoCoverageAnalyzer
         => type is IArrayTypeSymbol { ElementType.SpecialType: SpecialType.System_Byte };
 
     /// <summary>
-    /// FIX-04: 判断类型是否为 System.Collections.Generic 下的已知集合类型。
+    ///  判断类型是否为 System.Collections.Generic 下的已知集合类型。
     /// 仅集合类型的单参泛型参数才会被解包做覆盖判定（如 List&lt;UserDto&gt; → UserDto），
     /// 包装类型（如 ApiResponse&lt;UserDto&gt;）不解包。
     /// </summary>
@@ -1051,7 +1051,7 @@ internal static class AotDtoCoverageAnalyzer
         && CollectionTypeNames.Contains(type.Name);
 
     /// <summary>
-    /// [F-1 修复] 覆盖集合的名字键生成格式（写入与查询必须走同一格式，见 <see cref="GetCoverageKey"/>）。
+    /// [修复] 覆盖集合的名字键生成格式（写入与查询必须走同一格式，见 <see cref="GetCoverageKey"/>）。
     /// </summary>
     /// <remarks>
     /// 在 <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/> 基础上：
@@ -1070,7 +1070,7 @@ internal static class AotDtoCoverageAnalyzer
             | SymbolDisplayMiscellaneousOptions.ExpandValueTuple);
 
     /// <summary>
-    /// [F-1 修复] 覆盖判定的名字键：<b>符号原样</b>显示名（不做 OriginalDefinition 归一——
+    /// [修复] 覆盖判定的名字键：<b>符号原样</b>显示名（不做 OriginalDefinition 归一——
     /// 那会把构造泛型 <c>List&lt;Foo&gt;</c> 与 <c>List&lt;Bar&gt;</c> 坍缩到同一键，
     /// 破坏现行符号比较区分构造泛型实例的语义）。开放泛型归一保留在查询侧
     /// （见 <see cref="IsCovered(INamedTypeSymbol, HashSet{string})"/> 的 unbound 分支）。
@@ -1107,7 +1107,7 @@ internal static class AotDtoCoverageAnalyzer
         }
 
         // 解包集合类型：List<T>, IEnumerable<T>, etc.
-        // FIX-04: 原实现对所有单参泛型一律解包，导致 ApiResponse<UserDto> 被误判为“已覆盖”（仅注册 UserDto 时）。
+        //  原实现对所有单参泛型一律解包，导致 ApiResponse<UserDto> 被误判为“已覆盖”（仅注册 UserDto 时）。
         // 修复：仅对 System.Collections.Generic 下的已知集合类型解包，包装类型（如 ApiResponse<T>）不解包。
         if (type.IsGenericType && type.TypeArguments.Length == 1 &&
             IsCollectionLike(type) &&

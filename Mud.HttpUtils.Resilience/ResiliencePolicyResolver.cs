@@ -90,7 +90,7 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
         {
             var context = new Context();
             // M2-#10：Polly 异常（超时/熔断）在策略边界外汇一为 ApiRequestException（方法级路径不经过 ResilientHttpClient）
-            // M2-#19/N-3：首次尝试不克隆（闭包标志判定，不依赖 provider 写入 RetryCountContextKey），
+            // M2-#19/首次尝试不克隆（闭包标志判定，不依赖 provider 写入 RetryCountContextKey），
             // 保持流式上传与进度语义；仅重试时克隆。
             var isFirstAttempt = true;
             return PollyExceptionNormalizer.ExecuteAsync(

@@ -29,7 +29,7 @@ namespace Mud.HttpUtils;
 /// 生成实现类构造函数接受 <c>ILogger?</c> 可选参数。
 /// </para>
 /// <para>
-/// CFG-06（能力边界显式声明，非静默）：
+/// 能力边界显式声明，非静默）：
 /// <list type="bullet">
 ///   <item><description><b>Logger</b>：无 DI 路径固定使用 <c>NullLogger</c>（生成工厂硬编码 <c>logger: null</c>），
 ///   不产生任何日志。如需日志，请使用 DI 路径。</description></item>
@@ -57,7 +57,7 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// </summary>
     /// <remarks>
     /// <para>
-    /// CFG-06：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）当前
+    /// 无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）当前
     /// <b>不支持拦截器</b>——生成实现类经 <c>DefaultHttpRequestExecutor</c> 直接发送请求，未接入拦截器管道。
     /// 如需请求/响应拦截，请使用 DI 路径（<c>AddMudHttpClient</c> + <c>IHttpRequestInterceptor</c> 注册）。
     /// </para>
@@ -68,7 +68,7 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// 获取或设置响应拦截器。
     /// </summary>
     /// <remarks>
-    /// <para>CFG-06：无 DI 路径当前<b>不支持</b>，语义与 <see cref="RequestInterceptor"/> 相同。</para>
+    /// <para>无 DI 路径当前<b>不支持</b>，语义与 <see cref="RequestInterceptor"/> 相同。</para>
     /// </remarks>
     public IHttpResponseInterceptor? ResponseInterceptor { get; set; }
 
@@ -99,7 +99,7 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// 获取或设置敏感数据掩码器。
     /// </summary>
     /// <remarks>
-    /// CFG-06：已接线至 <c>DefaultHttpRequestExecutor</c>（错误响应日志脱敏）。
+    /// 已接线至 <c>DefaultHttpRequestExecutor</c>（错误响应日志脱敏）。
     /// </remarks>
     public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
 
@@ -187,7 +187,7 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// </value>
     /// <remarks>
     /// <para>
-    /// <b>CFG-31（v3.1）语义澄清</b>：本属性的三态<b>不影响成功路径</b> ——
+    /// <b>v3.1）语义澄清</b>：本属性的三态<b>不影响成功路径</b> ——
     /// 只要工厂委托已注册（<c>[ModuleInitializer]</c> 自动注册或手动
     /// <see cref="RestService.RegisterGeneratedFactory{T}"/>），三种取值都会直接返回实现实例。
     /// </para>
@@ -231,9 +231,9 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// <value>默认为 <c>null</c>（不生效）。</value>
     /// <remarks>
     /// <para>
-    /// <b>CFG-06（不静默声明）</b>：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）
+    /// <b>不静默声明）</b>：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）
     /// 当前<b>不直接消费</b>本属性 —— 生成工厂仅传递 <see cref="ContentSerializer"/>，
-    /// JSON 元数据由其携带的 <c>TypeInfoResolver</c> 承载（AOT JSON 解析器优先级链见 Client README CFG-17）。
+    /// JSON 元数据由其携带的 <c>TypeInfoResolver</c> 承载（AOT JSON 解析器优先级链见 Client README ）。
     /// </para>
     /// <para>
     /// 因此仅设置本属性而未提供含 <c>TypeInfoResolver</c> 的 <see cref="ContentSerializer"/> 时，

@@ -153,7 +153,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         // 供 RecordOutcome 从请求属性读取并同步到 Activity tag（启用 P0 任务 8 请求属性路径）
         var context = new Context();
         // M2-#10：Polly 异常（超时/熔断）在策略边界外汇一
-        // M2-#19/N-3：首次尝试不克隆 —— 经闭包标志判定（不依赖 provider 是否写入 RetryCountContextKey，
+        // M2-#19/首次尝试不克隆 —— 经闭包标志判定（不依赖 provider 是否写入 RetryCountContextKey，
         // 自定义/第三方策略同样正确），首次用原请求保持流式上传与进度语义；仅重试时克隆。
         var isFirstAttempt = true;
         return await PollyExceptionNormalizer.ExecuteAsync(
@@ -258,7 +258,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     }
 
     /// <summary>
-    /// 便捷方法执行路径（闭包内每次重建请求，首次即真实请求 —— M2-#19/N-3 语义天然成立）。
+    /// 便捷方法执行路径（闭包内每次重建请求，首次即真实请求 —— M2-#19/语义天然成立）。
     /// </summary>
     /// <remarks>
     /// M2-#12：便捷方法路径同样执行非幂等防护（<paramref name="retryAllowed"/> 由调用方按 HTTP 方法经
@@ -313,10 +313,10 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         object? jsonSerializerOptions,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // M2-#19/N-3：首次不克隆 —— 直接枚举原请求，保持流式上传/进度语义。
+        // M2-#19/首次不克隆 —— 直接枚举原请求，保持流式上传/进度语义。
         // 流式读取阶段无法被 Polly 包装（IAsyncEnumerable 为拉取模型），连接建立期重试
         // 由调用方自行包装（见接口 remarks），故此处无"重试时再克隆"的路径。
-        // H-9：首个元素前施加 StreamConnectTimeoutSeconds 连接期超时守卫（见 ExecuteStreamCoreAsync）。
+        // 首个元素前施加 StreamConnectTimeoutSeconds 连接期超时守卫（见 ExecuteStreamCoreAsync）。
         await foreach (var item in ExecuteStreamCoreAsync(
             request,
             ct => _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonSerializerOptions, ct),
@@ -350,8 +350,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // M2-#19/N-3：首次不克隆（与非泛型流式重载同构）
-        // H-9：首个元素前施加 StreamConnectTimeoutSeconds 连接期超时守卫（见 ExecuteStreamCoreAsync）。
+        // M2-#19/首次不克隆（与非泛型流式重载同构）
+        // 首个元素前施加 StreamConnectTimeoutSeconds 连接期超时守卫（见 ExecuteStreamCoreAsync）。
         await foreach (var item in ExecuteStreamCoreAsync(
             request,
             ct => _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonTypeInfo, ct),
@@ -363,7 +363,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 #endif
 
     /// <summary>
-    /// H-9 共享流式核心：对<b>首次 MoveNextAsync（连接建立 + 首个元素产出）</b>施加
+    /// 共享流式核心：对<b>首次 MoveNextAsync（连接建立 + 首个元素产出）</b>施加
     /// <see cref="TimeoutOptions.StreamConnectTimeoutSeconds"/> 超时守卫（原生 CTS，绕开 Polly）。
     /// </summary>
     /// <remarks>

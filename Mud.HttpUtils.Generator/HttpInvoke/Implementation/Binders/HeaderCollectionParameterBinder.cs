@@ -21,7 +21,7 @@ internal class HeaderCollectionParameterBinder : IParameterBinder
         // Key/Value 逐项经 HttpHeaderValueValidator.IsValid 校验（CR/LF），
         // 收敛 ns2.0 不校验头值的平台差异，阻断头部注入。不合格项跳过（不发射、不 Remove），
         // Debug 输出头名（不输出值，防敏感信息落日志）。与 [Header] string 分支的
-        // GEN-18 同源：此处数据来自运行期字典（批量），采用跳过而非抛出，单个脏项不致整体请求失败。
+        // 同源：此处数据来自运行期字典（批量），采用跳过而非抛出，单个脏项不致整体请求失败。
         codeBuilder.AppendLine($"{indent}if ({parameter.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    foreach (var __headerKvp in {parameter.Name})");

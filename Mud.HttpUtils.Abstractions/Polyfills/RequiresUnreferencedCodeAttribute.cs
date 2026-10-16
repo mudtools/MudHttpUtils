@@ -6,14 +6,14 @@
 // -----------------------------------------------------------------------
 
 // guard 锚点：RequiresUnreferencedCodeAttribute 自 .NET 6 起 in-box（与 API 的首个 in-box TFM 对齐；
-// 见 RequiresDynamicCodeAttribute.cs 中 BC-29 对「锚点取错 TFM 导致下游 CS0433」的说明）。
+// 见 RequiresDynamicCodeAttribute.cs 中 对「锚点取错 TFM 导致下游 CS0433」的说明）。
 #if !NET6_0_OR_GREATER
 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics.CodeAnalysis;
 
 /// <summary>Polyfill: 标记成员的使用需要可能被裁剪的代码。</summary>
 /// <remarks>
-/// TMX-20（P1）：public —— polyfill 的意义在于让 <b>下游消费方</b> 在缺少 BCL 类型的 TFM
+/// P1）：public —— polyfill 的意义在于让 <b>下游消费方</b> 在缺少 BCL 类型的 TFM
 /// （netstandard2.0）上也能应用裁剪标注；internal 会使下游标注直接 CS0122。
 /// guard 保持 <c>!NET6_0_OR_GREATER</c>：.NET 6+ BCL 已含同名公开类型，
 /// 若在 net6.0 资产中重复定义公开版本，下游将因双程序集同名类型产生 CS0433。

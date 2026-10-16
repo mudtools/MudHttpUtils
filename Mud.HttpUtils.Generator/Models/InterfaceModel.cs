@@ -89,7 +89,7 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     /// <param name="syntax">接口声明节点（带 [HttpClientApi] 的那个 partial 声明）。</param>
     /// <param name="interfaceSymbol">已由构造函数解析的接口符号；语法有误时为 null。</param>
     /// <param name="context">特性语法上下文（提供 Attributes）。</param>
-    // NEW-GEN-10 说明：指纹不包含基接口内部方法，这是已接受的权衡。
+    // NEW-说明：指纹不包含基接口内部方法，这是已接受的权衡。
     // 若基接口添加新方法，用户需手动"触摸"派生接口文件（如添加空行再删除）强制重新生成，
     // 或使用 dotnet build -p:ForceHttpGenerator=true 强制重新生成。
     private static string BuildFingerprint(

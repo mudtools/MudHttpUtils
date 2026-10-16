@@ -78,7 +78,7 @@ public static class MudObservabilityBootstrap
         if (string.IsNullOrWhiteSpace(options.ServiceVersion))
             options.ServiceVersion = contribution.DefaultServiceVersion ?? string.Empty;
 
-        // 6. 完整校验（CFG-10 口径：显式调用，不注册 IOptions 管道）
+        // 6. 完整校验（口径：显式调用，不注册 IOptions 管道）
         var validationResult = MudObservabilityDefaults.Validate(options);
         if (validationResult.Failed)
         {

@@ -23,7 +23,7 @@ internal class InterfaceImplementationGenerator
     /// 类型解析缓存：以 Compilation 为主键的 ConditionalWeakTable，Compilation 变化时自动失效；
     /// 内层以类型名为键缓存解析结果（包括 null），避免对同一 Compilation 重复执行全局命名空间扫描。
     /// </summary>
-    // NEW-GEN-02 说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
+    // NEW-说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
     // 在 IDE 场景下 Compilation 可能保持较长时间引用，但这是 Roslyn 源生成器的标准缓存模式。
     // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();
@@ -86,7 +86,7 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     public void GenerateCode()
     {
-        // [E-5 修复] 接口级 [IgnoreGenerator]：生成器完全不介入（用户自备实现），
+        // [修复] 接口级 [IgnoreGenerator]：生成器完全不介入（用户自备实现），
         // 亦不产生生成期诊断（AOT/MUD 由分析器各自豁免）。
         // 必须早于 ExtractConfigurationFromAttributes 与 ValidateConfiguration，
         // 确保既不产出源码也不产生生成期诊断。
@@ -95,7 +95,7 @@ internal class InterfaceImplementationGenerator
 
         var configuration = ExtractConfigurationFromAttributes();
 
-        // GEN-04 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
+        // 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
         // 生成器会使用默认值（GetDefaultTokenType），多接口共享同一 TokenManager 场景下可能产生注册冲突。
         // 注意：此处使用 !string.IsNullOrEmpty(configuration.TokenManager) 而非 GeneratorContext.HasTokenManager，
         // 因为 GeneratorContext 尚未构造（在 ExtractConfigurationFromAttributes 之后、new GeneratorContext 之前）。
@@ -150,10 +150,10 @@ internal class InterfaceImplementationGenerator
         // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时发出 Warning
         ReportRetryNonIdempotentWithoutAllow(generatorContext);
 
-        // CFG-07：方法级 [Timeout] 超过接口级 HttpClient 超时时发出 Warning
+        // 方法级 [Timeout] 超过接口级 HttpClient 超时时发出 Warning
         ReportMethodTimeoutConflicts(generatorContext);
 
-        // CFG-29 / CFG-32：方法级 [CircuitBreaker] / [Timeout] 特性参数值域校验（Error）
+        // / 方法级 [CircuitBreaker] / [Timeout] 特性参数值域校验（Error）
         ReportResilienceAttributeValueRangeViolations(generatorContext);
 
         // 必须在生成器循环之前登记：MethodGenerator 需要据此决定是否补发占位方法，
@@ -195,7 +195,7 @@ internal class InterfaceImplementationGenerator
         _codeBuilder.AppendLine("}");
         _codeBuilder.AppendLine();
 
-        // FIX-03: hintName 必须唯一。原实现仅用 ClassName（来自 interfaceSymbol.Name，不含元数），
+        //  hintName 必须唯一。原实现仅用 ClassName（来自 interfaceSymbol.Name，不含元数），
         // 导致 IFoo<T> 与 IFoo（同命名空间）产生相同 hintName → CS8785 全量产物消失。
         // 修复：纳入泛型元数（`1, `2…）与嵌套类型路径（Outer_）。
         var namespacePath = generatorContext.NamespaceName.Replace('.', '/');
@@ -342,7 +342,7 @@ internal class InterfaceImplementationGenerator
 
         if (typeSymbol == null)
         {
-            // [E-4 修复] HTTPCLIENT014 定位到 [HttpClientApi] 特性语法，而非整个接口声明。
+            // [修复] HTTPCLIENT014 定位到 [HttpClientApi] 特性语法，而非整个接口声明。
             var location = GetHttpClientApiAttributeLocation() ?? _interfaceDecl.GetLocation();
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientTypeNotFound,
@@ -673,7 +673,7 @@ internal class InterfaceImplementationGenerator
         var baseHasAppAuthorizer = false;
         // 基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
         var baseHasAppManager = false;
-        // FIX-06：基类是否需要 currentUserContext 参数，按与 ComputeAnyMethodRequiresUserId 同口径求值。
+        // 基类是否需要 currentUserContext 参数，按与 ComputeAnyMethodRequiresUserId 同口径求值。
         var baseRequiresUserId = false;
         string? inheritedFromInterfaceName = null;
         if (string.IsNullOrEmpty(inheritedFrom))
@@ -698,7 +698,7 @@ internal class InterfaceImplementationGenerator
                     baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
                     // [G7-01] 默认模式基类（无 HttpClient 且无 TokenManage）持有 _appManager 字段，派生类必须透传 appManager。
                     baseHasAppManager = string.IsNullOrWhiteSpace(baseHttpClient) && string.IsNullOrWhiteSpace(baseTokenManage);
-                    // FIX-06：对基接口符号求值 BaseRequiresUserId（复用同一口径，不重写第二份判定 —— §0.2 原则 9）。
+                    // 对基接口符号求值 BaseRequiresUserId（复用同一口径，不重写第二份判定 —— §0.2 原则 9）。
                     baseRequiresUserId = baseHasTokenManager && ComputeRequiresUserIdForInterface(baseInterface, baseApiAttr);
                     break;
                 }
@@ -733,7 +733,7 @@ internal class InterfaceImplementationGenerator
                             baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
                             // [G7-01] 默认模式基类（无 HttpClient 且无 TokenManage）持有 _appManager 字段，派生类必须透传 appManager。
                             baseHasAppManager = string.IsNullOrWhiteSpace(baseHttpClient) && string.IsNullOrWhiteSpace(baseTokenManage);
-                            // FIX-06：对基接口符号求值 BaseRequiresUserId（复用同一口径，不重写第二份判定 —— §0.2 原则 9）。
+                            // 对基接口符号求值 BaseRequiresUserId（复用同一口径，不重写第二份判定 —— §0.2 原则 9）。
                             baseRequiresUserId = baseHasTokenManager && ComputeRequiresUserIdForInterface(baseInterface, baseApiAttr);
                         }
                     }
@@ -786,7 +786,7 @@ internal class InterfaceImplementationGenerator
         {
             HttpClientOptionsName = _optionsName,
             DefaultContentType = GetHttpClientApiContentTypeFromAttribute(httpClientApiAttribute),
-            // CFG-03/CFG-21：Timeout 由 HttpInvokeRegistrationGenerator 从特性直接读取（含默认值），
+            // /Timeout 由 HttpInvokeRegistrationGenerator 从特性直接读取（含默认值），
             // GenerationConfiguration.Timeout 为死字段，已删除，不再在此赋值。
             IsAbstract = isAbstract,
             InheritedFrom = inheritedFrom,
@@ -801,7 +801,7 @@ internal class InterfaceImplementationGenerator
             BaseHasTokenManager = baseHasTokenManager,
             BaseHasAppAuthorizer = baseHasAppAuthorizer,
             BaseHasAppManager = baseHasAppManager,
-            // FIX-06：与 BaseHasTokenManager 同级，由 ComputeRequiresUserIdForInterface 按同一口径求值。
+            // 与 BaseHasTokenManager 同级，由 ComputeRequiresUserIdForInterface 按同一口径求值。
             BaseRequiresUserId = baseRequiresUserId,
             InheritedFromInterfaceName = inheritedFromInterfaceName,
             TokenType = tokenType,
@@ -905,7 +905,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// FIX-06：对指定接口符号按与 <see cref="ComputeAnyMethodRequiresUserId"/> 同一口径求值是否需要 UserId。
+    /// 对指定接口符号按与 <see cref="ComputeAnyMethodRequiresUserId"/> 同一口径求值是否需要 UserId。
     /// 复用同一判定逻辑（接口级 Token 特性 → IsUserAccessToken 推断 → 方法级 Token 特性），不重写第二份判定 —— §0.2 原则 9。
     /// </summary>
     /// <param name="interfaceSymbol">基接口符号</param>
@@ -1024,7 +1024,7 @@ internal class InterfaceImplementationGenerator
         context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
     }
 
-    // CFG-27：原 ReportCacheAttributeIgnoredProperties（HTTPCLIENT019）已移除 ——
+    // 原 ReportCacheAttributeIgnoredProperties（HTTPCLIENT019）已移除 ——
     // 其唯一触发点 CacheAttribute.Priority 已被删除；UseSlidingExpiration 早已受支持。
     // [Cache] 当前已无「被生成器忽略」的属性，故诊断不再需要（ID HTTPCLIENT019 保留为未使用占位）。
 
@@ -1080,7 +1080,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// CFG-07：方法级 <c>[Timeout(ms)]</c> 超过接口级 <c>[HttpClientApi(Timeout=秒)]</c> 声明的
+    /// 方法级 <c>[Timeout(ms)]</c> 超过接口级 <c>[HttpClientApi(Timeout=秒)]</c> 声明的
     /// HttpClient 超时时发出 Warning —— <c>HttpClient.Timeout</c> 是硬上限，会使 Polly 方法级超时永不触发。
     /// 仅在「方法级显式声明 <c>[Timeout]</c>」且「接口级 <c>Timeout</c> 显式声明」时报告（避免默认值场景误报）。
     /// </summary>
@@ -1106,7 +1106,7 @@ internal class InterfaceImplementationGenerator
             if (timeoutAttr == null)
                 continue;
 
-            // CFG-28 / I-9：与 MethodAnalyzer 同口径（命名参数优先），
+            // / 与 MethodAnalyzer 同口径（命名参数优先），
             // 否则 [Timeout(0, TimeoutMilliseconds = 5000)] 会读到位置值 0 而漏过本冲突检查。
             var methodTimeoutMs = AttributeDataHelper.GetIntValuePreferNamed(
                 timeoutAttr, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, 0) ?? -1;
@@ -1128,7 +1128,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// CFG-29 / CFG-32：校验方法级 <c>[CircuitBreaker]</c> / <c>[Timeout]</c> 的特性参数取值域。
+    /// / 校验方法级 <c>[CircuitBreaker]</c> / <c>[Timeout]</c> 的特性参数取值域。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1156,7 +1156,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// CFG-29：<c>[CircuitBreaker]</c> 四个值域条件（均为 Error，共用 <c>HTTPCLIENT026</c>）。
+    /// <c>[CircuitBreaker]</c> 四个值域条件（均为 Error，共用 <c>HTTPCLIENT026</c>）。
     /// </summary>
     private void ReportCircuitBreakerRangeViolation(IMethodSymbol method, ImmutableArray<AttributeData> attributes)
     {
@@ -1210,7 +1210,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// CFG-32：<c>[Timeout]</c> 有效值必须为正毫秒数（Error，<c>HTTPCLIENT027</c>）。
+    /// <c>[Timeout]</c> 有效值必须为正毫秒数（Error，<c>HTTPCLIENT027</c>）。
     /// 不误报「未声明 <c>[Timeout]</c>」（该情形表示 <c>MethodTimeoutEnabled = false</c>）。
     /// </summary>
     private void ReportTimeoutRangeViolation(IMethodSymbol method, ImmutableArray<AttributeData> attributes)
@@ -1262,7 +1262,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer`1+Inner+_"），用于 hintName 唯一化。
+    ///  构建接口的嵌套类型路径后缀（如 "Outer`1+Inner+_"），用于 hintName 唯一化。
     /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名（含泛型元数）用 "+" 连接。
     /// </summary>
     /// <remarks>

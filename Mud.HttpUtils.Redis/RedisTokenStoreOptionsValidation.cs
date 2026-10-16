@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils.Redis;
 
 /// <summary>
-/// U-2：<see cref="RedisTokenStoreOptions"/> 的一致性校验（注册期与构造期共用单一事实源）。
+/// <see cref="RedisTokenStoreOptions"/> 的一致性校验（注册期与构造期共用单一事实源）。
 /// </summary>
 /// <remarks>
 /// 本库无法探测「是否还有其他实例运行旧版本库」，故把混部署风险处置为 <b>强制确认</b>：

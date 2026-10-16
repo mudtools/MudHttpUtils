@@ -8,13 +8,13 @@
 namespace Mud.HttpUtils.Redis;
 
 /// <summary>
-/// F-3：Redis 令牌键构建（<b>键布局单一事实来源</b>）。
+/// Redis 令牌键构建（<b>键布局单一事实来源</b>）。
 /// </summary>
 /// <remarks>
 /// <para>
 /// 键形态：<c>{prefix}:{tokenType}:{appKey}:{field}</c>，其中 <c>{field}</c> ∈
 /// <see cref="AccessField"/> / <see cref="RefreshField"/>，基形
-/// <c>{prefix}:{tokenType}:{appKey}</c> 与方案 F-3 钉死的
+/// <c>{prefix}:{tokenType}:{appKey}</c> 与方案 钉死的
 /// <c>mud:httputils:{tokenType}:{appKey}</c> 一致。
 /// </para>
 /// <para>

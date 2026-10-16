@@ -67,7 +67,7 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
     /// <summary>逃生舱开关（build_property.ForceHttpGenerator）。</summary>
     public bool Force { get; }
 
-    /// <summary>生成器版本号（与 salt 的 E-3 失效语义一致）。</summary>
+    /// <summary>生成器版本号（与 salt 的 失效语义一致）。</summary>
     public string Version { get; }
 
     /// <summary>

@@ -193,7 +193,7 @@ internal class MethodAnalysisResult
     public string? MethodTokenName { get; set; }
 
     /// <summary>
-    /// 获取有效的 Token 名称：方法级优先于接口级（GEN-09 优先级「方法级 &gt; 接口级 &gt; 默认」）。
+    /// 获取有效的 Token 名称：方法级优先于接口级（优先级「方法级 &gt; 接口级 &gt; 默认」）。
     /// 影响 Header 名、ApiKey 名、Cookie 名、Query 名四处消费点。
     /// </summary>
     public string? EffectiveTokenName => MethodTokenName ?? InterfaceTokenName;
@@ -258,14 +258,14 @@ internal class MethodAnalysisResult
     public bool EffectiveTokenDisabled => MethodTokenDisabled ?? InterfaceTokenDisabled ?? false;
 
     /// <summary>
-    /// F-1：免令牌方法上被忽略的令牌注入参数名列表（HTTPCLIENT039 的消息实参来源）。
+    /// 免令牌方法上被忽略的令牌注入参数名列表（HTTPCLIENT039 的消息实参来源）。
     /// 仅当 <see cref="EffectiveTokenDisabled"/> 为 true 且方法级 [Token] 显式设置了
     /// TokenType/TokenManagerKey/InjectionMode/Name/Scopes/Scheme/RequiresUserId 时非空。
     /// </summary>
     public IReadOnlyList<string> TokenDisabledIgnoredParameters { get; set; } = [];
 
     /// <summary>
-    /// F-1：参数级 <c>[Token(Disabled = true)]</c> 的参数名列表（HTTPCLIENT040 的消息实参来源）。
+    /// 参数级 <c>[Token(Disabled = true)]</c> 的参数名列表（HTTPCLIENT040 的消息实参来源）。
     /// 参数级设置无意义并被忽略（参数仍按令牌参数语义处理），仅用于诊断上报。
     /// </summary>
     public IReadOnlyList<string> ParameterTokenDisabledNames { get; set; } = [];

@@ -409,7 +409,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
-/// 以编程式委托配置 AES 加密选项，并注册 <see cref="IEncryptionProvider"/>（AOT 友好，CFG-26）。
+/// 以编程式委托配置 AES 加密选项，并注册 <see cref="IEncryptionProvider"/>（AOT 友好，）。
 /// </summary>
 /// <remarks>
 /// 与 <see cref="AddMudHttpAesEncryptionFromConfiguration"/> 等价，但不使用 <c>IConfiguration</c> 反射绑定，
@@ -1384,7 +1384,7 @@ public static class HttpClientServiceCollectionExtensions
  }
 
 /// <summary>
-/// 以编程式委托配置 OAuth2 选项（AOT 友好，CFG-26）。
+/// 以编程式委托配置 OAuth2 选项（AOT 友好，）。
 /// </summary>
 /// <remarks>
 /// 与 <see cref="AddMudHttpOAuth2FromConfiguration"/> 等价，但不使用 <c>IConfiguration</c> 反射绑定，

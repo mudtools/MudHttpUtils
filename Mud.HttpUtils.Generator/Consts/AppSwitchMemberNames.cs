@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils.Generator.Consts;
 
 /// <summary>
-/// 生成器无条件发射的「应用切换 / 上下文持有」成员名清单（SW-11 单一事实源）。
+/// 生成器无条件发射的「应用切换 / 上下文持有」成员名清单（单一事实源）。
 /// </summary>
 /// <remarks>
 /// <para>

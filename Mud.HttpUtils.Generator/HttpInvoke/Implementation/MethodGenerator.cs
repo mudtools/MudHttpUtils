@@ -211,7 +211,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodInfo.ReturnType));
         }
 
-        // F-1（M4）：[Cache] 不适用于文件下载（[FilePath]）方法 —— 文件下载写入本地文件、无复用响应体，
+        // M4）：[Cache] 不适用于文件下载（[FilePath]）方法 —— 文件下载写入本地文件、无复用响应体，
         // 缓存不会生效。Warning 级别使"配置静默失效"编译期可见（HTTPCLIENT030）。
         if (methodInfo.CacheEnabled && IsFilePathDownload(methodInfo))
         {
@@ -249,7 +249,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             ReportCacheKeyDiagnostics(context, methodInfo, methodSymbol);
         }
 
-        // F-1：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）与注入参数同用 →
+        // 免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）与注入参数同用 →
         // 注入参数不写入生成代码，编译期以 Warning 提示（HTTPCLIENT039）。
         if (methodInfo.EffectiveTokenDisabled && methodInfo.TokenDisabledIgnoredParameters.Count > 0)
         {
@@ -263,7 +263,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     string.Join(", ", methodInfo.TokenDisabledIgnoredParameters)));
         }
 
-        // F-1：参数级 [Token(Disabled = true)] 无意义（参数级 [Token] 是「令牌参数」标记，不涉及继承），
+        // 参数级 [Token(Disabled = true)] 无意义（参数级 [Token] 是「令牌参数」标记，不涉及继承），
         // 设置被忽略并以 Warning 提示（HTTPCLIENT040）；参数仍按令牌参数语义处理。
         foreach (var disabledParamName in methodInfo.ParameterTokenDisabledNames)
         {
@@ -282,7 +282,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
 
-        // P3.3（TK-18）：Path / HmacSignature 注入模式不被令牌恢复执行器支持，编译期以 Warning 提示。
+        ：Path / HmacSignature 注入模式不被令牌恢复执行器支持，编译期以 Warning 提示。
         if (needsTokenInjection &&
             (methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath ||
              methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
@@ -389,7 +389,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
             if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey)
             {
-                // GEN-09：方法级 Token(Name) 优先于接口级。
+                // 方法级 Token(Name) 优先于接口级。
                 var apiKeyName = methodInfo.EffectiveTokenName;
                 if (!string.IsNullOrEmpty(apiKeyName))
                     // [Phase2 修复 1.8] 对 apiKeyName 转义。
@@ -399,7 +399,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
             {
-                // F-02：HMAC 签名不在令牌获取块发射。__httpRequest 在 GenerateExecutorCall → GenerateRequestSetup
+                // HMAC 签名不在令牌获取块发射。__httpRequest 在 GenerateExecutorCall → GenerateRequestSetup
                 // 中才声明（先使用后声明，CS0841）；且即使声明顺序正确，此处对空请求签名也是语义错误
                 // （签名输入应为 方法 + 路径 + Body + 头最终态）。实际发射延迟至 GenerateExecutorCall 中
                 // 请求组装完成后、发送前（成员生成不受影响：ApplyHmacSignatureAsync 由 HasHmacSignatureInjection 门控）。
@@ -584,7 +584,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         codeBuilder.AppendLine();
 
-        // [FIX-02 复核] 请求体内容的释放责任与声明位置 —— 两形态二选一，均由**创建点**自己承担：
+        // [复核] 请求体内容的释放责任与声明位置 —— 两形态二选一，均由**创建点**自己承担：
         //   ① 条件创建（[Body] + [SerializationMethod(FormUrlEncoded)]：内容只在 `if (body != null)` 内构造）
         //      → 在创建点直接赋给 __httpRequest.Content（所有权转移，由 using var __httpRequest 统一释放）；
         //        不得使用 using var：其作用域是嵌套块，会在 executor 发送前 Dispose（§0.2 原则 10 的原始约束）。
@@ -601,10 +601,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
             GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
 
-        // GEN-03：方法级固定 [Header]（在接口级静态 Header 之后发射，Replace 才能覆盖接口级）
+        // 方法级固定 [Header]（在接口级静态 Header 之后发射，Replace 才能覆盖接口级）
         GenerateMethodLevelFixedHeaders(codeBuilder, methodInfo);
 
-        // F-02：HMAC 签名在请求组装完成后（Body / 接口级 / 方法级头均已就绪）、发送前执行；
+        // HMAC 签名在请求组装完成后（Body / 接口级 / 方法级头均已就绪）、发送前执行；
         // 置于返回类型分支分叉之前，IAsyncEnumerable 等直达路径同样先签名再发送。
         if (needsTokenInjection &&
             methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
@@ -698,7 +698,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var progressArg = progressParam != null ? progressParam.Name : "null";
 
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
-            // F-1（M4）：方法级弹性编排 —— Retry/CircuitBreaker/Timeout 生效时路由到编排版
+            // M4）：方法级弹性编排 —— Retry/CircuitBreaker/Timeout 生效时路由到编排版
             // DownloadLargeAsync（ExecutionDescriptor）；否则走非编排版（ResponseDescriptor）。[Cache] 与
             // 文件下载不适用（HTTPCLIENT030 已警示）。
             var hasFileDownloadResilience = methodInfo.RetryEnabled ||
@@ -978,7 +978,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 && CacheKeySafety.Classify(p) == CacheKeySafety.Classification.Unsafe)
             .ToList();
 
-        // F-03：VaryByUser 缺少用户身份来源 → 键退化为 "user:anonymous"（全体用户共享同一缓存）。
+        // VaryByUser 缺少用户身份来源 → 键退化为 "user:anonymous"（全体用户共享同一缓存）。
         // 必须置于下方 unsafeParams 提前 return 之前——无 Unsafe 参数的方法恰恰是 VaryByUser
         // 最常见的使用形态，放在 return 之后诊断将永远不可达。调用点已由 CacheEnabled 门禁，
         // 无需重复判定 Cache 启用。
@@ -1063,7 +1063,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     .ToList();
             }
 
-            // 先 C# 字面量转义，再插值转义（I-16 / GEN-01）：
+            // 先 C# 字面量转义，再插值转义（/ GEN-01）：
             // CacheKey 模板同样被发射进 $"...{}..." 插值字符串，单花括号会造成插值洞。
             // EscapeForInterpolation 将 { } 双写为 {{ }}，随后 {{i}} 与下方替换键 {{i}} 匹配；
             // 未匹配的 {name}/{垃圾花括号 保留为 {{...}}（运行期为 {name} 字面量）。
@@ -1099,7 +1099,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
         }
 
-        // F-01 层A：默认键首段改为「接口全名.方法名」，堵跨接口同名方法同参串缓存。
+        // 层A：默认键首段改为「接口全名.方法名」，堵跨接口同名方法同参串缓存。
         // 键结构："{InterfaceFQN}.{MethodName}" + "|" + ["user:{id}" +] 参数段；
         // VaryByUser 前缀自首段移至接口段之后（随升级一次性全量缓存失效，用户维度语义不变）。
         // CacheKeyTemplate 显式模板分支（上方）豁免接口名注入：模板为用户显式键语义，改写违背显式意图。
@@ -1216,7 +1216,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private static bool IsDirectReturnType(MethodAnalysisResult methodInfo)
     {
         var innerReturnType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-        // GEN-08（B-4）：IAsyncEnumerable<T> 同样走早退分支（SendAsAsyncEnumerable 绕过执行器，
+        // B-4）：IAsyncEnumerable<T> 同样走早退分支（SendAsAsyncEnumerable 绕过执行器，
         // 不参与 Cache/Resilience/Response<T> 编排，见 :538-548 早退），故一并视为「直达返回」，
         // 使 HTTPCLIENT025 对流式返回 + 编排组合给出编译期提示，避免「配置静默失效」。
         return methodInfo.IsAsyncEnumerableReturn
@@ -1225,7 +1225,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// F-1（M4）：检测是否为文件下载方法（含 <c>[FilePath]</c> 参数，生成器将路由到 <c>DownloadLargeAsync</c>）。
+    /// M4）：检测是否为文件下载方法（含 <c>[FilePath]</c> 参数，生成器将路由到 <c>DownloadLargeAsync</c>）。
     /// </summary>
     private static bool IsFilePathDownload(MethodAnalysisResult methodInfo)
         => methodInfo.Parameters.Any(p => p.Attributes.Any(a => a.Name == HttpClientGeneratorConstants.FilePathAttribute));
@@ -1314,7 +1314,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// GEN-03：发射方法级固定 [Header] 特性（在接口级静态 Header 之后调用）。
+    /// 发射方法级固定 [Header] 特性（在接口级静态 Header 之后调用）。
     /// 发射顺序靠后使 Replace 能覆盖接口级同名头；HeaderMergeMode == Ignore 时跳过方法级固定头
     /// （与 [HeaderMerge(Ignore)] 的「只使用接口级头部」语义一致）。
     /// </summary>
@@ -1356,7 +1356,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private bool ShouldInjectToken(MethodAnalysisResult methodInfo, bool hasTokenManager, bool hasHttpClient)
     {
-        // F-1：免令牌 opt-out（[Token(Disabled = true)]，有效级：方法级 > 接口级）——
+        // 免令牌 opt-out（[Token(Disabled = true)]，有效级：方法级 > 接口级）——
         // 方法不取令牌、不注入、不参与令牌恢复，直接短路（连注入语义也不写入生成代码）。
         if (methodInfo.EffectiveTokenDisabled)
             return false;
@@ -1412,7 +1412,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo))
         {
-            // FIX-11：令牌注入前统一 CR/LF 守卫，防请求头注入（与恢复路径 IsSafeTokenValue 对称）。
+            // 令牌注入前统一 CR/LF 守卫，防请求头注入（与恢复路径 IsSafeTokenValue 对称）。
             EmitTokenValueGuard(codeBuilder, indent);
 
             var headerName = GetTokenHeaderName(methodInfo);
@@ -1424,7 +1424,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // ApiKey 模式或自定义 Header 名称仍使用 Headers.Add 直接注入原始令牌值。
             if (IsTokenHeaderMode(methodInfo) && headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
             {
-                // P2.6（TK-21）：使用令牌方案（Scheme）而非硬编码 "Bearer"。
+                ：使用令牌方案（Scheme）而非硬编码 "Bearer"。
                 var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
                 codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(\"{scheme}\", access_token);");
             }
@@ -1435,10 +1435,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
         else if (IsTokenBasicAuthMode(methodInfo))
         {
-            // FIX-11：BasicAuth 模式同样需要守卫（令牌值拼入 Authorization 头）。
+            // BasicAuth 模式同样需要守卫（令牌值拼入 Authorization 头）。
             EmitTokenValueGuard(codeBuilder, indent);
 
-            // P2.6（TK-21）：BasicAuth 使用令牌方案（Scheme），默认 "Basic"。
+            ：BasicAuth 使用令牌方案（Scheme），默认 "Basic"。
             var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Authorization\", $\"{scheme} {{__basicCredentials}}\");");
         }
@@ -1446,7 +1446,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var cookieName = !string.IsNullOrEmpty(methodInfo.EffectiveTokenName) ? methodInfo.EffectiveTokenName : "access_token";
             var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
-            // MT-20：Cookie 值按 RFC 6265 编码，与 401 恢复路径（TokenRecoveryExecutor.ApplyTokenToRequest）保持一致。
+            // Cookie 值按 RFC 6265 编码，与 401 恢复路径（TokenRecoveryExecutor.ApplyTokenToRequest）保持一致。
             // 原生成代码为裸拼接 `"name=" + access_token`，令牌中若含 ';' / ',' / 空格 可注入额外 Cookie 属性；
             // 而恢复路径已做 Uri.EscapeDataString —— 同一框架两条路径行为不一致。
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + System.Uri.EscapeDataString(access_token));");
@@ -1457,7 +1457,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// FIX-11：发射令牌值 CR/LF 守卫代码，在令牌注入请求头之前对 access_token 做运行时检查。
+    /// 发射令牌值 CR/LF 守卫代码，在令牌注入请求头之前对 access_token 做运行时检查。
     /// 与恢复路径 TokenRecoveryExecutor.IsSafeTokenValue 对称——拒绝 CR/LF 及所有 C0 控制字符与 DEL。
     /// 守卫失败时抛出 InvalidOperationException 以中断请求发送，防止恶意令牌值通过 \r\n 注入额外 HTTP 头。
     /// </summary>
@@ -1491,12 +1491,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 判断是否需要生成 TokenRecoveryContext。
     /// 仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
-    /// P2.5（TK-07）：当显式指定了 TokenManagerKey 时也必须生成上下文，以便 TokenManagerKey 能
+    /：当显式指定了 TokenManagerKey 时也必须生成上下文，以便 TokenManagerKey 能
     /// 携带到恢复执行器，作为管理器定位的查询键与可观测性维度写入。
     /// </summary>
     private bool ShouldGenerateTokenRecoveryContext(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
-        // F-1：免令牌方法不参与令牌恢复，不建恢复上下文（与 ShouldInjectToken 短路双保险）。
+        // 免令牌方法不参与令牌恢复，不建恢复上下文（与 ShouldInjectToken 短路双保险）。
         if (methodInfo.EffectiveTokenDisabled)
             return false;
 
@@ -1567,9 +1567,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             _ => "TokenInjectionMode.Header"
         };
 
-        // P2.5（TK-07）：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
+        ：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
         // [F-Identity] 经虚接缝解析（见上方 tokenKeyExpr / userIdExpr），继承方法被派生类覆盖身份后仍能正确恢复。
-        // TMR-04：写入 Scopes，使恢复执行器能按正确的作用域失效和刷新令牌。
+        // 写入 Scopes，使恢复执行器能按正确的作用域失效和刷新令牌。
         var effectiveScopes = methodInfo.EffectiveTokenScopes;
         var scopes = TokenHelper.ParseScopes(effectiveScopes);
         var scopesArg = scopes.Length > 0
@@ -1586,7 +1586,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 escapedQueryParamName = StringEscapeHelper.EscapeString(queryParamName);
         }
 
-        // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
+        // GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
         codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
         codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_TokenRecoveryContext\", new Mud.HttpUtils.TokenRecoveryContext");
         codeBuilder.AppendLine($"{indent}{{");
@@ -1627,7 +1627,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         var isValid = true;
 
-        // [E-4 修复] 诊断定位到方法本身（而非整个接口声明），便于 IDE 快速定位与 #pragma 抑制。
+        // [修复] 诊断定位到方法本身（而非整个接口声明），便于 IDE 快速定位与 #pragma 抑制。
         var methodLocation = GetMethodLocation(context, methodInfo);
 
         // 校验加密兼容性：EnableEncrypt=true 时 HttpClient 必须实现 IEncryptableHttpClient
@@ -1781,7 +1781,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (string.IsNullOrEmpty(urlTemplate))
             return;
 
-        // CFG-18：接口标记 [AllowUnmatchedRouteParameters] 时，URL 模板中的未匹配 {token} 占位符
+        // 接口标记 [AllowUnmatchedRouteParameters] 时，URL 模板中的未匹配 {token} 占位符
         // 有意保留为字面量（交由 DelegatingHandler/拦截器在运行时重写），跳过 HTTPCLIENT013 校验。
         if (AttributeDataHelper.HasAttribute(
                 context.InterfaceSymbol!, HttpClientGeneratorConstants.AllowUnmatchedRouteParametersAttributeNames))
@@ -1803,7 +1803,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     p.Name)),
             StringComparer.OrdinalIgnoreCase);
 
-        // FIX-05：接口级 Path 来源（[InterfacePath] 特性 + 接口属性 [Path]）**仅供「缺失」判定**，
+        // 接口级 Path 来源（[InterfacePath] 特性 + 接口属性 [Path]）**仅供「缺失」判定**，
         // 防止接口声明了路径占位符但方法参数未标注 [Path] 时误报 HTTPCLIENT013 Error。
         //
         // 接口级 Path **不得**参与「多余」判定 ——

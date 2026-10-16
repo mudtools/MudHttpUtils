@@ -57,7 +57,7 @@ internal static class SensitiveUrlRedactor
         // （`code` 亦常为业务编码、`address` 亦常为网络地址），收窄为具体变体：
         "auth_code", "authorization_code", "verify_code", "sms_code", "captcha", "otp",
         "home_address", "detail_address", "billing_address", "shipping_address",
-        // C-01（Mud.Wechat 集成评审，P0-4）：企业微信把凭据强制放在 **Query**（官方契约，非 Header），
+        // Mud.Wechat 集成评审，P0-4）：企业微信把凭据强制放在 **Query**（官方契约，非 Header），
         // 其参数名既非通用 `token`/`secret` 变体，也不含 `_token` 后缀，因此精确匹配词表必须显式列出，
         // 否则 `corpsecret` / `suite_access_token` / `provider_access_token` 会随
         // `ApiException.RequestUri`、日志与遥测 URL 明文外泄。本组同时被
@@ -187,7 +187,7 @@ internal static class SensitiveUrlRedactor
     }
 
     /// <summary>
-    /// R-P1-05：判断键是否为强制掩码项（进程级登记键 或 请求级登记键）。
+    /// 判断键是否为强制掩码项（进程级登记键 或 请求级登记键）。
     /// </summary>
     private static bool IsMandatorySensitiveKey(string key, IReadOnlyCollection<string>? extraKeys)
     {
@@ -261,7 +261,7 @@ internal static class SensitiveUrlRedactor
         if (value.Length == 0 || value == Mask)
             return pair;
 
-        // R-P1-05：强制掩码项（进程级 / 请求级登记键）不受全局开关约束。
+        // 强制掩码项（进程级 / 请求级登记键）不受全局开关约束。
         if (IsMandatorySensitiveKey(key, extraKeys))
             return key + "=" + Mask;
 

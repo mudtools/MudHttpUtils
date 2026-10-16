@@ -20,7 +20,7 @@ namespace Mud.HttpUtils.Models.Payloads;
 ///     <c>netstandard2.0</c> 外部消费工程的<b>默认</b> <c>LangVersion</c> 是 7.3（实测 CS8370）。
 ///     生成物按「C# 7.3 可编译」基线书写，无捕获性由<b>生成器本身</b>保证
 ///     （只输出形参 <c>t</c>/<c>n</c> 与转换器静态方法的调用，无任何外层变量引用）；</item>
-///   <item>固定 <c>\n</c> 换行、4 空格缩进（FIX-16：跨平台字节一致）；</item>
+///   <item>固定 <c>\n</c> 换行、4 空格缩进（跨平台字节一致）；</item>
 ///   <item>生成成员带 XML 文档注释：<c>// &lt;auto-generated/&gt;</c> 头<b>不</b>抑制 CS1591，
 ///     消费方启用 <c>GenerateDocumentationFile</c> 时会因公共成员缺注释告警；</item>
 ///   <item>仅生成 <c>partial</c> 成员（类名与属性由消费方手写，公共 API 的 XML 文档亦由消费方负责）。</item>

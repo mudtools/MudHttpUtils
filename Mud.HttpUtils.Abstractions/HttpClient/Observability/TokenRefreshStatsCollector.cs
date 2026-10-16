@@ -85,7 +85,7 @@ public static class TokenRefreshStatsCollector
             return;
         var oldRetention = s_retention;
         s_retention = retention;
-        // NEW-OB-01 修复：允许缩小保留期，并在缩小时清理超出新窗口的事件
+        // NEW-修复：允许缩小保留期，并在缩小时清理超出新窗口的事件
         if (retention < oldRetention)
         {
             var since = DateTimeOffset.UtcNow - retention;
@@ -136,7 +136,7 @@ public static class TokenRefreshStatsCollector
         DateTimeOffset? lastFailureAt = null;
 
         // 并发枚举 ConcurrentQueue 是安全的（得到的是某一时刻的快照）
-        // NEW-OB-02 修复：利用 FIFO 单调性，遇到首个窗口内事件后停止跳过
+        // NEW-修复：利用 FIFO 单调性，遇到首个窗口内事件后停止跳过
         var started = false;
         foreach (var e in s_events)
         {

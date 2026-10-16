@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// 复合标识的<b>长度前缀</b>编码 —— 对任一分段内容天然单射，无需转义、无控制字符约定、O(n) 单次分配。
 /// </summary>
 /// <remarks>
-/// <para>格式：<c>{len1}:{part1}{len2}:{part2}...</c>（len 为 UTF-16 码元数，与 <see cref="string.Length"/> 同口径）。
+/// <para>格式：<c>{len1}:{part1}{len2}:{part2}...</c>（len 为 码元数，与 <see cref="string.Length"/> 同口径）。
 /// 因每段都以"自身长度 + 冒号"开头，任一分段内容（含分隔符、冒号、控制字符）都不可能跨越段边界，
 /// 故 <c>Combine(a, b) == Combine(c, d)</c> 当且仅当 <c>a == c &amp;&amp; b == d</c>。</para>
 /// <para><b>适用场景</b>：分段内容<b>不可信</b>（如 <c>TokenRecoveryContext.TokenManagerKey</c>、

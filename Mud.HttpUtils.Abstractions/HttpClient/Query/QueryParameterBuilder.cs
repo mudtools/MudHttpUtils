@@ -63,7 +63,7 @@ public sealed class QueryParameterBuilder(string baseUrl)
     /// 添加查询参数；<paramref name="value"/> 为 <c>null</c> 时仍以空值落键（<c>name=</c>）。
     /// </summary>
     /// <remarks>
-    /// CFG-04：供 <c>[Query(SerializeNull = true)]</c> 使用。与 <see cref="Add(string, string?)"/>
+    /// 供 <c>[Query(SerializeNull = true)]</c> 使用。与 <see cref="Add(string, string?)"/>
     /// 的「null 跳过」语义区分：本方法保留「显式空值」表达力。
     /// </remarks>
     /// <param name="name">参数名称。</param>

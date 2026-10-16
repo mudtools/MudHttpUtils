@@ -82,7 +82,7 @@ internal static class AotXmlRejectionAnalyzer
         if (!isAotContext)
             return diagnostics.ToImmutable();
 
-        // [F-2c 修复·B-4] 语法级预筛前移：无 [HttpClientApi] 文本的项目直接返回（保守不漏报，
+        //  语法级预筛前移：无 [HttpClientApi] 文本的项目直接返回（保守不漏报，
         // 详见 SyntaxPrefilter）。AOT007 的分析对象就是 [HttpClientApi] 接口方法，命中后才付全树遍历。
         if (!SyntaxPrefilter.MayContain(compilation, "HttpClientApi"))
             return diagnostics.ToImmutable();
@@ -112,7 +112,7 @@ internal static class AotXmlRejectionAnalyzer
                 if (interfaceSymbol == null)
                     continue;
 
-                // [F-2c] 两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较（语义不变）。
+                //  两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较（语义不变）。
                 var hasHttpClientApi = interfaceSymbol.GetAttributes()
                     .Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
                         && SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
@@ -188,11 +188,11 @@ internal static class AotXmlRejectionAnalyzer
                         method.Name));
                 }
 
-                // [F-2 修复] 基接口继承方法的方法级 [SerializationMethod(Xml)] 补扫：
+                // [修复] 基接口继承方法的方法级 [SerializationMethod(Xml)] 补扫：
                 // 生成器经 TypeSymbolHelper.GetAllMethods(includeParentInterfaces: true) 将继承方法纳入
                 // 生成管线并真实走 XML 管线（AOT 下 XmlSerializer 字段构造抛 PlatformNotSupportedException），
                 // 而上方循环仅遍历声明成员（GetMembers）→ 继承方法编译期静默放行。
-                // 只读方法级特性（接口级特性不被生成器继承——G-1 勘误：运行时实际走 Json，
+                // 只读方法级特性（接口级特性不被生成器继承——勘误：运行时实际走 Json，
                 // 此处若报 AOT007 即误导性误报，故刻意不读接口级）；
                 // 不进入重型 MethodAnalyzer.AnalyzeMethod，符合 [P1-2] 预门控精神。
                 var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);   // 防菱形继承重复诊断
@@ -243,7 +243,7 @@ internal static class AotXmlRejectionAnalyzer
                 }
                 catch (Exception ex)
                 {
-                    // [F-2 修复] 异常护栏：宁少报不可抛；异常时保留已收集诊断返回。
+                    // [修复] 异常护栏：宁少报不可抛；异常时保留已收集诊断返回。
                     GeneratorDebugLogger.LogError("AOT007_InheritedXml", ex);
                 }
             }

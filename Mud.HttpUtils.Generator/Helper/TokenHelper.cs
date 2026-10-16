@@ -145,7 +145,7 @@ internal static class TokenHelper
     }
 
     /// <summary>
-    /// [D-3 选项 1] 从 TokenInjectionMode 枚举型 <see cref="TypedConstant"/> 获取注入模式字符串。
+    /// [选项 1] 从 TokenInjectionMode 枚举型 <see cref="TypedConstant"/> 获取注入模式字符串。
     /// 经 <see cref="AttributeArgumentReader.GetEnumMemberName"/>（统一「特性参数读取」入口）按
     /// **枚举成员常量值**反解成员名，独立于枚举成员定义顺序。
     /// 注：生成器无法引用 Abstractions 里的枚举类型，历史实现依赖手写 <c>switch(i)</c> 序号（0..6）——
@@ -167,7 +167,7 @@ internal static class TokenHelper
     /// 从历史惯用输入（整数序号 / 枚举名字符串 / 全限定名）解析注入模式。
     /// </summary>
     /// <remarks>
-    /// [D-3 选项 1] 本入口仅为兼容历史约定输入保留；生产特性读取路径应走
+    /// [选项 1] 本入口仅为兼容历史约定输入保留；生产特性读取路径应走
     /// <see cref="GetTokenInjectionModeName(TypedConstant)"/>。其中整数序号映射与枚举定义顺序
     /// 耦合的历史妥协（0=Header…6=Cookie）仅存于此兼容分支，不再作为生产读取路径。
     /// </remarks>

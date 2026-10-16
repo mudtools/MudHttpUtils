@@ -10,7 +10,7 @@ using StackExchange.Redis;
 namespace Mud.HttpUtils.Redis;
 
 /// <summary>
-/// U-3：<see cref="RedisRefreshLease"/> 的配置项。
+/// <see cref="RedisRefreshLease"/> 的配置项。
 /// </summary>
 public sealed class RedisRefreshLeaseOptions
 {
@@ -22,8 +22,8 @@ public sealed class RedisRefreshLeaseOptions
 }
 
 /// <summary>
-/// U-3：跨进程<b>令牌刷新去重租约</b>的 Redis 实现 —— <c>SET NX PX</c> 原子获取 + Lua compare-and-del
-/// 所有权校验释放（3.0.8 F-3 登记的「跨进程刷新去重（SET NX PX 租约）」增强项）。
+/// 跨进程<b>令牌刷新去重租约</b>的 Redis 实现 —— <c>SET NX PX</c> 原子获取 + Lua compare-and-del
+/// 所有权校验释放（3.0.8 登记的「跨进程刷新去重（SET NX PX 租约）」增强项）。
 /// </summary>
 /// <remarks>
 /// <para>

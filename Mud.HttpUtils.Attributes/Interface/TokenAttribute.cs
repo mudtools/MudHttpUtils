@@ -91,7 +91,7 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     /// 此属性用于解耦业务概念（TokenType）和技术查找键（TokenManagerKey）。
     /// 例如，多个不同的 TokenType 可以映射到同一个 TokenManager。
     /// 如果未指定，则使用 TokenType 作为查找键。
-    /// NEW-GEN-09 说明：主构造函数的 tokenType 参数会同时设置此属性和 <see cref="TokenType"/>。
+    /// NEW-说明：主构造函数的 tokenType 参数会同时设置此属性和 <see cref="TokenType"/>。
     /// 若显式设置为 null，生成器将回退到 <see cref="TokenType"/> 作为降级值。
     /// </remarks>
     public string? TokenManagerKey { get; set; } = tokenType;
@@ -101,7 +101,7 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     /// 例如 "Bearer"、"Basic" 或自定义方案。
     /// </summary>
     /// <remarks>
-    /// <para>P2.6（TK-21）新增：此前生成器与恢复执行器均硬编码 "Bearer"/"Basic"。指定此值后，
+    /// <para>TK-21）新增：此前生成器与恢复执行器均硬编码 "Bearer"/"Basic"。指定此值后，
     /// 生成令牌注入代码与 <see cref="Mud.HttpUtils.TokenRecoveryContext.TokenScheme"/> 将采用此方案。
     /// 留空时按注入模式回退：BasicAuth 模式默认 "Basic"，其余默认 "Bearer"。</para>
     /// </remarks>
@@ -139,7 +139,7 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     public string? Justification { get; set; }
 
     /// <summary>
-    /// F-1（G-1）：获取或设置一个值，该值指示<b>显式阻断接口级 <c>[Token]</c> 继承</b>（方法级免令牌 opt-out）。
+    /// ：获取或设置一个值，该值指示<b>显式阻断接口级 <c>[Token]</c> 继承</b>（方法级免令牌 opt-out）。
     /// </summary>
     /// <remarks>
     /// <para>

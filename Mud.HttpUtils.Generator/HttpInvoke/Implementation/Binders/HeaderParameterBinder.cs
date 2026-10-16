@@ -14,7 +14,7 @@ internal class HeaderParameterBinder : IParameterBinder
     public void GenerateBindingCode(StringBuilder codeBuilder, ParameterInfo parameter, MethodAnalysisResult methodInfo, string indent)
     {
         var headerAttr = parameter.Attributes.First(a => a.Name == HttpClientGeneratorConstants.HeaderAttribute);
-        // GEN-05（B-1）：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
+        // B-1）：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
         // 此前只读 Arguments[0]，导致 [Header(Name = "X-Tenant")] / [Header(AliasAs = "...")] 落回参数名。
         var explicitHeaderName = AttributeArgumentReader.GetString(headerAttr, AttributeArgumentReader.ResolveNamePosition(headerAttr.Name), "Name")
             ?? AttributeArgumentReader.GetString(headerAttr, null, "AliasAs");
@@ -30,7 +30,7 @@ internal class HeaderParameterBinder : IParameterBinder
         // 未声明时回退 Authorization）。
         // 修复前：本分支读接口级 InterfaceTokenName 并把 Name 与 Scheme 字面量（"Bearer"/"Basic"）比对 ⇒
         // 分支不可达，头名落回**参数名**（如 token），服务端按 Name 指定的头取值必然 401。
-        // 显式头名（[Header(Name/AliasAs)]）仍然最优先（GEN-05 契约不变）。
+        // 显式头名（[Header(Name/AliasAs)]）仍然最优先（契约不变）。
         if (isTokenParam && string.IsNullOrEmpty(explicitHeaderName))
         {
             var tokenMode = methodInfo.EffectiveTokenInjectionMode;
@@ -39,7 +39,7 @@ internal class HeaderParameterBinder : IParameterBinder
                 tokenMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey;
 
             // 非 Header/ApiKey 令牌模式（Query/Cookie/BasicAuth/Path/HmacSignature）下，
-            // [Header] 无名参数保持 GEN-05 的「参数名」回退，不扩大改动面。
+            // [Header] 无名参数保持 的「参数名」回退，不扩大改动面。
             if (isHeaderCarryingMode)
                 headerName = TokenMethodHelper.GetTokenHeaderName(methodInfo) ?? "Authorization";
         }
@@ -88,7 +88,7 @@ internal class HeaderParameterBinder : IParameterBinder
         }
         else
         {
-            // FIX-05: formatString 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
+            //  formatString 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
             var escapedFormat = StringEscapeHelper.EscapeString(formatString);
             var formatExpression = !string.IsNullOrEmpty(formatString)
                 ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedFormat}}}\", {parameter.Name})"
@@ -96,7 +96,7 @@ internal class HeaderParameterBinder : IParameterBinder
 
             // 非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
             // ns2.0 的 Headers.Add 不拦截）。不合格跳过（不发射、不 Remove）；
-            // Debug 仅输出头名（不输出值，防敏感信息落日志）。与 string 分支 GEN-18 同源收敛平台差异。
+            // Debug 仅输出头名（不输出值，防敏感信息落日志）。与 string 分支 同源收敛平台差异。
             var headerValueLocal = $"__headerValue_{parameter.Name}";
             codeBuilder.AppendLine($"{indent}var {headerValueLocal} = {formatExpression};");
             codeBuilder.AppendLine($"{indent}if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({headerValueLocal}))");

@@ -12,14 +12,14 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>为什么需要本扩展</b>：3.0.0 的 <c>BC-27</c> 移除了 <c>IAppContextSwitcher.UseApp(appKey)</c> 后，
+/// <b>为什么需要本扩展</b>：3.0.0 的 <c></c> 移除了 <c>IAppContextSwitcher.UseApp(appKey)</c> 后，
 /// 「不可信 appKey + 完整守卫 + <b>无作用域</b>（切换并保持）+ 返回上下文实例」这一组合在上游**没有入口**：
 /// </para>
 /// <list type="bullet">
 /// <item><description><see cref="IAppScopeSwitcher.UseAppScope"/> 是<b>作用域式</b> —— 释放即回滚，
 /// 无法表达"切换到目标应用并长期保持"（强行不释放则泄漏 <see cref="IDisposable"/>）；</description></item>
 /// <item><description><see cref="IAppContextHolder.SwitchTo"/> 是<b>受信路径</b> —— 不做 appKey 格式校验与授权判定，
-/// 直接以不可信 appKey 调用它是<b>安全退化</b>（越过 <c>MT-02</c> / <c>MT-18</c> 的多租户防线）。</description></item>
+/// 直接以不可信 appKey 调用它是<b>安全退化</b>（越过 <c></c> / <c></c> 的多租户防线）。</description></item>
 /// </list>
 /// <para>
 /// 本扩展用「受控的 <see cref="IAppContextHolder.SwitchTo"/>」补齐该缺口：守卫与生成代码
@@ -56,7 +56,7 @@ public static class AppKeySwitchExtensions
     private const string InvalidAppKeyMessage =
         "appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。";
 
-    /// <summary>授权器缺失时的消息（与生成代码逐字一致；默认拒绝语义，MT-02 / BC-18）。</summary>
+    /// <summary>授权器缺失时的消息（与生成代码逐字一致；默认拒绝语义，/。</summary>
     private const string MissingAuthorizerMessage =
         "多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。";
 
@@ -71,7 +71,7 @@ public static class AppKeySwitchExtensions
     /// <param name="appKey">应用标识（可能来自外部输入，将被格式校验）。</param>
     /// <param name="appManager">应用管理器（用于解析目标上下文）。</param>
     /// <param name="authorizer">
-    /// 应用切换授权器。<b>为 null 表示未注册 ⇒ 直接拒绝</b>（默认拒绝，MT-02 / BC-18）；
+    /// 应用切换授权器。<b>为 null 表示未注册 ⇒ 直接拒绝</b>（默认拒绝，/；
     /// 单应用 / 完全受信场景请显式注册 <see cref="AllowAllAppAccessAuthorizer"/> 以表明放行意图。
     /// </param>
     /// <typeparam name="TAppContext">

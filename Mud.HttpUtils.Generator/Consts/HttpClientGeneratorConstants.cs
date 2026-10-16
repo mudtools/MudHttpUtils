@@ -90,7 +90,7 @@ internal static class HttpClientGeneratorConstants
     public const string HttpClientProperty = "HttpClient";
     public const string IsAbstractProperty = "IsAbstract";
     public const string InheritedFromProperty = "InheritedFrom";
-    // CFG-22：BaseAddressProperty 为死常量（全仓仅定义、无读取），已删除。
+    // BaseAddressProperty 为死常量（全仓仅定义、无读取），已删除。
     // [HttpClientApi(BaseAddress = …)] 使用处会直接产生编译错误 CS0619（属性标注 [Obsolete(error: true)]）。
 
     // 原 BasePathAttributeNames 常量已删除（全仓零引用；真实判定为硬编码，
@@ -105,7 +105,7 @@ internal static class HttpClientGeneratorConstants
     public static readonly string[] HeaderMergeAttributeNames = ["HeaderMergeAttribute", "HeaderMerge"];
     public static readonly string[] SerializationMethodAttributeNames = ["SerializationMethodAttribute", "SerializationMethod"];
 
-    /// <summary>CFG-18：接口级「允许未匹配路由占位符」标记特性名。</summary>
+    /// <summary>接口级「允许未匹配路由占位符」标记特性名。</summary>
     public static readonly string[] AllowUnmatchedRouteParametersAttributeNames = ["AllowUnmatchedRouteParametersAttribute", "AllowUnmatchedRouteParameters"];
 
     public static readonly string[] RetryAttributeNames = ["RetryAttribute", "Retry"];
@@ -169,7 +169,7 @@ internal static class HttpClientGeneratorConstants
     // 默认值
     /// <summary>
     /// 未显式配置 <c>[HttpClientApi(Timeout=…)]</c> 时的默认超时秒数。
-    /// 与 <c>Mud.HttpUtils.Attributes.HttpClientApiAttribute.DefaultTimeoutSeconds</c> 保持一致（CFG-03），
+    /// 与 <c>Mud.HttpUtils.Attributes.HttpClientApiAttribute.DefaultTimeoutSeconds</c> 保持一致（），
     /// 由测试 <c>HttpClientApiAttributeDefaultTimeoutTests</c> 守护一致性。
     /// </summary>
     public const int DefaultHttpClientTimeoutSeconds = 50;

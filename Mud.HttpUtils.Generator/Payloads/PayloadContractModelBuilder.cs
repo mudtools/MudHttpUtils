@@ -55,7 +55,7 @@ internal static class PayloadContractModelBuilder
 
     // —— 特性参数名 ——
     // 常量化的动机：AttributeParameterContractTests 以「属性名字符串是否出现在生成器源码中」
-    // 判定「特性新增了可写属性但生成器未同步读取」这一类回归（CFG-28 根因），故必须保留字面量。
+    // 判定「特性新增了可写属性但生成器未同步读取」这一类回归（根因），故必须保留字面量。
     private const string ContractIdProperty = "ContractId";
     private const string ConverterProperty = "Converter";
     private const string ScopeFallbackProperty = "ScopeFallback";
@@ -583,7 +583,7 @@ internal static class PayloadContractModelBuilder
 
         // v2.5（G-ADR-17）：ItemsObject 的「可空元素实参 × 非可空 class 约束」是**生成期不可调和**的组合——
         // 带标注实参违反 class 约束（CS8634），去标注实参又让返回的 List<TItem> 与 List<TItem?> 属性
-        // 触发 CS8619（两个方向的 List 可空性赋值均告警，实测）。两种渲染都泄漏告警 ⇒ 按 G-ADR-15 拦截，
+        // 触发 CS8619（两个方向的 List 可空性赋值均告警，实测）。两种渲染都泄漏告警 ⇒ 按 G-拦截，
         // 指向消费方可操作的修复（class? 约束 / 去约束 / 返回类型承载可空性）。
         if (string.Equals(effectiveFormat, ItemsObjectFormatName, StringComparison.Ordinal)
             && typeArgument != null
@@ -887,8 +887,8 @@ internal static class PayloadContractModelBuilder
         {
             // Object（v2.5 / G-ADR-17）：泛型实参**不含**可空标注——可空实参会违反消费方以
             // `class` 约束声明的方法（CS8634，指向生成文件）；「元素缺失 ⇒ null」的可空性由
-            // 方法声明的返回类型（TSingle?）承载，故丢弃 ? 恒安全（G-ADR-15：凡生成物必然
-            // 告警的形态一律生成期消解）。其余形态沿用 G-ADR-16 的 GeneratedTypeFormat。
+            // 方法声明的返回类型（TSingle?）承载，故丢弃 ? 恒安全（G-凡生成物必然
+            // 告警的形态一律生成期消解）。其余形态沿用 G-的 GeneratedTypeFormat。
             var typeArgumentFormat = string.Equals(formatName, ObjectFormatName, StringComparison.Ordinal)
                 ? SymbolDisplayFormat.FullyQualifiedFormat
                 : GeneratedTypeFormat;
@@ -1005,7 +1005,7 @@ internal static class PayloadContractModelBuilder
     /// （<c>string?</c>）。若首参被标注为<b>非可空</b>（<c>NullableAnnotation.NotAnnotated</c>），
     /// <c>Nullable=enable</c> 的消费工程会在<b>生成文件</b>里收到 <c>CS8604</c>
     /// （可能传入 null 引用实参；<c>// &lt;auto-generated/&gt;</c> <b>不</b>抑制该告警，
-    /// <c>TreatWarningsAsErrors</c> 下即构建失败）⇒ 与 G-ADR-15 同源，改为生成期拦截。
+    /// <c>TreatWarningsAsErrors</c> 下即构建失败）⇒ 与 G-同源，改为生成期拦截。
     /// </para>
     /// <para>
     /// <b>未标注（oblivious）仍接受</b>：<c>NullableAnnotation.None</c> 只在 nullable 未启用的声明处出现，

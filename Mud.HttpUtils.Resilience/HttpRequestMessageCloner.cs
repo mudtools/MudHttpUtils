@@ -272,7 +272,7 @@ internal static class HttpRequestMessageCloner
         long maxContentSize = DefaultMaxContentSize,
         CancellationToken cancellationToken = default)
     {
-        // H-7：透传取消令牌。克隆阶段被取消时 OperationCanceledException 即时上抛
+        // 透传取消令牌。克隆阶段被取消时 OperationCanceledException 即时上抛
         // （不被下方 InvalidOperationException 捕获），且读取阶段同步感知取消。
         try
         {

@@ -63,7 +63,7 @@ internal sealed class AotXmlRejectionDiagnosticAnalyzer : DiagnosticAnalyzer
             {
                 var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider?.GlobalOptions;
 
-                // [F-5 修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为），为 false 时整体退出。
+                // [修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为），为 false 时整体退出。
                 if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, "build_property.MudEnableAotDiagnostics", true))
                     return;
 

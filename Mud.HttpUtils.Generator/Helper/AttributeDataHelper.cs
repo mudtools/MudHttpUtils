@@ -38,7 +38,7 @@ internal static class AttributeDataHelper
     /// <param name="defaultValue">默认值</param>
     /// <returns>整型值：优先返回构造函数参数，其次命名参数，最后默认值</returns>
     /// <remarks>
-    /// <b>CFG-28（v3.1）</b>：本方法的「位置优先」口径与 C# 特性赋值语义（构造先于命名参数赋值）<b>相反</b>，
+    /// <b>v3.1）</b>：本方法的「位置优先」口径与 C# 特性赋值语义（构造先于命名参数赋值）<b>相反</b>，
     /// 已由 <see cref="GetIntValuePreferNamed(AttributeData?, string, int)"/> 取代，新代码<b>不得</b>再使用本方法。
     /// 保留仅为控制单批回归面；后续作为清理项移除。
     /// </remarks>
@@ -73,14 +73,14 @@ internal static class AttributeDataHelper
     /// <returns>读取到的值；命名参数与位置参数皆无（或类型不匹配）时返回 <c>null</c>。</returns>
     /// <remarks>
     /// <para>
-    /// <b>CFG-28 / 不变量 I-9</b>：C# 特性的求值顺序为「调用构造函数 → 依次赋值命名参数」，
+    /// <b>/ 不变量 I-9</b>：C# 特性的求值顺序为「调用构造函数 → 依次赋值命名参数」，
     /// 因此当同一参数同时以位置与命名形式出现时（如 <c>[Retry(5, 250, DelayMilliseconds = 700)]</c>），
     /// 命名参数是<b>后写</b>的一方，必须优先。此前的两类口径
     /// （<see cref="GetIntValueFromAttribute"/> 只读命名、<see cref="GetAttributeIntValue"/> 位置优先）
     /// 都会在某些写法下取到与编译结果不一致的值。
     /// </para>
     /// <para>
-    /// <b>CFG-28 回归背景</b>：<c>RetryAttribute(int maxRetries, int delayMilliseconds)</c> 的位置参数
+    /// <b>回归背景</b>：<c>RetryAttribute(int maxRetries, int delayMilliseconds)</c> 的位置参数
     /// <c>delayMilliseconds</c> 因读取点只查 <c>NamedArguments</c> 而<b>自诞生起从未生效</b>（恒回退 1000）。
     /// </para>
     /// </remarks>

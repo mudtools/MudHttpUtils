@@ -138,7 +138,7 @@ public static class MudHttpMeter
             description: "令牌恢复（401 重试）次数与结果");
 
     /// <summary>
-    /// TMX-04：令牌刷新被负缓存窗口抑制的次数（维度：token_manager_key）。
+    /// 令牌刷新被负缓存窗口抑制的次数（维度：token_manager_key）。
     /// 当刷新失败后 5 秒（默认）内的后续调用不再发起新刷新，直接重抛上次异常时计数。
     /// </summary>
     public static readonly Counter<long> TokenRefreshSuppressedCounter =
@@ -170,13 +170,13 @@ public static class MudHttpMeter
     private static volatile HashSet<string>? s_lookup;
 
     /// <summary>
-    /// G20/R-3：policy_key 维度键的唯一字面量定义（CircuitBreakerStateObserver 事件 tags、Gauge 与
+    /// G20/policy_key 维度键的唯一字面量定义（CircuitBreakerStateObserver 事件 tags、Gauge 与
     /// PollyResiliencePolicyProvider 指标 tags 共用）。public 以便 Resilience 项目引用（无 InternalsVisibleTo）。
     /// </summary>
     public const string PolicyKeyTag = "policy_key";
 
     /// <summary>
-    /// R-1：按 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 过滤指标维度，
+    /// 按 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 过滤指标维度，
     /// 白名单之外的 tag 被丢弃（#6 高基数治理的机制化防线）。所有指标写入点统一调用。
     /// </summary>
     /// <remarks>
@@ -203,7 +203,7 @@ public static class MudHttpMeter
     }
 
     /// <summary>
-    /// R-3：判断指定 tag 键是否在当前 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 内。
+    /// 判断指定 tag 键是否在当前 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 内。
     /// 供 ObservableGauge 等逐值写入点在回调内做一次性键判定（避免逐 Measurement 的数组分配）。
     /// </summary>
     /// <remarks>
@@ -318,7 +318,7 @@ public static class CircuitBreakerStateObserver
     /// </summary>
     /// <returns>观测值集合。</returns>
     /// <remarks>
-    /// R-3：回调内仅做一次性 <c>policy_key</c> 白名单键判定（<see cref="MudHttpMeter.IsTagAllowed"/>），
+    /// 回调内仅做一次性 <c>policy_key</c> 白名单键判定（<see cref="MudHttpMeter.IsTagAllowed"/>），
     /// 不做逐 Measurement 的 <see cref="MudHttpMeter.FilterTags"/>（数组分配）；
     /// 白名单收缩移除 <c>policy_key</c> 时，Measurement 不携带任何 tags。
     /// </remarks>

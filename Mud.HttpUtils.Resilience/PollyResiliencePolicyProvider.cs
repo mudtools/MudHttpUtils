@@ -78,9 +78,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private const string PolicyKeyGlobalTimeout = "global:timeout";
 
 #if NET6_0_OR_GREATER
-    // M-1 修复：重试抖动随机数生成器（NET6+ 使用线程安全的 Random.Shared）
+    // 修复：重试抖动随机数生成器（NET6+ 使用线程安全的 Random.Shared）
 #else
-    // M-1 修复：重试抖动随机数生成器（netstandard2.0 使用 ThreadLocal 保证线程安全）
+    // 修复：重试抖动随机数生成器（netstandard2.0 使用 ThreadLocal 保证线程安全）
     private static readonly System.Threading.ThreadLocal<Random> _jitterRandom =
         new(() => new Random(Guid.NewGuid().GetHashCode()));
 #endif
@@ -116,7 +116,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <param name="options">弹性策略配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <remarks>
-    /// BC-32：internal —— 与 <see cref="PollyResiliencePolicyProvider(IOptions{ResilienceOptions}, ILogger{PollyResiliencePolicyProvider}?)"/>
+    /// internal —— 与 <see cref="PollyResiliencePolicyProvider(IOptions{ResilienceOptions}, ILogger{PollyResiliencePolicyProvider}?)"/>
     /// 元数相同且均可被容器满足（<c>ResilienceOptions</c> 与 <c>ILogger</c> 均带默认值 ⇒ 容器视为可满足），
     /// 按类型注册进 DI 时抛 <c>"The following constructors are ambiguous"</c>。
     /// 无 DI 场景请改用 <c>new PollyResiliencePolicyProvider(Options.Create(options))</c>。
@@ -207,7 +207,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
-                    // R-1：指标 tag 白名单过滤
+                    // 指标 tag 白名单过滤
                     MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
                         new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
@@ -361,7 +361,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             onTimeoutAsync: (context, timespan, task) =>
             {
                 MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
-                // R-1：指标 tag 白名单过滤
+                // 指标 tag 白名单过滤
                 MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
                     new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "timeout") }));
 
@@ -532,7 +532,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 onTimeoutAsync: (context, timespan, task) =>
                 {
                     MudHttpClientLog.RequestTimeoutMs(_logger, timespan.TotalMilliseconds);
-                    // R-1：指标 tag 白名单过滤
+                    // 指标 tag 白名单过滤
                     MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
                         new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "timeout") }));
                     return Task.CompletedTask;
@@ -634,7 +634,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                     onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                     {
                         MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, maxRetries, outcome.Exception);
-                        // R-1：指标 tag 白名单过滤
+                        // 指标 tag 白名单过滤
                         MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
                             new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
@@ -695,7 +695,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
-    /// M-1 修复：计算重试退避抖动量，范围为 [0, baseDelayMs/4)。
+    /// 修复：计算重试退避抖动量，范围为 [0, baseDelayMs/4)。
     /// 抖动用于避免多实例在高并发下同步重试导致的"重试风暴"（Thundering Herd）。
     /// </summary>
     /// <param name="baseDelayMs">基础退避毫秒数。</param>

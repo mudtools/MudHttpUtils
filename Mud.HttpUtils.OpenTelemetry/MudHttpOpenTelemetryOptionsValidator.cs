@@ -31,7 +31,7 @@ public class MudHttpOpenTelemetryOptionsValidator : IValidateOptions<MudHttpOpen
         if (options.SamplingRatio < 0 || options.SamplingRatio > 1)
             failures.Add($"MudHttpOpenTelemetryOptions: SamplingRatio 必须在 0.0~1.0 范围内，当前值为 {options.SamplingRatio}。");
 
-        // CFG-10：与 AddMudHttpOpenTelemetryCore 的实际语义对齐 —— 0 与 null 等价（均表示「不覆盖 SDK 默认值」，
+        // 与 AddMudHttpOpenTelemetryCore 的实际语义对齐 —— 0 与 null 等价（均表示「不覆盖 SDK 默认值」，
         // 见 ConfigureBatchExportOptions 的 `HasValue && Value > 0` 判据），仅负数属非法。
         if (options.ExportBatchSize.HasValue && options.ExportBatchSize.Value < 0)
             failures.Add($"MudHttpOpenTelemetryOptions: ExportBatchSize 不能为负数（null 或 0 使用 SDK 默认值），当前值为 {options.ExportBatchSize.Value}。");

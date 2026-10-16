@@ -55,7 +55,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             .Collect()
             .WithTrackingName("EventHandler_Collected");
 
-        // F-06：删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——ExecuteGenerator 从未消费
+        // 删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——ExecuteGenerator 从未消费
         // 该 Right 值，Combine 只会让 AnalyzerConfigOptionsProvider（编辑器配置变化即失效）无谓地
         // 击穿上方逐节点缓存，跟踪节点 EventHandler_CompleteData 不再依赖 Provider。
         context.RegisterSourceOutput(classModels,
@@ -155,7 +155,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             return string.Empty;
         }
 
-        // FIX-08: 校验 HeaderType 是合法的类型名
+        //  校验 HeaderType 是合法的类型名
         if (!string.IsNullOrEmpty(headerType) && !CSharpCodeValidator.IsValidCSharpIdentifier(headerType))
         {
             context.ReportDiagnostic(Diagnostic.Create(
@@ -164,7 +164,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             return string.Empty;
         }
 
-        // FIX-08: 校验 ConstructorParameters 是合法的参数列表
+        //  校验 ConstructorParameters 是合法的参数列表
         if (!string.IsNullOrEmpty(constructorParams))
         {
             var parsedParams = SyntaxFactory.ParseParameterList($"({constructorParams})");
@@ -177,7 +177,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             }
         }
 
-        // FIX-08: 校验 ConstructorBaseCall 是合法的表达式列表
+        //  校验 ConstructorBaseCall 是合法的表达式列表
         if (!string.IsNullOrEmpty(constructorBaseCall))
         {
             var parsedArgs = SyntaxFactory.ParseArgumentList($"({constructorBaseCall})");
@@ -350,7 +350,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     {
         // [GEN-13][§8.1] 显式提供的命名参数（含空串）须原样返回，不再回退默认值。
         // 否则 InheritedFrom="" 会被静默替换为默认基类名，无法进入 ValidateBaseClassName
-        // 校验并触发 EHSG001（GEN-13 报告实证「为类  生成…」的空前缀即源于此条链路）。
+        // 校验并触发 EHSG001（报告实证「为类  生成…」的空前缀即源于此条链路）。
         foreach (var namedArg in attribute.NamedArguments)
         {
             if (namedArg.Key.Equals(parameterName, StringComparison.OrdinalIgnoreCase))

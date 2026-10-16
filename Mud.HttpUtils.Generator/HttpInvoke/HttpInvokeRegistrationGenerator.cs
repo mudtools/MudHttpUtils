@@ -177,7 +177,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
             : null;
 
-        // F-04：扫描接口（含继承链）方法级特性，判定 cacheProvider / resilienceResolver 在
+        // 扫描接口（含继承链）方法级特性，判定 cacheProvider / resilienceResolver 在
         // 工厂注册中是否必需解析，与 ConstructorGenerator 的 needsCacheParam / needsResilienceParam
         // 口径一致（HasCache || 基接口存在 [Cache]）。AllInterfaces 已覆盖继承链。
         var hasCache = false;
@@ -215,7 +215,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private int ExtractTimeoutParameter(AttributeData httpClientApiAttribute)
     {
-        // CFG-03：与 HttpClientApiAttribute.DefaultTimeoutSeconds 保持一致（50）。
+        // 与 HttpClientApiAttribute.DefaultTimeoutSeconds 保持一致（50）。
         // 生成器按字符串名匹配特性，不引用 Attributes 程序集，故此处引用 Generator 常量；
         // 二者一致性由测试守护：Attributes 侧 CFG03_HttpClientApiAttribute_DefaultTimeout_Is50（Client.Tests）、
         // Generator 常量 CFG03_DefaultTimeoutConstant_Is50（Generator.Tests）、
@@ -292,7 +292,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     /// </summary>
     private string GenerateFactoryRegistrationCode(List<HttpClientApiInfo> apis, bool emitNullableEnable)
     {
-        // v3.4 L-11：仅对默认模式接口生成注册代码（无 TokenManagerType 且无 HttpClientType）
+        // v3.4 仅对默认模式接口生成注册代码（无 TokenManagerType 且无 HttpClientType）
         var defaultModeApis = apis
             .Where(a => string.IsNullOrEmpty(a.HttpClientType) && string.IsNullOrEmpty(a.TokenManagerType))
             .ToList();
@@ -355,7 +355,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         sb.AppendLine($"            global::Mud.HttpUtils.RestService.RegisterGeneratedFactory<{fullyQualifiedInterface}>((client, options) =>");
         sb.AppendLine("            {");
-        // v3.4 L-11：AppContext 为必需参数（IMudAppContext 无通用默认实现）
+        // v3.4 AppContext 为必需参数（IMudAppContext 无通用默认实现）
         sb.AppendLine("                var appContext = options?.AppContext");
         sb.AppendLine("                    ?? throw new System.InvalidOperationException(");
         sb.AppendLine($"                        \"ForGenerated<{api.InterfaceName}> requires options.AppContext to be set. \" +");
@@ -390,7 +390,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // 语义与 DI 路径一致：0 = 不限制。
         sb.AppendLine("                    maxSuccessResponseBytes: options?.MaxSuccessResponseBytes ?? 0,");
         sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent ?? false,");
-        // CFG-06：接线敏感数据掩码器（无 DI 路径此前完全缺失脱敏能力，属安全缺口）
+        // 接线敏感数据掩码器（无 DI 路径此前完全缺失脱敏能力，属安全缺口）
         sb.AppendLine("                    sensitiveDataMasker: options?.SensitiveDataMasker,");
         sb.AppendLine("#if NET6_0_OR_GREATER");
         sb.AppendLine("                    httpVersion: options?.HttpVersion,");
@@ -560,7 +560,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         {
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 services.AddMudHttpClient() 注册此服务及 IHttpRequestExecutor 等基础设施。");
-            // FIX-07：移除生成器对 IBaseHttpClient / IHttpRequestExecutor 的自动注册。
+            // 移除生成器对 IBaseHttpClient / IHttpRequestExecutor 的自动注册。
             // 原实现在此发射 TryAddTransient，早于宿主 AddMudHttpClient 内部的 TryAddSingleton，
             // 导致后者的 cacheProvider/resilienceResolver/exceptionRedactor/sensitiveDataMasker 全被抢占为 null。
             // 基础设施注册所有权收敛至 AddMudHttpClient（落地）。
@@ -572,14 +572,14 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             codeBuilder.AppendLine($"            // 必需依赖：ITokenProvider、IAppContextHolder");
             codeBuilder.AppendLine($"            // 可选依赖（需 UserId 时）：ICurrentUserContext");
             codeBuilder.AppendLine($"            // 可选依赖（缓存/弹性）：IHttpResponseCache、IResiliencePolicyResolver —— 请通过 services.AddMudHttpClient() 注册。");
-            // FIX-07：TokenManager 模式同理不再自动注册基础设施服务。
+            // TokenManager 模式同理不再自动注册基础设施服务。
         }
         else
         {
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             // A3：为默认模式接口自动注册 IAppManager<IMudAppContext> 工厂（TryAddSingleton，不覆盖宿主注册）。
             // 消除 UseApp/BeginScope 在缺少 IAppManager 注册时抛 InvalidOperationException 的静默降级。
-            // MT-14：该自动注册的实例<b>未注册任何应用</b>，UseApp/GetDefaultApp 仍会失败，
+            // 该自动注册的实例<b>未注册任何应用</b>，UseApp/GetDefaultApp 仍会失败，
             // 因此把失败信息从"未注册 IAppManager"改为"已注册但未注册应用"，避免误导性降级。
             codeBuilder.AppendLine("            services.TryAddSingleton<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>(sp =>");
             codeBuilder.AppendLine("            {");
@@ -592,7 +592,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var httpClientName = $"{api.InterfaceName}_HttpClient";
         var timeoutSeconds = api.Timeout;
 
-        // MT-14（BC-21）：原实现调用裸 services.AddHttpClient，绕过 AddMudHttpClient 的整套接线，
+        //：原实现调用裸 services.AddHttpClient，绕过 AddMudHttpClient 的整套接线，
         // 导致：① 无 keyed IEnhancedHttpClient 注册；② CreateEnhancedClient 的配置覆盖
         // （AllowCustomBaseUrls / DefaultHeaders / BaseAddress）对生成客户端不生效；
         // ③ 不注册 TracingDelegatingHandler、IAppContextHolder 等基础设施。
@@ -609,7 +609,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
         codeBuilder.AppendLine($"            }});");
 
-        // F-04：默认模式（无 HttpClient / TokenManager）构造必需 IMudAppContext，裸 AddTransient<IFoo, Impl>
+        // 默认模式（无 HttpClient / TokenManager）构造必需 IMudAppContext，裸 AddTransient<IFoo, Impl>
         // 在 DI 容器无法解析该参数（空容器或未注册 IMudAppContext 时激活即抛）。
         // 工厂化注册：以「DI 注入的默认应用」语义显式化 GetDefaultApp()（未注册默认应用时 fail-closed，
         // 异常消息指向注册应用），必需依赖 GetRequiredService（缺注册报错清晰）、可选依赖 GetService

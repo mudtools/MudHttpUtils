@@ -12,16 +12,16 @@ using StackExchange.Redis;
 namespace Mud.HttpUtils.Redis;
 
 /// <summary>
-/// F-3：<see cref="RedisTokenStore"/> 的 DI 注册帮助器。
+/// <see cref="RedisTokenStore"/> 的 DI 注册帮助器。
 /// </summary>
 /// <remarks>
-/// 注册后经 B-2 自动桥接（<c>TokenStoreBackedTokenCache&lt;T&gt;</c>）接入令牌管理器管线 ——
+/// 注册后经 自动桥接（<c>TokenStoreBackedTokenCache&lt;T&gt;</c>）接入令牌管理器管线 ——
 /// 无需手动包装；桥接细则（显式 <c>ITokenCache</c> 覆盖优先等）见 <see cref="ITokenStore"/> 的契约注释。
 /// </remarks>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// 注册 F-3 官方分布式令牌存储（Redis），连接复用器由调用方提供（生命周期由宿主管理）。
+    /// 注册 官方分布式令牌存储（Redis），连接复用器由调用方提供（生命周期由宿主管理）。
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="connection">StackExchange.Redis 连接复用器（如 <c>ConnectionMultiplexer.Connect</c> 单例）。</param>
@@ -34,7 +34,7 @@ public static class ServiceCollectionExtensions
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="connection"/> 为 null。</exception>
     /// <exception cref="InvalidOperationException">
-    /// U-2：<see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 已开启但未确认读取方升级
+    /// <see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 已开启但未确认读取方升级
     /// （<b>注册期</b> fail-fast，不等运行期才发现）。
     /// </exception>
     public static IServiceCollection AddMudHttpRedisTokenStore(
@@ -58,7 +58,7 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 注册 F-3 官方分布式令牌存储（Redis），连接按连接字符串创建并托管为单例。
+    /// 注册 官方分布式令牌存储（Redis），连接按连接字符串创建并托管为单例。
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="connectionString">StackExchange.Redis 连接字符串。</param>
@@ -72,7 +72,7 @@ public static class ServiceCollectionExtensions
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="connectionString"/> 为 null。</exception>
     /// <exception cref="ArgumentException"><paramref name="connectionString"/> 为空白。</exception>
-    /// <exception cref="InvalidOperationException">U-2：开启 v2 写入开关但未确认读取方升级（注册期 fail-fast）。</exception>
+    /// <exception cref="InvalidOperationException">开启 v2 写入开关但未确认读取方升级（注册期 fail-fast）。</exception>
     public static IServiceCollection AddMudHttpRedisTokenStore(
         this IServiceCollection services,
         string connectionString,
@@ -102,7 +102,7 @@ public static class ServiceCollectionExtensions
         var options = new RedisTokenStoreOptions();
         configureOptions?.Invoke(options);
 
-        // U-2：注册期 fail-fast —— 开启 v2 写入开关却未确认「全部读取实例已升级」属静默误配置，
+        // 注册期 fail-fast —— 开启 v2 写入开关却未确认「全部读取实例已升级」属静默误配置，
         // 不等 store 首次解析（或写入）才暴露。
         RedisTokenStoreOptionsValidation.EnsureVersionedEnvelopeConfirmed(options);
 

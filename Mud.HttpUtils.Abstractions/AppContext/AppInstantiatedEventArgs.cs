@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// U-8：<see cref="DefaultAppManager{TAppContext}.AppInstantiated"/> 事件参数 ——
+/// <see cref="DefaultAppManager{TAppContext}.AppInstantiated"/> 事件参数 ——
 /// 惰性工厂<b>首滚实例化成功</b>时发布（同一次实例化恰好一次；重注册同名键的新 Lazy 首滚同样发布）。
 /// </summary>
 public sealed class AppInstantiatedEventArgs : EventArgs

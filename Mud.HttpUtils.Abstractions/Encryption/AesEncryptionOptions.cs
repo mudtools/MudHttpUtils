@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// 从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成 IV 并附加到密文前。
-/// CFG-27：仅用于向后兼容的 <c>IV</c> 属性已移除（运行时无消费点），新代码不应再设置 IV。
+/// 仅用于向后兼容的 <c>IV</c> 属性已移除（运行时无消费点），新代码不应再设置 IV。
 /// </remarks>
 public class AesEncryptionOptions
 {
@@ -27,7 +27,7 @@ public class AesEncryptionOptions
     /// 获取或设置 AES 加密密钥。
     /// </summary>
     /// <remarks>
-    /// 密钥长度必须为 16、24 或 32 字节（对应 AES-128、AES-192 或 AES-256）。
+    /// 密钥长度必须为 16、24 或 32 字节（对应 AES-128、或 AES-256）。
     /// Getter 返回密钥的副本，防止外部代码直接访问原始数据。
     /// </remarks>
     public byte[] Key
@@ -36,7 +36,7 @@ public class AesEncryptionOptions
         set => _key = value is null ? null : (byte[])value.Clone();
     }
 
-    // CFG-27：原 IV 属性已移除 —— 从 v1.8.0 起 IV 在每次加密时自动随机生成，
+    // 原 IV 属性已移除 —— 从 v1.8.0 起 IV 在每次加密时自动随机生成，
     // 运行时无任何消费点（Validate 不校验、Provider 不读取），属静默失效配置。
 
     /// <summary>
@@ -88,7 +88,7 @@ public class AesEncryptionOptions
     /// <summary>
     /// 安全清除密钥，防止敏感数据残留在内存中。
     /// 注意：此方法会清零 Key 数组，调用后此实例将不可用。
-    /// TMR-06 修订：DefaultAesEncryptionProvider 不再调用此方法（IOptions&lt;T&gt;.Value 视为只读）。
+    /// 修订：DefaultAesEncryptionProvider 不再调用此方法（IOptions&lt;T&gt;.Value 视为只读）。
     /// 此方法保留供用户显式调用（如启动期一次性构造后销毁 options）。
     /// </summary>
     public void ClearSensitiveData()

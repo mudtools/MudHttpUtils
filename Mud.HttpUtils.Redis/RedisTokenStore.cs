@@ -10,15 +10,15 @@ using StackExchange.Redis;
 namespace Mud.HttpUtils.Redis;
 
 /// <summary>
-/// F-3：官方分布式令牌存储 —— 基于 <see cref="StackExchange.Redis"/> 的 <see cref="ITokenStore"/> 实现。
+/// 官方分布式令牌存储 —— 基于 <see cref="StackExchange.Redis"/> 的 <see cref="ITokenStore"/> 实现。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>定位（durable，跨实例/跨进程）</b>：注册本实现后，B-2 自动桥接（<c>TokenStoreBackedTokenCache&lt;T&gt;</c>）
+/// <b>定位（durable，跨实例/跨进程）</b>：注册本实现后，自动桥接（<c>TokenStoreBackedTokenCache&lt;T&gt;</c>）
 /// 会把持久化能力接入令牌管理器管线 —— 多实例共享 Redis 令牌、进程重启令牌不丢。
 /// </para>
 /// <para>
-/// <b>键布局</b>：<c>{KeyPrefix}:{tokenType}:{appKey}:access|refresh</c>（基形与方案 F-3 的
+/// <b>键布局</b>：<c>{KeyPrefix}:{tokenType}:{appKey}:access|refresh</c>（基形与方案 的
 /// <c>mud:httputils:{tokenType}:{appKey}</c> 一致），构建与解析单一事实来源见
 /// <see cref="RedisTokenStoreKeyBuilder"/>。
 /// </para>
@@ -28,7 +28,7 @@ namespace Mud.HttpUtils.Redis;
 /// 令牌为空时 codec 返回 <c>null</c>（墓碑语义）→ 对应键<b>删除</b>，不写空值。
 /// </para>
 /// <para>
-/// <b>U-2 v2 信封（可选）</b>：<see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 为 <c>true</c> 时
+/// <b>v2 信封（可选）</b>：<see cref="RedisTokenStoreOptions.UseVersionedEnvelope"/> 为 <c>true</c> 时
 /// 写入侧改用 <see cref="VersionedTokenStoreCodec"/>（<c>v2:{expiresInSeconds}|{token}</c>，含显式过期态），
 /// 读取侧本就兼容两种形态（<see cref="DefaultTokenStoreCodec"/> 已识别 v2 前缀；本实现换 codec 后亦直读 v1）。
 /// 默认 <c>false</c> = 形态逐位不变。
@@ -40,7 +40,7 @@ namespace Mud.HttpUtils.Redis;
 /// 建议生产环境显式配置 <see cref="RedisTokenStoreOptions.DefaultTtl"/>，防 store 无界滞留令牌。
 /// </para>
 /// <para>
-/// <b>并发刷新去重</b>（方案 F-3 验收"两实例共享 Redis 令牌只刷新一次"）：P1 最小版为
+/// <b>并发刷新去重</b>（方案 验收"两实例共享 Redis 令牌只刷新一次"）：P1 最小版为
 /// <b>进程内去重 + 分布式写原子</b>（Redis 单键 SET 原子）；跨进程 <c>SET NX PX</c> 租约去重
 /// 列为增强项（写入时后写覆盖，代价是偶发重复刷新请求，不产生错误令牌）。
 /// </para>
@@ -74,7 +74,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _options = options ?? new RedisTokenStoreOptions();
 
-        // U-2：混部署风险在唯一构造边界上 fail-fast（显式传入 codec 时以调用方 codec 为准，不受开关影响）。
+        // 混部署风险在唯一构造边界上 fail-fast（显式传入 codec 时以调用方 codec 为准，不受开关影响）。
         RedisTokenStoreOptionsValidation.EnsureVersionedEnvelopeConfirmed(_options);
 
         _codec = codec ?? (_options.UseVersionedEnvelope
@@ -188,7 +188,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
     /// <remarks>
     /// 仅清理<b>本前缀 + 本 appKey 命名空间</b>下的键（<c>{prefix}:*:{appKey}:*</c>），
     /// 不触碰其他前缀/其他应用的数据（多应用隔离）。
-    /// U-4 起本方法为 <see cref="PurgeAppAsync"/> 的便捷形态（≡ <c>PurgeAppAsync(本实例 AppKey)</c>），
+    /// 起本方法为 <see cref="PurgeAppAsync"/> 的便捷形态（≡ <c>PurgeAppAsync(本实例 AppKey)</c>），
     /// SCAN/删除逻辑单一事实源，杜绝双轨漂移。
     /// </remarks>
     public async Task ClearAsync(CancellationToken cancellationToken = default)
@@ -199,7 +199,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
 
     /// <inheritdoc />
     /// <remarks>
-    /// U-4：快照语义 —— 经 <c>SCAN</c>（<see cref="IServer.Keys(int, RedisValue, int, long, int, CommandFlags)"/>）
+    /// 快照语义 —— 经 <c>SCAN</c>（<see cref="IServer.Keys(int, RedisValue, int, long, int, CommandFlags)"/>）
     /// 枚举<b>指定 appKey</b> 名下的访问令牌键与刷新令牌键（键解析内聚在
     /// <see cref="RedisTokenStoreKeyBuilder"/>，tokenType 可含 <c>:</c>）。
     /// <paramref name="appKey"/> 为 null/空白时按 <see cref="RedisTokenStoreOptions.SharedAppKeySegment"/>
@@ -226,7 +226,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
 
     /// <inheritdoc />
     /// <remarks>
-    /// U-4：按<b>参数给定的 appKey</b> 精确清库（与 <see cref="ClearAsync"/> 绑定实例配置不同，
+    /// 按<b>参数给定的 appKey</b> 精确清库（与 <see cref="ClearAsync"/> 绑定实例配置不同，
     /// 多应用单实例部署时无需为每个 appKey 建独立 store），不误伤其他 appKey 的键；
     /// 单批 <c>DEL</c> 原子删除，键集为空时不发命令。
     /// </remarks>
@@ -250,11 +250,11 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
     private IDatabase Database => _connection.GetDatabase(_options.Database);
 
     // ──────────────────────────────────────────────
-    //  U-7：原生 CAS（ITokenStoreCompareExchange）
+    //  原生 CAS（ITokenStoreCompareExchange）
     // ──────────────────────────────────────────────
 
     /// <summary>
-    /// U-7：CAS 原子脚本（默认 codec 家族形态 <c>{seconds}|{token}</c> 可在服务端拆分提取令牌段）：
+    /// CAS 原子脚本（默认 codec 家族形态 <c>{seconds}|{token}</c> 可在服务端拆分提取令牌段）：
     /// GET 原值 → 拆出令牌明文与 expected 比较 → 匹配则按语义 SET（含/不含 PX）或 DEL → 不匹配不写入。
     /// </summary>
     private const string CompareExchangeScript =
@@ -270,7 +270,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
 
     /// <summary>
     /// 默认 codec 家族判定：Encode 输出为 <c>{seconds}|{token}</c> 形态（Lua 按首个 <c>|</c> 即可拆出令牌段），CAS 可原子。
-    /// U-2：v2 信封 <c>v2:{seconds}|{token}</c> 的前缀段不含 <c>|</c>，首个 <c>|</c> 仍恰为令牌段起点，故同属可原子家族。
+    /// v2 信封 <c>v2:{seconds}|{token}</c> 的前缀段不含 <c>|</c>，首个 <c>|</c> 仍恰为令牌段起点，故同属可原子家族。
     /// </summary>
     private bool IsDefaultFamilyCodec
         => _codec is DefaultTokenStoreCodec or MigrationTokenStoreCodec or VersionedTokenStoreCodec;
@@ -278,7 +278,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
     /// <inheritdoc />
     /// <remarks>
     /// <para>
-    /// <b>原子性边界（U-7 契约）</b>：默认 codec 家族（<see cref="DefaultTokenStoreCodec"/> /
+    /// <b>原子性边界（契约）</b>：默认 codec 家族（<see cref="DefaultTokenStoreCodec"/> /
     /// <see cref="MigrationTokenStoreCodec"/> / <see cref="VersionedTokenStoreCodec"/>，Encode 输出
     /// <c>{seconds}|{token}</c> 或 <c>v2:{seconds}|{token}</c>）经 Lua 脚本原子执行；
     /// 自定义 codec 退化为「读取 → 明文比较 → 写入」<b>非原子</b>路径（服务端脚本无法执行任意 C# codec）。
@@ -314,7 +314,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
 
     /// <inheritdoc />
     /// <remarks>
-    /// refresh 轮换主场景（飞书 TMF-05）：写入侧 TTL 与 <see cref="SetRefreshTokenAsync"/> 同源
+    /// refresh 轮换主场景（飞书 ）：写入侧 TTL 与 <see cref="SetRefreshTokenAsync"/> 同源
     /// （<see cref="RedisTokenStoreOptions.DefaultTtl"/>，未配置则不设 TTL）；compare-and-delete 时忽略 TTL。
     /// 原子性边界同 <see cref="CompareExchangeAccessTokenAsync"/>。
     /// </remarks>
@@ -342,7 +342,7 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
         return await CompareExchangeFallbackAsync(key, expectedToken, newToken, 0, _ => _options.DefaultTtl, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>U-7 非默认 codec 的非原子回退：读取 → 明文比较 → 写入/删除（契约允许，须文档化）。</summary>
+    /// <summary>非默认 codec 的非原子回退：读取 → 明文比较 → 写入/删除（契约允许，须文档化）。</summary>
     private async Task<bool> CompareExchangeFallbackAsync(
         RedisKey key, string expectedToken, string? newToken, long expiresInSeconds,
         Func<string, TimeSpan?> ttlSelector, CancellationToken cancellationToken)

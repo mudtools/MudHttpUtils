@@ -18,7 +18,7 @@ public abstract class OAuth2TokenManagerBase : TokenManagerBase
     protected OAuth2TokenManagerBase() : base() { }
 
     /// <summary>
-    /// TMR-12：使用自定义令牌缓存初始化。
+    /// 使用自定义令牌缓存初始化。
     /// </summary>
     /// <param name="tokenCache">令牌缓存实现。</param>
     protected OAuth2TokenManagerBase(ITokenCache<CredentialToken> tokenCache) : base(tokenCache) { }

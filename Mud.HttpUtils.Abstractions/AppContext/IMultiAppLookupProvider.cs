@@ -8,12 +8,12 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// U-5：以<b>外部标识</b>反查<b>多个</b>应用标识（appKey）的可选查询契约 ——
+/// 以<b>外部标识</b>反查<b>多个</b>应用标识（appKey）的可选查询契约 ——
 /// 同一外部标识（如企业微信 SuiteId）可能注册在多个应用，回调场景需要<b>多命中枚举 + 歧义上抛</b>。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>与 <see cref="IAppLookupProvider"/> 的关系（U-5 评审修订）</b>：F-4 的
+/// <b>与 <see cref="IAppLookupProvider"/> 的关系（评审修订）</b>：的
 /// <see cref="IAppLookupProvider.TryResolveAppKey"/> 是单结果 fail-closed 语义（歧义即失败）；
 /// 本契约是<b>独立可选接口</b>（非默认接口方法 —— Abstractions 含 <c>netstandard2.0</c> TFM，
 /// DIM 在 ns2.0 资产上对消费方是运行时 <c>MissingMethodException</c>）。
@@ -28,7 +28,7 @@ namespace Mud.HttpUtils;
 /// 幂等键去重、序数比较；零命中返回空集（<b>不返回 null</b>）。</description></item>
 /// <item><description>多命中即歧义的显式表达：同一外部标识指向多个 appKey 时<b>全部返回</b>（由调用方记录歧义并全部处理），
 /// 而非 fail-closed。</description></item>
-/// <item><description>纯反查：<b>不做</b>上下文物化副作用、<b>不做</b>授权判定（与 F-4 边界逐字继承）。</description></item>
+/// <item><description>纯反查：<b>不做</b>上下文物化副作用、<b>不做</b>授权判定（与 边界逐字继承）。</description></item>
 /// <item><description>实现<b>不得抛出异常</b>：输入非法/未命中/内部失败一律返回空集（miss 语义，
 /// 与 <see cref="ITokenStoreCodec.Decode"/> 契约同风格）。</description></item>
 /// </list>

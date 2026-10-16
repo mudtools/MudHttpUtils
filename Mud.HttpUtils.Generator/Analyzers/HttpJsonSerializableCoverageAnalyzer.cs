@@ -38,7 +38,7 @@ internal sealed class HttpJsonSerializableCoverageAnalyzer : DiagnosticAnalyzer
             // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
             try
             {
-                // [F-5 修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为），为 false 时整体退出。
+                // [修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为），为 false 时整体退出。
                 var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider?.GlobalOptions;
                 if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, "build_property.MudEnableAotDiagnostics", true))
                     return;

@@ -18,7 +18,7 @@ namespace System.Diagnostics.CodeAnalysis;
 
 /// <summary>Polyfill: 标记需要运行时代码生成的成员。</summary>
 /// <remarks>
-/// TMX-20（P1）：public —— polyfill 的意义在于让 <b>下游消费方</b> 在缺少 BCL 类型的 TFM
+/// P1）：public —— polyfill 的意义在于让 <b>下游消费方</b> 在缺少 BCL 类型的 TFM
 /// （netstandard2.0/net6.0）上也能应用 AOT 标注；internal 会使下游标注直接 CS0122。
 /// </remarks>
 [ExcludeFromCodeCoverage]

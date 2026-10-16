@@ -25,7 +25,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     private string? _defaultAppKey;
     private readonly object _defaultKeyLock = new();
 
-    // F-4：外部标识反查索引与歧义键集合
+    // 外部标识反查索引与歧义键集合
     private readonly object _externalIndexSync = new();
     private Dictionary<string, string> _externalIndex = new(StringComparer.Ordinal);
     private HashSet<string> _conflictedExternalKeys = new(StringComparer.Ordinal);
@@ -173,7 +173,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
             : AppConfigurationChangeType.Updated;
         if (changeType == AppConfigurationChangeType.Updated)
         {
-            // F-5：SPI 无索引器，覆盖语义经 CAS 循环达成（与原索引器赋值的"最终覆盖"一致）；
+            // SPI 无索引器，覆盖语义经 CAS 循环达成（与原索引器赋值的"最终覆盖"一致）；
             // 并发移除窗口内回退 TryAdd，保证覆盖不因竞态丢失。
             while (true)
             {
@@ -193,7 +193,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         if (isDefault)
             TrySetDefaultAppKeyCore(appKey, requireRegistered: true);
 
-        // F-4：注册/更新后重建外部标识反查索引（在事件触发前完成，订阅者看到的索引与注册视图一致）。
+        // 注册/更新后重建外部标识反查索引（在事件触发前完成，订阅者看到的索引与注册视图一致）。
         RebuildExternalIndex();
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
@@ -244,7 +244,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// F-10：注册<b>懒加载</b>应用，工厂在实例化时接收服务提供者（per-app DI scope / 命名 HttpClient 组合）。
+    /// 注册<b>懒加载</b>应用，工厂在实例化时接收服务提供者（per-app DI scope / 命名 HttpClient 组合）。
     /// </summary>
     /// <param name="appKey">应用标识。</param>
     /// <param name="factory">
@@ -312,7 +312,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        // MT-08：原实现为 TryGetValue（判存在）+ 索引器赋值，属典型 check-then-act。
+        // 原实现为 TryGetValue（判存在）+ 索引器赋值，属典型 check-then-act。
         // 并发窗口内若 RemoveApp 抢先执行，索引器赋值会"复活"一个已被删除的应用
         // （已撤销的凭据重新可被取用）。TryUpdate 以旧值为 CAS 条件原子替换。
         if (!_registry.TryGet(appKey, out var existing))
@@ -321,7 +321,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         if (!_registry.TryUpdate(appKey, appContext, existing!))
             throw new InvalidOperationException($"应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文在更新期间被移除或替换，更新已放弃。");
 
-        // F-4：更新后重建外部标识反查索引（旧上下文的外部标识随之失效）。
+        // 更新后重建外部标识反查索引（旧上下文的外部标识随之失效）。
         RebuildExternalIndex();
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
@@ -343,7 +343,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         // 先完成异步初始化（失败时由 InitializeWithCleanupAsync 释放新上下文后抛出）。
         await InitializeWithCleanupAsync(appContext, cancellationToken).ConfigureAwait(false);
 
-        // MT-08：初始化期间旧上下文可能已被 RemoveApp 移除（或已被他人替换）。
+        // 初始化期间旧上下文可能已被 RemoveApp 移除（或已被他人替换）。
         // 原子 CAS 替换；失败时释放新上下文并抛出，避免"复活已删除应用"与上下文泄漏。
         if (!_registry.TryUpdate(appKey, appContext, existing!))
         {
@@ -352,7 +352,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
                 $"应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文在异步初始化期间被移除或替换，更新已放弃。");
         }
 
-        // F-4：更新后重建外部标识反查索引（旧上下文的外部标识随之失效）。
+        // 更新后重建外部标识反查索引（旧上下文的外部标识随之失效）。
         RebuildExternalIndex();
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(appKey, AppConfigurationChangeType.Updated));
@@ -401,12 +401,12 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
 
         if (changed)
         {
-            // NEW-MA-01 修复：不立即 Dispose 上下文，避免在途请求抛 ObjectDisposedException。
+            // NEW-修复：不立即 Dispose 上下文，避免在途请求抛 ObjectDisposedException。
             // 上下文由 GC 回收。若需立即释放，应用应显式调用 context.Dispose()。
-            // 注意：原 M-10 修复中的立即 Dispose 会导致在途 HTTP 请求的 HttpClient/TokenManager 被释放。
+            // 注意：原 修复中的立即 Dispose 会导致在途 HTTP 请求的 HttpClient/TokenManager 被释放。
 
             // B3：默认应用被移除时回退到任一剩余应用，而非置空导致后续所有请求硬失败。
-            // MT-08：原实现为「Volatile 读 → Keys.FirstOrDefault() → Volatile 写」的非原子 RMW，
+            // 原实现为「Volatile 读 → Keys.FirstOrDefault() → Volatile 写」的非原子 RMW，
             // 且 FirstOrDefault 的顺序不确定、取到的键可能在窗口内已被其他线程删除，
             // 从而把默认应用写成"已被删除的键"。改为锁内完成，并校验候选键确实存在。
             if (Volatile.Read(ref _defaultAppKey) == appKey)
@@ -433,7 +433,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
                 appKey, AppConfigurationChangeType.Removed));
         }
 
-        // F-4：移除后重建反查索引 —— 歧义键可能因冲突方移除而消除、孤立项随之摘除，
+        // 移除后重建反查索引 —— 歧义键可能因冲突方移除而消除、孤立项随之摘除，
         // 保证"RemoveApp 后外部标识不再反查到该应用"。
         if (changed)
             RebuildExternalIndex();
@@ -443,7 +443,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
 
     /// <inheritdoc />
     /// <remarks>
-    /// MA-03 修复：标记为 virtual，允许子类（如 FeishuAppManager）override 而非使用 new 隐藏。
+    /// 修复：标记为 virtual，允许子类（如 FeishuAppManager）override 而非使用 new 隐藏。
     /// 此前该方法非 virtual，子类使用 new 隐藏后，通过 IAppManager 接口调用时仍执行基类方法，导致 FeishuAppManager 的默认应用解析逻辑被绕过。
     /// B2：二次读取容忍"默认应用刚被移除"的并发窗口，避免把"默认应用已被移除"
     /// 误报为"未找到应用标识 xxx"。
@@ -461,7 +461,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         if (TryMaterializeLazy(defaultKey!, out var lazyDefault))
             return lazyDefault;
 
-        // MT-08：原"二次读取"循环两次迭代读取同一组变量（除外部改写外行为完全一致），
+        // 原"二次读取"循环两次迭代读取同一组变量（除外部改写外行为完全一致），
         // 并不能容忍"默认应用刚被移除"的窗口。改为锁内收敛：从仍存在的应用里选一个作为新默认值，
         // 只在确实无任何应用时才抛出。
         lock (_defaultKeyLock)
@@ -480,7 +480,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc />
-    /// <remarks>B7：返回快照数组，保证事件回调/缓存重建期间视图稳定。F-5：经 <see cref="IAppRegistry{TAppContext}.EnumerateKeys"/> 快照 + <c>TryGet</c> 收集（SPI 不暴露值枚举）。</remarks>
+    /// <remarks>B7：返回快照数组，保证事件回调/缓存重建期间视图稳定。经 <see cref="IAppRegistry{TAppContext}.EnumerateKeys"/> 快照 + <c>TryGet</c> 收集（SPI 不暴露值枚举）。</remarks>
     public virtual IEnumerable<TAppContext> GetAllApps()
     {
         var snapshot = new List<TAppContext>();
@@ -513,7 +513,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc />
-    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope(appKey)/UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
+    [Obsolete("已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope(appKey)/UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     public virtual TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -522,7 +522,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc />
-    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
+    [Obsolete("已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     public virtual TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -559,7 +559,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// U-8：<see cref="AppInstantiated"/> 事件（U-8 评审收敛后的唯一新增生命周期事件）。
+    /// <see cref="AppInstantiated"/> 事件（评审收敛后的唯一新增生命周期事件）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -675,7 +675,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc/>
-    [Obsolete("BC-30：已弃用（3.x 保留仅告警）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope/UseDefaultAppScope（本工厂 1 参委托与生成器 3 参构造不对齐，对其不生效）；若作为替代反射的 AOT 低层接缝使用，3.x 继续可用，4.0 是否保留该接缝届时重评估。")]
+    [Obsolete("已弃用（3.x 保留仅告警）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope/UseDefaultAppScope（本工厂 1 参委托与生成器 3 参构造不对齐，对其不生效）；若作为替代反射的 AOT 低层接缝使用，3.x 继续可用，4.0 是否保留该接缝届时重评估。")]
     public void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -684,7 +684,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
 
         var switcherType = typeof(TContextSwitcher);
 
-        // MT-08：索引器赋值会静默覆盖先前注册的工厂，导致"注册了却不生效"难以排查。
+        // 索引器赋值会静默覆盖先前注册的工厂，导致"注册了却不生效"难以排查。
         // 覆盖时通过诊断出口记一次告警（由 Client 层的 AppManagerDiagnosticsWiring 接到 ILogger）。
         if (_switcherFactories.ContainsKey(switcherType))
         {
@@ -695,12 +695,12 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     // ──────────────────────────────────────────────
-    //  F-4：外部标识反查（IAppLookupProvider）
+    //  外部标识反查（IAppLookupProvider）
     // ──────────────────────────────────────────────
 
     /// <inheritdoc />
     /// <remarks>
-    /// F-4：反查顺序为「内置索引 → 外部提供者」；未命中 / 输入非法 / 映射歧义一律 fail-closed
+    /// 反查顺序为「内置索引 → 外部提供者」；未命中 / 输入非法 / 映射歧义一律 fail-closed
     /// （返回 <c>false</c>，不猜测）。<b>不做</b>授权判定，不做上下文物化副作用。
     /// </remarks>
     public virtual bool TryResolveAppKey(IReadOnlyDictionary<string, string> externalIds, out string? appKey)
@@ -774,7 +774,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// U-5：以一组外部标识反查<b>全部</b>匹配的应用标识（多命中枚举 + 歧义上抛，纯反查不物化）。
+    /// 以一组外部标识反查<b>全部</b>匹配的应用标识（多命中枚举 + 歧义上抛，纯反查不物化）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -785,11 +785,11 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     /// 并去重；<b>不</b>叠加内置索引（内置索引为单结果 fail-closed 形态——同一标识多应用注册时即歧义集，
     /// 单结果语义无法表达，多命中统一由多命中提供者承接）。</description></item>
     /// <item><description>仅实现 <see cref="IAppLookupProvider"/> 时：经静态回退辅助退化为单结果
-    /// （保持 F-4 行为：命中返回单元素，未命中/歧义返回空集）。</description></item>
+    /// （保持 行为：命中返回单元素，未命中/歧义返回空集）。</description></item>
     /// </list>
     /// </para>
     /// <para>
-    /// 纯反查边界与 F-4 逐字继承：不做上下文物化副作用、不做授权判定；
+    /// 纯反查边界与 逐字继承：不做上下文物化副作用、不做授权判定；
     /// 输入非法 / 零命中返回空集（不返回 null）。
     /// </para>
     /// </remarks>
@@ -810,7 +810,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
                 if (string.IsNullOrWhiteSpace(appKey))
                     continue;
 
-                // 与 F-4 同口径：解析结果须落在已注册应用上（懒加载「已声明即存在」，不物化）。
+                // 与 同口径：解析结果须落在已注册应用上（懒加载「已声明即存在」，不物化）。
                 if (!seen.Add(appKey) || !HasApp(appKey))
                     continue;
 
@@ -820,14 +820,14 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
             return results;
         }
 
-        // 回退：提供者仅实现单结果面 → 退化为单结果（保持 F-4 行为）。
+        // 回退：提供者仅实现单结果面 → 退化为单结果（保持 行为）。
         return TryResolveAppKey(externalIds, out var resolved) && !string.IsNullOrEmpty(resolved)
             ? new[] { resolved }
             : (IEnumerable<string>)Array.Empty<string>();
     }
 
     /// <summary>
-    /// F-4：从已实例化应用（注册表）整体重建外部标识反查索引。
+    /// 从已实例化应用（注册表）整体重建外部标识反查索引。
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
@@ -846,7 +846,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
         // 冲突明细先收集、重建完成后只报告「新增歧义键」（避免每次重建对同一歧义重复刷诊断）。
         var conflictReports = new List<(string Key, string? Value, string IncomingAppKey, string ExistingAppKey)>();
 
-        // F-5：SPI 不暴露值枚举，经 EnumerateKeys 快照 + TryGet 收集。
+        // SPI 不暴露值枚举，经 EnumerateKeys 快照 + TryGet 收集。
         foreach (var registeredKey in _registry.EnumerateKeys())
         {
             if (!_registry.TryGet(registeredKey, out var registeredContext) || registeredContext is null)

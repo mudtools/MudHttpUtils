@@ -23,7 +23,7 @@ public static class ResilienceConstants
     /// 执行器（<c>DefaultHttpRequestExecutor</c>）在把请求交给方法级弹性包装前写入该键；
     /// <see cref="ResiliencePolicyScopeResolver"/> 读取后把 AppKey 追加进作用域键
     /// （<c>{client}|{host}|app:{appKey}</c>），使多应用共用同名客户端与同一 host 时
-    /// 熔断/超时计数不跨应用共享（与 F-01 层B 缓存键的应用维度同口径）。
+    /// 熔断/超时计数不跨应用共享（与 层B 缓存键的应用维度同口径）。
     /// </para>
     /// <para>
     /// 无应用上下文时不写入，作用域键与历史格式逐字节一致（既有消费方缓存键零漂移）。

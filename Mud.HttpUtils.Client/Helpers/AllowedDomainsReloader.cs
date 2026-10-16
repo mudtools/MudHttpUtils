@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 
 /// <summary>
 /// 订阅 <see cref="MudHttpClientApplicationOptions"/> 变更并将 <see cref="MudHttpClientApplicationOptions.AllowedDomains"/>
-/// 重放到 <see cref="UrlValidator"/> 静态白名单（CFG-08，幂等）。
+/// 重放到 <see cref="UrlValidator"/> 静态白名单（，幂等）。
 /// </summary>
 /// <remarks>
 /// <para>

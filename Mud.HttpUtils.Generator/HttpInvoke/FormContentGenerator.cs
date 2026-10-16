@@ -56,12 +56,12 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             .Collect()
             .WithTrackingName("FormContent_Collected");
 
-        // F-06：删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——原 Combine 的 Right 值从未被
+        // 删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——原 Combine 的 Right 值从未被
         // 消费，只会让 AnalyzerConfigOptionsProvider（编辑器配置变化即失效）无谓地击穿上方逐节点缓存。
         // FormContent 产物同样需要消费项目 nullable 配置（Nullable=disable 时
         // 不发射 #nullable enable，与实现类/注册产物一致）——接线**复用 值相等快照模式**
         // （Select(Create) + WithComparer）：消费快照值 + 值相等比较器 = 真实依赖且增量语义正确
-        // （配置值不变 ⇒ Cached；Nullable 真变化 ⇒ 重生成是正确行为），与 F-06 反模式有本质区别。
+        // （配置值不变 ⇒ Cached；Nullable 真变化 ⇒ 重生成是正确行为），与 反模式有本质区别。
         var configSnapshot = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratorConfigSnapshot.Create(provider))
             .WithComparer(GeneratorConfigSnapshot.Comparer);
@@ -204,7 +204,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="properties">属性信息列表</param>
     /// <param name="byteArrayPropertyName">byte[] 属性名（如无则为 null）</param>
     /// <param name="emitNullableEnable">是否发射 #nullable enable（与主生成器同源于 GeneratorConfigSnapshot.NullableEnable，
-    /// 对齐 D-03 契约——Nullable=disable 的消费项目下 FormContent 产物不再发射）</param>
+    /// 对齐 契约——Nullable=disable 的消费项目下 FormContent 产物不再发射）</param>
     /// <returns>生成的代码</returns>
     private string GenerateFormContentCode(
         ClassDeclarationSyntax classDecl,

@@ -102,7 +102,7 @@ internal class QueryParameterBinder : IParameterBinder
         var paramName = GetQueryParameterName(attr, param.Name);
         var formatString = GetFormatString(attr);
 
-        // CFG-04：消费 [Query] 的 Prefix / TreatAsString / SerializeNull（此前全仓无读取点）。
+        // 消费 [Query] 的 Prefix / TreatAsString / SerializeNull（此前全仓无读取点）。
         var prefix = attr.NamedArguments.TryGetValue("Prefix", out var p) && p is string ps && ps.Length > 0 ? ps : null;
         var treatAsString = attr.NamedArguments.TryGetValue("TreatAsString", out var t) && t is true;
         var serializeNull = attr.NamedArguments.TryGetValue("SerializeNull", out var n) && n is true;
@@ -119,7 +119,7 @@ internal class QueryParameterBinder : IParameterBinder
     }
 
     /// <summary>
-    /// CFG-04：契约 —— <c>Prefix="filter" + Name="keyword" =&gt; "filter.keyword"</c>。
+    /// 契约 —— <c>Prefix="filter" + Name="keyword" =&gt; "filter.keyword"</c>。
     /// 顶层前缀用 <c>'.'</c> 与属性名连接；深层嵌套继续使用展平 separator。
     /// </summary>
     private static string ApplyPrefix(string name, string? prefix)
@@ -169,7 +169,7 @@ internal class QueryParameterBinder : IParameterBinder
             else
             {
                 // 无专用重载的类型（如 byte, char, DateTimeOffset, TimeSpan 等）：回退到 ToString()
-                // GEN-06（B-2）：回退分支显式 Invariant，避免按 CurrentCulture 生成区域敏感串
+                // B-2）：回退分支显式 Invariant，避免按 CurrentCulture 生成区域敏感串
                 // （DateTimeOffset/TimeSpan/DateOnly/TimeOnly 已被 IsSimpleType 收录但不在 WithFormat 白名单）。
                 // 仅对「可格式化值类型」追加 provider 参数；object 等非 IFormattable 引用类型保持 .ToString()，
                 // 避免 object.ToString(IFormatProvider) 不存在导致 CS0117。
@@ -199,7 +199,7 @@ internal class QueryParameterBinder : IParameterBinder
     {
         // AOT 改造（Phase 4）：当 TypeSymbol 可用时，编译期枚举属性并生成直接属性访问代码，
         // 消除运行时反射。若 TypeSymbol 不可用（测试/模拟场景），回退到 FlattenObjectToQueryParams。
-        // CFG-04：prefix / TreatAsString / SerializeNull 透传。
+        // prefix / TreatAsString / SerializeNull 透传。
         if (TryGenerateInlineQueryFlattening(codeBuilder, param, indent, ",",
                 includeNullValues: serializeNull,
                 useJsonSerialization: !treatAsString,
@@ -208,7 +208,7 @@ internal class QueryParameterBinder : IParameterBinder
             return;
 
         // 反射回退路径（仅在 TypeSymbol 不可用时进入；真实编译恒走 AOT 内联路径）：
-        // CFG-04 —— 设置 Prefix 时以 '.' 作为层级分隔符，使键满足 "filter.keyword" 契约；
+        // —— 设置 Prefix 时以 '.' 作为层级分隔符，使键满足 "filter.keyword" 契约；
         // 未设置 Prefix 时保持既有 "," 分隔（与旧行为逐字节一致）。
         var hasPrefix = !string.IsNullOrEmpty(prefix);
         var prefixLiteral = hasPrefix
@@ -295,7 +295,7 @@ internal class QueryParameterBinder : IParameterBinder
             ? ".Where(__item => __item != null)"
             : string.Empty;
 
-        // GEN-06（B-2）/元素格式化的统一口径 —— 非可空值类型显式 Invariant，
+        // B-2）/元素格式化的统一口径 —— 非可空值类型显式 Invariant，
         // 避免按 CurrentCulture 生成区域敏感串（TimeSpan[]、DateTimeOffset[] 等）；非可格式化类型保持 .ToString()。
         var elementIsFormattable = TypeDetectionHelper.IsValueType(elementType)
                                    && !TypeDetectionHelper.IsNullableType(elementType);
@@ -412,7 +412,7 @@ internal class QueryParameterBinder : IParameterBinder
             .Any(i => i.Name == "IQueryParameter" &&
                        i.ContainingNamespace?.ToDisplayString() == "Mud.HttpUtils");
 
-        // CFG-04：顶层前缀以「原始前缀 + '.'」形式向下传递；未设置 Prefix 时为空串（生成结果与旧版逐字节一致）。
+        // 顶层前缀以「原始前缀 + '.'」形式向下传递；未设置 Prefix 时为空串（生成结果与旧版逐字节一致）。
         var topPrefix = string.IsNullOrEmpty(prefix) ? string.Empty : prefix + ".";
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
@@ -488,7 +488,7 @@ internal class QueryParameterBinder : IParameterBinder
         bool useJsonSerialization, bool urlEncode, int depth = 0)
     {
         var propName = prop.Name;
-        // CFG-04：prefix 为「原始前缀」（已含尾部分隔符）；未设置 Prefix 时 prefix 为空串，key = propName（与旧版一致）。
+        // prefix 为「原始前缀」（已含尾部分隔符）；未设置 Prefix 时 prefix 为空串，key = propName（与旧版一致）。
         var key = prefix + propName;
         var escapedKey = StringEscapeHelper.EscapeString(key);
         var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
@@ -513,7 +513,7 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else
         {
-            // [v2.4 §1.2 D-01 修复] 复杂类型：递归内联展平，不再回退到反射路径 FlattenObjectToQueryParams。
+            // [v2.4 §1.2 修复] 复杂类型：递归内联展平，不再回退到反射路径 FlattenObjectToQueryParams。
             // 当深度未超限且属性类型符号可用时，递归枚举嵌套属性生成直接属性访问代码（AOT 安全）。
             // 仅当深度超限或类型符号不可用时，回退到 FlattenObjectToQueryParams 反射路径。
             if (depth < MaxFlatteningDepth && prop.Type is INamedTypeSymbol nestedTypeSymbol)
@@ -551,7 +551,7 @@ internal class QueryParameterBinder : IParameterBinder
     /// <c>_contentSerializer.Serialize&lt;T&gt;(value)</c>，
     /// 而非非泛型 <c>JsonSerializer.Serialize(object?)</c>。非泛型重载因运行时
     /// <c>Type</c> 分发不被 trim/AOT 分析器视作安全，即使传入含 Context 的 options。
-    /// [D-05 设计说明] 此处使用内联 ToString() 格式化（AOT 安全），不调用
+    /// [设计说明] 此处使用内联 ToString() 格式化（AOT 安全），不调用
     /// <c>IUrlParameterFormatter.Format</c>。IUrlParameterFormatter 的默认实现
     /// <c>DefaultUrlParameterFormatter</c> 使用反射（已标注 [RequiresUnreferencedCode]），
     /// 非 AOT 安全。IUrlParameterFormatter 作为非 AOT 场景的可选运行时覆盖存在，
@@ -626,7 +626,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         codeBuilder.AppendLine($"{indent}foreach (var __kvp in {objExpr}.ToQueryParameters())");
         codeBuilder.AppendLine($"{indent}{{");
-        // CFG-04：keyPrefix 为「原始前缀」（已含尾部分隔符）；无前缀时直接使用 kvp.Key。
+        // keyPrefix 为「原始前缀」（已含尾部分隔符）；无前缀时直接使用 kvp.Key。
         if (string.IsNullOrEmpty(keyPrefix))
         {
             codeBuilder.AppendLine($"{indent}    var __subKey = __kvp.Key;");
@@ -718,14 +718,14 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static string GetQueryParameterName(ParameterAttributeInfo attr, string defaultName)
     {
-        // CFG-04 / B-3 / GEN-05：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
+        // / / 优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
         // Name 与首参（[Query("name")]）一致，经 AttributeArgumentReader 统一读取，避免此前 QueryParameterBinder.cs:671-684
         // 与 MethodAnalyzer 接口属性路径的口径分叉。
         var name = AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveNamePosition(attr.Name), "Name");
         if (!string.IsNullOrEmpty(name))
             return name!;
 
-        // GEN-05：参数级 [Query(AliasAs = "keyword")] 生效。
+        // 参数级 [Query(AliasAs = "keyword")] 生效。
         var alias = AttributeArgumentReader.GetString(attr, null, "AliasAs");
         if (!string.IsNullOrEmpty(alias))
             return alias!;
@@ -735,7 +735,7 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static string? GetFormatString(ParameterAttributeInfo attr)
     {
-        // GEN-04：[Query("bth", "yyyy-MM-dd")] 的位置 format（ResolveFormatPosition=1）需生效，
+        // [Query("bth", "yyyy-MM-dd")] 的位置 format（ResolveFormatPosition=1）需生效，
         // 此前只读 NamedArguments["Format"] 导致位置 format 被丢弃。
         return AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveFormatPosition(attr.Name), "Format");
     }

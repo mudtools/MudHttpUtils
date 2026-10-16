@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils.Redis;
 
 /// <summary>
-/// F-3：官方分布式令牌存储（<see cref="RedisTokenStore"/>）的配置。
+/// 官方分布式令牌存储（<see cref="RedisTokenStore"/>）的配置。
 /// </summary>
 /// <remarks>
 /// 键布局见 <see cref="RedisTokenStoreKeyBuilder"/>：<c>{KeyPrefix}:{tokenType}:{appKey}:access|refresh</c>
@@ -27,7 +27,7 @@ public sealed class RedisTokenStoreOptions
     public const string SharedAppKeySegment = "shared";
 
     /// <summary>
-    /// 键前缀。默认 <c>mud:httputils</c>（与方案 F-3 钉死的键前缀一致）。
+    /// 键前缀。默认 <c>mud:httputils</c>（与方案 钉死的键前缀一致）。
     /// </summary>
     public string KeyPrefix { get; set; } = "mud:httputils";
 
@@ -52,7 +52,7 @@ public sealed class RedisTokenStoreOptions
     public int Database { get; set; } = -1;
 
     /// <summary>
-    /// U-2：写入侧启用 <b>v2 版本化信封</b>（<c>v2:{expiresInSeconds}|{token}</c> + 显式过期态
+    /// 写入侧启用 <b>v2 版本化信封</b>（<c>v2:{expiresInSeconds}|{token}</c> + 显式过期态
     /// <c>v2:expired|</c>）。默认 <c>false</c> = 逐位沿用默认形态 <c>{expiresInSeconds}|{token}</c>（零行为变化）。
     /// </summary>
     /// <remarks>
@@ -70,10 +70,10 @@ public sealed class RedisTokenStoreOptions
     public bool UseVersionedEnvelope { get; set; }
 
     /// <summary>
-    /// U-2：两阶段切换的<b>显式确认</b> —— 声明「全部读取实例已升级至含 v2 解码的库版本」。
+    /// 两阶段切换的<b>显式确认</b> —— 声明「全部读取实例已升级至含 v2 解码的库版本」。
     /// </summary>
     /// <remarks>
-    /// 本库无法探测其他实例的库版本，故把 U-2 的混部署风险处置为<b>强制确认</b>：
+    /// 本库无法探测其他实例的库版本，故把 的混部署风险处置为<b>强制确认</b>：
     /// <see cref="UseVersionedEnvelope"/> 为 <c>true</c> 而本项为 <c>false</c> 时，
     /// 注册（<c>AddMudHttpRedisTokenStore</c>）与构造 <see cref="RedisTokenStore"/> 均立即抛出
     /// <see cref="System.InvalidOperationException"/>，并在消息中给出两阶段切换步骤 ——

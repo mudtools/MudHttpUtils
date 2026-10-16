@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Mud.HttpUtils.Resilience;
 
 /// <summary>
-/// <see cref="ResilienceOptions"/> 的后置配置器（CFG-09）。
+/// <see cref="ResilienceOptions"/> 的后置配置器（）。
 /// </summary>
 /// <remarks>
 /// <para>

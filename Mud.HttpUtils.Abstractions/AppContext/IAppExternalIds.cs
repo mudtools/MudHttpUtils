@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// F-4：可选契约 —— 应用上下文声明自身携带的<b>外部标识</b>（如企业微信 SuiteId、
+/// 可选契约 —— 应用上下文声明自身携带的<b>外部标识</b>（如企业微信 SuiteId、
 /// 开放平台 corpId 等第三方/平台侧标识），供 <see cref="IAppLookupProvider"/> 反查索引使用。
 /// </summary>
 /// <remarks>

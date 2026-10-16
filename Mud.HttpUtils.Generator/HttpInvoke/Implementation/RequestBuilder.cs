@@ -15,7 +15,7 @@ namespace Mud.HttpUtils.HttpInvoke.Implementation;
 internal class RequestBuilder
 {
     /// <summary>
-    /// GEN-04（B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
+    /// B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
     /// （<c>PathAttribute</c> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
     /// 移除了此前对 <see cref="HttpClientGeneratorConstants.PathAttributes"/> 的显式排除（源于「Path 首参是 name」的错误假设，
     /// 参见文档 §7.1 修复点 3 / PathAttribute.cs 构造签名）。
@@ -67,7 +67,7 @@ internal class RequestBuilder
     /// </summary>
     private string BuildUrlWithPlaceholders(string urlTemplate, List<ParameterInfo> pathParams, MethodAnalysisResult? methodInfo = null)
     {
-        // 先 C# 字面量转义，再插值转义（I-16 / GEN-01）：
+        // 先 C# 字面量转义，再插值转义（/ GEN-01）：
         // 模板被发射进 $"...{}..." 插值字符串，单花括号会造成插值洞。
         // EscapeForInterpolation 将 { } 双写为 {{ }}，此后模板内不存在单花括号，
         // 未匹配的占位符将保留为 {{token}}（发射后运行期为 {token} 字面量）。
@@ -79,8 +79,8 @@ internal class RequestBuilder
             // 令牌占位符的「模式」与「名称」统一取有效级（方法级 > 接口级）；
             // 替换值为 URI 编码后的令牌（与下方 [Path] 参数的 Uri.EscapeDataString 同口径，
             // 防止令牌中的 ?/#/&// 改写请求目标）。
-            // F-1：免令牌方法（EffectiveTokenDisabled）不取令牌，占位符不替换
-            //（保留 {{name}} 转义形态，发射后为 {name} 字面量，同 CFG-18 未匹配占位符的字面量语义）。
+            // 免令牌方法（EffectiveTokenDisabled）不取令牌，占位符不替换
+            //（保留 {{name}} 转义形态，发射后为 {name} 字面量，同 未匹配占位符的字面量语义）。
             var isTokenPathMode = !methodInfo.EffectiveTokenDisabled
                 && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
             if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.EffectiveTokenName))
@@ -150,7 +150,7 @@ internal class RequestBuilder
         => GetPathParameterName(pathAttr, paramName);
 
     /// <summary>
-    /// 占位符检索键与实际替换值不变，仅检索键改为转义形态（I-16 / GEN-01）。
+    /// 占位符检索键与实际替换值不变，仅检索键改为转义形态（/ GEN-01）。
     /// 模板花括号已被 <see cref="EscapeForInterpolation"/> 双写为 {{…}}，故在此把传入的
     /// {name} 检索键也转义为 {{name}}，再交给 <see cref="ReplacePlaceholderCore"/> 做大小写不敏感替换。
     /// 替换值本身保持单花括号的插值片段（如 {access_token}、{Uri.EscapeDataString(id)}），
@@ -160,7 +160,7 @@ internal class RequestBuilder
         => ReplacePlaceholderCore(sb, EscapeForInterpolation(placeholder), replacement);
 
     /// <summary>
-    /// I-16：把将发起进插值字符串的文本转义为插值字面量，从构造上杜绝 { } 插值洞。
+    /// 把将发起进插值字符串的文本转义为插值字面量，从构造上杜绝 { } 插值洞。
     /// 注意本方法只服务于花括号插值场景，不处理 C# 字符串字面量转义（那是
     /// <see cref="StringEscapeHelper.EscapeString"/> 的职责），二者保持单一职责、互不污染。
     /// </summary>
@@ -230,7 +230,7 @@ internal class RequestBuilder
 
         var hasInterfaceQueryParams = methodInfo.InterfaceQueryParameters.Any();
 
-        // GEN-03：方法级固定查询参数（仅支持常量值）
+        // 方法级固定查询参数（仅支持常量值）
         var hasMethodQueryParams = methodInfo.MethodQueryParameters.Any();
 
         if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams && !hasMethodQueryParams)
@@ -270,7 +270,7 @@ internal class RequestBuilder
             }
         }
 
-        // GEN-03：方法级固定查询参数（在参数级与接口级查询之后追加，仅支持常量值）
+        // 方法级固定查询参数（在参数级与接口级查询之后追加，仅支持常量值）
         foreach (var methodQuery in methodInfo.MethodQueryParameters)
         {
             if (!string.IsNullOrEmpty(methodQuery.Name) && methodQuery.Value != null)
@@ -283,7 +283,7 @@ internal class RequestBuilder
         {
             codeBuilder.AppendLine("            if (__queryParams.Count > 0)");
             codeBuilder.AppendLine("            {");
-            // FIX-04：缺少 Contains("?") 守卫，与 RawQueryString 混用时产生双 ?。
+            // 缺少 Contains("?") 守卫，与 RawQueryString 混用时产生双 ?。
             // §0.2 原则 9：统一 query 追加口径（与 :285 的 __rawQueryPairs 一致）。
             codeBuilder.AppendLine("                __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + __queryParams.ToString();");
             codeBuilder.AppendLine("            }");
@@ -304,7 +304,7 @@ internal class RequestBuilder
     {
         if (methodInfo.HttpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
         {
-            // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；HttpMethod.PATCH 是 .NET 5+ 能力符号）。
+            // GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；HttpMethod.PATCH 是 .NET 5+ 能力符号）。
             codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine($"            using var __httpRequest = new HttpRequestMessage(HttpMethod.{methodInfo.HttpMethod}, __url);");
             codeBuilder.AppendLine(GeneratedCodeGuards.Else);
@@ -321,7 +321,7 @@ internal class RequestBuilder
         // 全局路径 ResilientHttpClient 与方法级路径 ResiliencePolicyResolver 均识别）
         if (methodInfo.RetryEnabled && methodInfo.RetryAllowNonIdempotent)
         {
-            // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
+            // GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
             codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine($"            __httpRequest.Options.TryAdd(HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey, true);");
             codeBuilder.AppendLine(GeneratedCodeGuards.Else);
@@ -532,7 +532,7 @@ internal class RequestBuilder
     /// 生成 URL 编码的表单参数（用于 [Form] 特性）
     /// </summary>
     /// <remarks>
-    /// [D-04 设计说明] 此路径与 <c>FormField&lt;TBody&gt;</c> 描述符模式功能等价，
+    /// [设计说明] 此路径与 <c>FormField&lt;TBody&gt;</c> 描述符模式功能等价，
     /// 但采用直接属性访问代码（AOT 安全）。FormField&lt;TBody&gt; 类型作为可选描述符存在，
     /// 供未来统一序列化入口使用。当前保留直接属性访问以避免不必要的间接层。
     /// </remarks>
@@ -579,7 +579,7 @@ internal class RequestBuilder
     /// 在 Native AOT 裁剪后属性元数据丢失导致表单体为空。现改为编译期枚举属性并发射静态属性访问，
     /// 彻底消除反射依赖。若 <see cref="ParameterInfo.TypeSymbol"/> 不可用（如测试模拟场景），
     /// 则回退到原始反射路径并保留 IL2072 压制。
-    /// [D-04 设计说明] 此路径与 FormField&lt;TBody&gt; 描述符模式功能等价，
+    /// [设计说明] 此路径与 FormField&lt;TBody&gt; 描述符模式功能等价，
     /// 但采用编译期属性枚举代码（AOT 安全）。FormField&lt;TBody&gt; 类型作为可选描述符存在，
     /// 供未来统一序列化入口使用。当前保留编译期属性枚举以避免不必要的间接层。
     /// </remarks>
@@ -589,7 +589,7 @@ internal class RequestBuilder
         var isNonNullableValueType = TypeDetectionHelper.IsValueType(bodyParam.Type) && !TypeDetectionHelper.IsNullableType(bodyParam.Type);
         var needsNullCheck = !isNonNullableValueType && !bodyParam.IsValidated;
 
-        // [FIX-02 复核] 本方法是全库唯一的「条件创建请求体内容」路径，内容对象在**创建点**即把所有权
+        // [复核] 本方法是全库唯一的「条件创建请求体内容」路径，内容对象在**创建点**即把所有权
         // 移交给 __httpRequest.Content（最终由方法级 `using var __httpRequest` 在发送完成之后释放）。
         // 由此推出两条硬约束：
         //   1) 禁止对该内容使用 `using var` 或任何可释放局部变量 —— needsNullCheck 为真时其作用域是
@@ -732,7 +732,7 @@ internal class RequestBuilder
             }
         }
 
-        // FIX-03：[MultipartForm] 参数值接线（D-3 决策 a：参数即 part）。
+        // [MultipartForm] 参数值接线（决策 a：参数即 part）。
         // 原实现中 multipartFormParam 仅作布尔判断，参数值被丢弃。
         // 顺序：先 formParams（现有）→ 再 multipartFormParam → 再 uploadParams。
         if (multipartFormParam != null)
@@ -891,7 +891,7 @@ internal class RequestBuilder
 
     private bool ShouldGenerateTokenQuery(MethodAnalysisResult methodInfo)
     {
-        // F-1：免令牌方法（EffectiveTokenDisabled）零令牌代码 —— 不发射 access_token 查询参数，
+        // 免令牌方法（EffectiveTokenDisabled）零令牌代码 —— 不发射 access_token 查询参数，
         // 否则会引用未声明的 access_token 局部变量（CS0103）。
         if (methodInfo.EffectiveTokenDisabled)
             return false;
@@ -907,7 +907,7 @@ internal class RequestBuilder
 
     internal string GetTokenQueryName(MethodAnalysisResult methodInfo)
     {
-        // GEN-09：方法级 Token(Name) > 接口级 > 默认。
+        // 方法级 Token(Name) > 接口级 > 默认。
         var tokenName = methodInfo.EffectiveTokenName;
         if (!string.IsNullOrEmpty(tokenName))
             return tokenName!;
@@ -921,7 +921,7 @@ internal class RequestBuilder
 
     internal string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
-        // GEN-09：方法级 Token(Name) > 接口级。
+        // 方法级 Token(Name) > 接口级。
         // 门控「模式」取有效级 —— 原实现用 InterfaceTokenInjectionMode，
         // 使方法级 [Token(InjectionMode = Header, Name = "X-Custom")] 落回调用方的
         // "Authorization" 兜底（静默写错头名，且 TokenRecoveryContext.HeaderName 一并错误）。
@@ -1109,7 +1109,7 @@ internal class RequestBuilder
             else
             {
                 // 非 string 类型：使用格式化表达式
-                // FIX-05: property.Format 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
+                //  property.Format 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
                 var escapedPropertyFormat = StringEscapeHelper.EscapeString(property.Format);
                 var formatExpression = !string.IsNullOrEmpty(property.Format)
                     ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedPropertyFormat}}}\", {property.Name})"

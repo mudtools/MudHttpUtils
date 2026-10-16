@@ -57,14 +57,14 @@ internal class GeneratorContext
     public bool IsAotEnabled { get; }
 
     /// <summary>
-    /// [v2.4 §3.4 D-03 修复] 是否在生成代码头部发射 #nullable enable。
+    /// [v2.4 §3.4 修复] 是否在生成代码头部发射 #nullable enable。
     /// 由 HttpInvokeClassSourceGenerator 从 build_property.Nullable 读取后逐层传入。
     /// 默认 true（向后兼容）。消费项目 Nullable=disable 时不发射，避免冗余告警。
     /// </summary>
     public bool EmitNullableEnable { get; }
 
     /// <summary>
-    /// [D-06 修复] 是否在生成代码上标注 [GeneratedCode] 特性。
+    /// [修复] 是否在生成代码上标注 [GeneratedCode] 特性。
     /// 由 HttpInvokeClassSourceGenerator 从 build_property.MudEmitGeneratedCodeMarkers 读取后逐层传入。
     /// 默认 true（向后兼容）。设为 false 时不标注，便于调试生成代码中的警告。
     /// </summary>
@@ -175,7 +175,7 @@ internal class GeneratorContext
     /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>UseApp(string appKey)</c>。
     /// </summary>
     /// <remarks>
-    /// <b>用途</b>：<c>BC-27</c> 移除了三个旧切换入口的<b>默认发射</b>；但当使用方接口<b>自行声明</b>同名成员时仍须发射实现 ——
+    /// <b>用途</b>：<c></c> 移除了三个旧切换入口的<b>默认发射</b>；但当使用方接口<b>自行声明</b>同名成员时仍须发射实现 ——
     /// 否则该成员会落入契约补全（<c>NotSupportedException</c> 占位 + <c>HTTPCLIENT024</c>（Error）），
     /// 使原本可编译的代码变成编译失败（与 <c>SW-10</c> 被移出本轮是同一类风险）。
     /// </remarks>
@@ -250,7 +250,7 @@ internal class GeneratorContext
     public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
 
     /// <summary>
-    /// FIX-13: 方法级特性缓存，避免同一方法的 GetAttributes() 被多次调用产生额外分配。
+    ///  方法级特性缓存，避免同一方法的 GetAttributes() 被多次调用产生额外分配。
     /// InterfaceImplementationGenerator 的 ReportRetryNonIdempotentWithoutAllow / ReportMethodTimeoutConflicts /
     /// ReportResilienceAttributeValueRangeViolations 以及 PrecomputeXmlResponseTypes 各自遍历方法特性，
     /// 不缓存时每个方法最多 4 次 GetAttributes() 调用。
@@ -259,7 +259,7 @@ internal class GeneratorContext
         new(SymbolEqualityComparer.Default);
 
     /// <summary>
-    /// FIX-13: 获取方法特性（带缓存），避免重复分配。
+    ///  获取方法特性（带缓存），避免重复分配。
     /// </summary>
     public ImmutableArray<AttributeData> GetMethodAttributes(IMethodSymbol method) =>
         _methodAttributes.TryGetValue(method, out var cached)
@@ -494,7 +494,7 @@ internal class GeneratorContext
     /// <summary>
     /// 从 <see cref="TypedConstant"/>（TokenInjectionMode 枚举参数）获取注入模式字符串。
     /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
-    /// [D-3 选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值）。
+    /// [选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值）。
     /// </summary>
     private static string GetTokenInjectionModeName(TypedConstant value)
     {

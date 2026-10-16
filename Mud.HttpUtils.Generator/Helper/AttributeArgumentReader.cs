@@ -17,7 +17,7 @@ namespace Mud.HttpUtils;
 internal static class AttributeArgumentReader
 {
     /// <summary>
-    /// I-17：枚举型特性参数 → 成员名（禁止直接把 <see cref="TypedConstant.Value"/> 交给
+    /// 枚举型特性参数 → 成员名（禁止直接把 <see cref="TypedConstant.Value"/> 交给
     /// <c>ToString()</c> 直出整数）。Roslyn 对枚举 <c>TypedConstant</c> 的 <c>Value</c> 返回底层整数
     /// （如 <c>Replace</c> → <c>1</c>），若直出 <c>"1"</c> 而消费端按成员名比较将恒失配。
     /// 本方法通过枚举符号 + 各成员常量值反解成员名，**不依赖成员定义顺序**，也不会写死顺序。

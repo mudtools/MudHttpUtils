@@ -698,7 +698,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// TR-02 仅失效缓存条目的访问令牌字段（AccessToken / Expire / IssuedAt），
+    /// 仅失效缓存条目的访问令牌字段（AccessToken / Expire / IssuedAt），
     /// 保留 refresh_token / refresh_token_expire / scope。
     /// 供 401 恢复链路使用：恢复的目标是"重新拿一个访问令牌"，而非"作废该作用域的全部凭据"
     /// （后者会销毁可用于自愈的 refresh_token，迫使走 client_credentials 或重新授权）。
@@ -715,7 +715,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
     }
 
-    /// <summary>TR-02 按作用域失效访问令牌（null/空数组 ⇒ 默认作用域）。</summary>
+    /// <summary>按作用域失效访问令牌（null/空数组 ⇒ 默认作用域）。</summary>
     /// <param name="scopes">令牌作用域数组。</param>
     internal void InvalidateCachedAccessToken(string[]? scopes)
         => InvalidateCachedAccessToken(GetScopeKey(scopes));
@@ -888,7 +888,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// L-1：当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
+    /// 当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
     /// PerScope 档绑定记录含归属键，此处仍只回传 AppKey 段（告警口径不变）。
     /// </summary>
     internal string? BoundTenant => Volatile.Read(ref _tenantBinding)?.AppKey;
@@ -1098,7 +1098,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         var tmKey = tokenManagerKey ?? "(unknown)";
 
-        // R-1：指标 tag 白名单过滤
+        // 指标 tag 白名单过滤
         var refreshTags = MudHttpMeter.FilterTags(
             new KeyValuePair<string, object?>[] { new("token_manager_key", tmKey), new("outcome", outcome) });
         MudHttpMeter.TokenRefreshCounter.Add(1, refreshTags);
@@ -1196,7 +1196,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
                 foreach (var key in _tokenCache.Keys.ToList())
                 {
-                    // T-2 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
+                    // 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
                     // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
                     // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
 

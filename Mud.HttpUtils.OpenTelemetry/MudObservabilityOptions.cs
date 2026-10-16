@@ -19,7 +19,7 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// <para>本类型聚合三包共有的运行期开关与导出配置，由 <see cref="MudObservabilityBootstrap"/> 消费。</para>
 /// <para>禁 <c>required</c>（配置绑定源生成器以 <c>new T()</c> 构造，CS9035）。</para>
 /// <para>实现 <see cref="IValidateOptions{TOptions}"/> 仅为复用 <see cref="Validate"/> 方法签名，
-/// 不注册到 DI 管道（与既有 <c>MudHttpOpenTelemetryOptionsValidator</c> 的 CFG-10 决策一致）。</para>
+/// 不注册到 DI 管道（与既有 <c>MudHttpOpenTelemetryOptionsValidator</c> 的 决策一致）。</para>
 /// </remarks>
 public class MudObservabilityOptions : IValidateOptions<MudObservabilityOptions>
 {

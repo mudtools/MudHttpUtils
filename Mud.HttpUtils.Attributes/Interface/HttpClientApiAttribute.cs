@@ -57,7 +57,7 @@ public sealed class HttpClientApiAttribute : Attribute
     {
     }
 
-    // CFG-27：原 HttpClientApiAttribute(string baseAddress) 构造函数与 BaseAddress 属性已移除
+    // 原 HttpClientApiAttribute(string baseAddress) 构造函数与 BaseAddress 属性已移除
     // （此前为 [Obsolete(error: true)]，使用即编译错误 CS0619；移除后使用将报 CS0117「不存在该成员」）。
     // 迁移：通过 AddMudHttpClient(clientName, baseAddress) 或 AddMudHttpGeneratedClient<T>(clientName) 配置基地址。
 
@@ -71,7 +71,7 @@ public sealed class HttpClientApiAttribute : Attribute
     /// 未显式设置 <see cref="Timeout"/> 时的默认请求超时时间（秒）。
     /// </summary>
     /// <remarks>
-    /// <para>CFG-03：本常量为「默认超时」的单一真相源，生成器以字面量（50）回退并由一致性测试锁定。</para>
+    /// <para>本常量为「默认超时」的单一真相源，生成器以字面量（50）回退并由一致性测试锁定。</para>
     /// <para>注意：该默认值仅作用于生成器产出的命名 HttpClient；
     /// 手动 <c>AddMudHttpClient(name, baseAddress)</c> 注册的客户端使用 HttpClient 自身默认超时（100 秒）。</para>
     /// </remarks>

@@ -34,7 +34,7 @@ public interface ITokenRefreshBackgroundService
     void RegisterTokenManager(ITokenManager tokenManager, string? name = null);
 
     /// <summary>
-    /// L-9：后台刷新是否已因 <see cref="TokenRefreshBackgroundOptions.StopOnError"/>
+    /// 后台刷新是否已因 <see cref="TokenRefreshBackgroundOptions.StopOnError"/>
     /// 或 <see cref="TokenRefreshBackgroundOptions.MaxConsecutiveFailures"/> 而<b>主动停止调度</b>。
     /// </summary>
     /// <remarks>
@@ -48,7 +48,7 @@ public interface ITokenRefreshBackgroundService
     bool IsStopped { get; }
 
     /// <summary>
-    /// L-9：重新启动已停止的后台刷新调度（复位连续失败计数后继续按间隔刷新）。
+    /// 重新启动已停止的后台刷新调度（复位连续失败计数后继续按间隔刷新）。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>异步任务。</returns>

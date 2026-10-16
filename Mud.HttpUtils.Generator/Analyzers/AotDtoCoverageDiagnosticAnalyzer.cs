@@ -55,7 +55,7 @@ internal sealed class AotDtoCoverageDiagnosticAnalyzer : DiagnosticAnalyzer
             {
                 var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider?.GlobalOptions;
 
-                // [F-5 修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为）：为 false 时
+                // [修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为）：为 false 时
                 // 全部 AOT 诊断（AOT004/005/006/007）整体退出，为无关项目提供性能兜底。
                 // 层级：总闸优先于 MudEnableAotCoverageAnalysis（见 README AOT 章节开关矩阵）。
                 if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, "build_property.MudEnableAotDiagnostics", true))
