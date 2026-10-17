@@ -490,8 +490,12 @@ jobs:
           fail=0
 
           # 用例 1：仅 IsAotCompatible=true（模糊态）→ 必须报 AOT007（Warning，严格模式下升级为 Error）。
+          # 匹配必须用 herestring（grep -q <<< "$out"）而非 echo | grep -q：
+          #   GitHub Actions 的 shell: bash 默认带 -o pipefail，而本用例输出含 125+ 条告警（超过管道缓冲），
+          #   且 AOT007 出现在输出前部 —— grep -q 命中即提前退出，echo 随即收到 SIGPIPE（141），
+          #   pipefail 会把整条管道判为失败，使 if 走 else 分支：明明报了 AOT007 却打印"未报告"（恒红误报）。
           out_ambiguous=$(dotnet build "$TEST_DIR/Test.csproj" -p:AotStrictMode=true 2>&1)
-          if echo "$out_ambiguous" | grep -q "AOT007"; then
+          if grep -q "AOT007" <<< "$out_ambiguous"; then
             echo "✓ AOT007 reported for XML path with IsAotCompatible only (warning/error per strict mode)"
           else
             echo "$out_ambiguous"
@@ -501,7 +505,7 @@ jobs:
 
           # 用例 2：显式 MudAotRuntimeMode=jit（F11 逃生舱）→ 不得报告 AOT007。
           out_jit=$(dotnet build "$TEST_DIR/Test.csproj" -p:MudAotRuntimeMode=jit 2>&1)
-          if echo "$out_jit" | grep -q "AOT007"; then
+          if grep -q "AOT007" <<< "$out_jit"; then
             echo "$out_jit"
             echo "✗ AOT007 reported despite explicit MudAotRuntimeMode=jit (F11 escape hatch broken)"
             fail=1
