@@ -4,6 +4,38 @@
 
 ---
 
+## 3.0.8（模块文件重组织与注释完整性恢复，2026-10-16）
+
+> 纯内部整理版本：公共 API 零变化（`PublicAPI/{netstandard2.0,net6.0,net7.0,net8.0,net10.0}` 逐 TFM 未改动）、运行时行为零变化。
+> 同时修复 3.0.7 之后提交引入的注释起始标记缺失——该缺陷导致 `Mud.HttpUtils.Client`、`Mud.HttpUtils.Generator` 及其下游（元包、`Resilience`、全部测试工程）无法编译。
+
+### 修复（Fixed）
+
+- **注释起始标记缺失（编译失败）**：3.0.7 之后的批量注释精简误删了 198 行注释的起始标记（`//` / `///`），涉及 `Client` 与 `Generator` 共 33 个文件，残留形态如 `/修复：…`、`C5）：…`、`字段声明; 注释文本`、`<b>不得</b>…`。已逐行恢复（含 XML doc 前缀判定与行尾注释原位恢复），全解决方案编译错误归零。
+- **注释编号标识恢复**：恢复批量清理过程中丢失的方案编号与追踪标识共 359 处（如 `SR-L3（P3.6，D14）`、`R-P2-05（C3）`、`GEN-07`、`MT-08`、`TK-13`），使注释可追溯性回到 3.0.7 基线；同步修复 `BC-28` / `BC-30` 两个 `[Obsolete]` 消息编号，7 个弃用断言用例转绿。
+- **末尾换行与换行符一致性**：按索引约定归一化 `Client` / `Generator` 侧改动的换行符（CRLF），并还原脚本意外追加的 4 处文件末尾换行，避免整文件级 diff 噪声。
+
+### 重构（Changed）
+
+- **`Mud.HttpUtils.Abstractions/TokenManager` 目录分组（命名空间不变）**：47 个平铺文件 → 10 个子目录 / 63 个文件 —— `Contracts`（接口契约）、`Managers`（含 `TokenManagerBase` 分部）、`Background`、`Caching`、`Storage`（+ `Storage/Codec`）、`Concurrency`、`Recovery`、`Scoping`、`UserContext`、`Models`。
+- **`TokenManagerBase`（1347 行）按职责拆为 partial 分部**：骨架（字段 / 配置属性 / 构造 / 时钟接缝）+ `Refresh`（主路径 / 键控锁 / 去重租约 / 负缓存 / 重试降级）+ `Invalidation`（失效与级联传播）+ `Cache`（读写 / 有效性 / LRU 收敛）+ `TenantBinding` + `Diagnostics` + `Maintenance` + `Lifecycle`。
+- **`Mud.HttpUtils.Client/TokenManager` 目录分组（命名空间不变）**：35 个平铺文件 → 9 个子目录 —— `Managers`、`OAuth2`、`Recovery`、`Background`、`Caching`、`Storage`、`Providers`、`Concurrency`、`Diagnostics`。
+- **一文件多类型拆分与文件改名**：9 个文件中的第二类型拆为同名独立文件（如 `SystemClock`、`ITokenRefreshLeaseHandle`、`DefaultTokenStoreCodec`、`TokenStoreEnvelopeState`、`ILegacyFormatProbe`、`TokenInvalidatedEventArgs`）；`UserInfo.cs` → `CurrentUserInfo.cs`、`TokenStoreCodec.cs` → `ITokenStoreCodec.cs`（`git mv` 保留历史）。仅移动/拆分文件，未重命名任何公开类型。
+
+### 验证
+
+- **构建**：`dotnet build Mud.HttpUtils.slnx` 0 错误；`-p:PublicApiStrictMode=true` 0 错误（RS0016 / RS0017 / RS0024 均未触发）。
+- **内容守恒**：拆分前后逐行比对（行多重集 + 逐行文本）11 组全部一致，36 个纯移动文件内容逐位未变。
+- **测试**：9 个测试工程 × 全部目标框架，**9757 个用例全部通过** —— `Client.Tests` net6.0 2163 / net8.0 2220 / net10.0 2220、`Generator.Tests` 1087 × 2、`Resilience.Tests` 306 × 2、`Redis.Tests` 72、`OpenTelemetry.Tests` 145、`Integration.Tests` 56、`JsonContextScaffolder.Tests` 57、`CodeFixes.Tests` 23、`HttpUtils.Tests` 15。
+- **打包**：`dotnet pack -c Release` 全部包生成成功。
+
+### 升级提示
+
+- 本版本无公共 API 变化，无需修改消费方代码；仅建议刷新注释可追溯性相关的 IDE 索引。
+- 弃用标记与 4.0 移除计划不变：`IAppContextSwitcher.GetTokenAsync`（BC-28）、`IAppManager<T>` 的 `GetWebApi` / `GetDefaultWebApi` / `RegisterSwitcherFactory`（BC-30）在 3.x 继续以编译告警存在。
+
+---
+
 ## 3.0.7（三大核心治理与工具面出清，2026-10-15）
 
 > 集中治理三大核心（令牌 / 多应用 / 声明式客户端），工具面生成引擎移出组件包，并采纳双下游（MudFeishu / MudWechat）反馈补齐上游能力。
