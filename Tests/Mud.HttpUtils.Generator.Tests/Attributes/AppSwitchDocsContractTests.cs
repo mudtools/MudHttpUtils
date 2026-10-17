@@ -18,8 +18,11 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class AppSwitchDocsContractTests
 {
-    private static readonly string DefaultAppManagerSource =
-        TestRepoRoot.PathOf("Mud.HttpUtils.Abstractions", "AppContext", "DefaultAppManager.cs");
+    // DefaultAppManager 为 partial class：工厂文案在 SwitcherFactory 分部，其余成员散落多个分部文件。
+    // 守卫须拼接全部分部，避免「只读单文件」在拆分后静默漏检（原路径 AppContext/DefaultAppManager.cs 已因
+    // 0fb0da0 拆分迁移至 AppContext/Management/，导致 FileNotFoundException）。
+    private static readonly string DefaultAppManagerDir =
+        TestRepoRoot.PathOf("Mud.HttpUtils.Abstractions", "AppContext", "Management");
 
     private static readonly string ClientReadme =
         TestRepoRoot.PathOf("Mud.HttpUtils.Client", "README.md");
@@ -36,7 +39,11 @@ public class AppSwitchDocsContractTests
     [Fact]
     public void DefaultAppManager_FactoryHint_DoesNotSuggest_UncompilableLambda()
     {
-        var source = File.ReadAllText(DefaultAppManagerSource);
+        var source = string.Join(
+            Environment.NewLine,
+            Directory.EnumerateFiles(DefaultAppManagerDir, "DefaultAppManager*.cs", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .Select(File.ReadAllText));
 
         source.Should().NotContain("ctx => new",
             "SW-05：工厂委托只有一个入参（Func<TAppContext, TContextSwitcher>），而生成类（默认模式）构造函数有 3 个必需参数，" +
