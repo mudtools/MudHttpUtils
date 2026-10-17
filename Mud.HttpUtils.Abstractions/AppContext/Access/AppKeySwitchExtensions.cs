@@ -72,7 +72,7 @@ public static class AppKeySwitchExtensions
     /// <param name="appManager">应用管理器（用于解析目标上下文）。</param>
     /// <param name="authorizer">
     /// 应用切换授权器。<b>为 null 表示未注册 ⇒ 直接拒绝</b>（默认拒绝，/；
-    /// 单应用 / 完全受信场景请显式注册 <see cref="AllowAllAppAccessAuthorizer"/> 以表明放行意图。
+    /// 单应用 / 完全受信场景请显式注册 <c>AllowAllAppAccessAuthorizer</c> 以表明放行意图。
     /// </param>
     /// <typeparam name="TAppContext">
     /// 应用上下文的实际类型（通常是 SDK 自有的上下文接口，须实现 <see cref="IMudAppContext"/>）。

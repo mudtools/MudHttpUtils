@@ -27,17 +27,3 @@ public enum MissingAppContextPolicy
     /// </summary>
     FallbackToDefaultApp,
 }
-
-/// <summary>
-/// 多租户选项，控制上下文缺失时的行为。
-/// 默认 <see cref="MissingContextPolicy"/> 为 <see cref="MissingAppContextPolicy.Reject"/>（fail-closed）。
-/// </summary>
-public sealed class MudMultiTenantOptions
-{
-    /// <summary>
-    /// 获取或设置应用上下文缺失时的策略。
-    /// 默认为 <see cref="MissingAppContextPolicy.Reject"/>（fail-closed，新行为）。
-    /// 设为 <see cref="MissingAppContextPolicy.FallbackToDefaultApp"/> 可回退到旧行为（fail-open）。
-    /// </summary>
-    public MissingAppContextPolicy MissingContextPolicy { get; set; } = MissingAppContextPolicy.Reject;
-}

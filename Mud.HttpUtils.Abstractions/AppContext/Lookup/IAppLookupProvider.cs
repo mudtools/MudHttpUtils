@@ -21,7 +21,7 @@ namespace Mud.HttpUtils;
 /// <item>本契约只做"标识 → appKey"映射，<b>不做</b>任何上下文物化副作用，也<b>不做</b>授权判定 ——
 /// 解析出的 appKey 在切换前仍须经 <see cref="IAppAccessAuthorizer"/>（如
 /// <see cref="AppKeyAllowListAuthorizer"/>）等授权链路。</item>
-/// <item><paramref name="externalIds"/> 中的空值项被忽略；<b>全部</b>提供的键都解析成功且指向<b>同一个</b>
+/// <item><c>externalIds</c> 中的空值项被忽略；<b>全部</b>提供的键都解析成功且指向<b>同一个</b>
 /// appKey 时才返回 <c>true</c>（多键互证）。</item>
 /// </list></para>
 /// <para><b>实现</b>：<see cref="DefaultAppManager{TAppContext}"/> 自动建立反查索引

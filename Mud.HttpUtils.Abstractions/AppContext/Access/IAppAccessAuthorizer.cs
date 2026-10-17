@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 多租户场景下，<see cref="IAppContextSwitcher.UseApp"/> / <see cref="IAppContextSwitcher.BeginScope(string)"/>
+/// 多租户场景下，<c>IAppContextSwitcher.UseApp(appKey)</c> / <c>IAppContextSwitcher.BeginScope(appKey)</c>
 /// 接受外部传入的 appKey。若 appKey 来源于请求参数，必须经本接口授权，否则可跨租户读取他人应用上下文与令牌。
 /// </para>
 /// <para>

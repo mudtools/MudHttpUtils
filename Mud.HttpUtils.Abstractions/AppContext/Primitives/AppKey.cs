@@ -11,8 +11,8 @@ namespace Mud.HttpUtils;
 /// MT-18：应用标识（appKey）校验与安全文本化的公开门面。
 /// </summary>
 /// <remarks>
-/// 内部实现为 <c>AppKeyValidator</c>（<c>internal</c>，零正则手写字符判断，AOT 安全）。
-/// 由于源生成器产物位于消费方程序集，生成代码无法访问 <c>internal</c> 成员，
+/// 内部实现为 <c>AppKeyValidator</c>（<c>internal</c>，零正则手写字符判断，AOT 安全），本类逐成员委托，
+/// <b>不</b>另行实现规则。由于源生成器产物位于消费方程序集，生成代码无法访问 <c>internal</c> 成员，
 /// 故在此暴露只读门面供调用方在授权前进行格式校验与日志安全回显。
 /// <para>本类型为纯函数式工具，无状态、无分配（除 <see cref="ToSafeText"/> 的必要输出外）。</para>
 /// <para><b>大小写语义</b>：appKey <b>区分大小写</b>，且本类<b>不做</b>任何大小写归一化 ——
@@ -22,7 +22,7 @@ namespace Mud.HttpUtils;
 public static class AppKey
 {
     /// <summary>应用标识允许的最大长度（128）。</summary>
-    public const int MaxLength = 128;
+    public const int MaxLength = AppKeyValidator.MaxLength;
 
     /// <summary>
     /// 判断应用标识是否合法：非空、长度不超过 <see cref="MaxLength"/>，
@@ -31,25 +31,7 @@ public static class AppKey
     /// <remarks>大小写敏感，不做归一化。</remarks>
     /// <param name="value">待校验的应用标识。</param>
     /// <returns>合法返回 <c>true</c>，否则 <c>false</c>。</returns>
-    public static bool IsValid(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value!.Length > MaxLength)
-            return false;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            var isAsciiLetter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-            var isDigit = c >= '0' && c <= '9';
-            var isSeparator = c == '.' || c == '_' || c == '-';
-
-            var legal = i == 0 ? isAsciiLetter || isDigit : isAsciiLetter || isDigit || isSeparator;
-            if (!legal)
-                return false;
-        }
-
-        return true;
-    }
+    public static bool IsValid(string? value) => AppKeyValidator.IsValid(value);
 
     /// <summary>
     /// 把应用标识转换为可安全写入日志 / 异常消息的文本（截断到 <see cref="MaxLength"/> 并过滤控制字符）。
@@ -60,18 +42,5 @@ public static class AppKey
     /// </remarks>
     /// <param name="value">原始应用标识（可含不可信输入）。</param>
     /// <returns>安全文本；输入为 null / 空时返回空字符串。</returns>
-    public static string ToSafeText(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-            return string.Empty;
-
-        var limit = value!.Length > MaxLength ? MaxLength : value.Length;
-        var buffer = new char[limit];
-        for (var i = 0; i < limit; i++)
-        {
-            var c = value[i];
-            buffer[i] = c < ' ' || c == (char)0x7F ? '_' : c;
-        }
-        return new string(buffer);
-    }
+    public static string ToSafeText(string? value) => AppKeyValidator.ToSafeText(value);
 }
