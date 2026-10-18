@@ -100,7 +100,6 @@ Mud.HttpUtils.CurrentUserInfo.UserId.set -> void
 Mud.HttpUtils.DefaultAppManager<TAppContext>
 Mud.HttpUtils.DefaultAppManager<TAppContext>.ConfigurationChanged -> System.EventHandler<Mud.HttpUtils.AppConfigurationChangedEventArgs!>?
 Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppManager() -> void
-Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterSwitcherFactory<TContextSwitcher>(System.Func<TAppContext, TContextSwitcher>! factory) -> void
 Mud.HttpUtils.DefaultExceptionFactory
 Mud.HttpUtils.DefaultExceptionFactory.CreateApiException(System.Net.Http.HttpResponseMessage! response, string? content, string? requestUri) -> System.Exception?
 Mud.HttpUtils.DefaultExceptionFactory.CreateDeserializationException(string? content, System.Type! targetType, System.Exception! deserializationException, string? requestUri) -> System.Exception!
@@ -185,12 +184,9 @@ Mud.HttpUtils.IAppManager<TAppContext>.DefaultAppKey.get -> string?
 Mud.HttpUtils.IAppManager<TAppContext>.GetAllApps() -> System.Collections.Generic.IEnumerable<TAppContext>!
 Mud.HttpUtils.IAppManager<TAppContext>.GetApp(string! appKey) -> TAppContext
 Mud.HttpUtils.IAppManager<TAppContext>.GetDefaultApp() -> TAppContext
-Mud.HttpUtils.IAppManager<TAppContext>.GetDefaultWebApi<TContextSwitcher>() -> TContextSwitcher
-Mud.HttpUtils.IAppManager<TAppContext>.GetWebApi<TContextSwitcher>(string! appKey) -> TContextSwitcher
 Mud.HttpUtils.IAppManager<TAppContext>.HasApp(string! appKey) -> bool
 Mud.HttpUtils.IAppManager<TAppContext>.RegisterApp(string! appKey, TAppContext appContext, bool isDefault = false) -> void
 Mud.HttpUtils.IAppManager<TAppContext>.RegisterAppAsync(string! appKey, TAppContext appContext, bool isDefault = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Mud.HttpUtils.IAppManager<TAppContext>.RegisterSwitcherFactory<TContextSwitcher>(System.Func<TAppContext, TContextSwitcher>! factory) -> void
 Mud.HttpUtils.IAppManager<TAppContext>.RemoveApp(string! appKey) -> bool
 Mud.HttpUtils.IAppManager<TAppContext>.SetDefaultApp(string! appKey) -> void
 Mud.HttpUtils.IAppManager<TAppContext>.TryGetApp(string! appKey, out TAppContext? appContext) -> bool
@@ -820,8 +816,6 @@ static readonly Mud.HttpUtils.MudHttpMeter.TokenRefreshSuppressedCounter -> Syst
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetAllApps() -> System.Collections.Generic.IEnumerable<TAppContext>!
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetApp(string! appKey) -> TAppContext
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetDefaultApp() -> TAppContext
-virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetDefaultWebApi<TContextSwitcher>() -> TContextSwitcher
-virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetWebApi<TContextSwitcher>(string! appKey) -> TContextSwitcher
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.HasApp(string! appKey) -> bool
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.OnConfigurationChanged(Mud.HttpUtils.AppConfigurationChangedEventArgs! e) -> void
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.RemoveApp(string! appKey) -> bool

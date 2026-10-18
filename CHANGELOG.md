@@ -4,10 +4,35 @@
 
 ---
 
-## 3.0.8（模块文件重组织与注释完整性恢复，2026-10-16）
+## 3.0.8（模块文件重组织、注释完整性恢复与弃用 API 移除，未发布）
 
-> 纯内部整理版本：公共 API 零变化（`PublicAPI/{netstandard2.0,net6.0,net7.0,net8.0,net10.0}` 逐 TFM 未改动）、运行时行为零变化。
-> 同时修复 3.0.7 之后提交引入的注释起始标记缺失——该缺陷导致 `Mud.HttpUtils.Client`、`Mud.HttpUtils.Generator` 及其下游（元包、`Resilience`、全部测试工程）无法编译。
+> ⚠️ **含破坏性变更**：`IAppManager<T>` 的三个弃用成员（`BC-30`）已从接口与实现中**物理移除**。
+> 替代路径为「DI 解析切换器 + `IAppScopeSwitcher.UseAppScope` / `UseDefaultAppScope`」，
+> 或 `AppKeySwitchExtensions.SwitchToApp`（「切换并保持」语义）。升级前请先阅读下方「破坏性变更」与「升级提示」。
+> 本版另含两项**纯内部整理**（不改动公共 API 与运行时行为）：① 模块文件重组织（`TokenManager` 目录分组
+> 与 `TokenManagerBase` partial 拆分，命名空间不变）；② 注释完整性恢复（修复 3.0.7 之后提交引入的
+> 注释起始标记缺失）。公共 API 的变化**仅限下方「破坏性变更」所列的三成员移除**。
+
+### 破坏性变更（Breaking）
+
+| 已移除成员                                                                                                            | 替代路径                                                                     |
+| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `IAppManager<T>.GetWebApi<TContextSwitcher>(string appKey)`                                                            | `AppKeySwitchExtensions.SwitchToApp(appKey, appManager, sp)`（切换并保持，含完整守卫） |
+| `IAppManager<T>.GetDefaultWebApi<TContextSwitcher>()`                                                                  | `IAppScopeSwitcher.UseDefaultAppScope()` 或 `SwitchToDefaultApp(appManager)`   |
+| `IAppManager<T>.RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher>)`                        | 无（该工厂仅服务前两成员，随其消失）                                           |
+
+- **实现侧同批删除**：`DefaultAppManager<TAppContext>` 上的两个 `virtual` 重写与 `RegisterSwitcherFactory` 实现随接口一并移除；`DefaultAppManager.SwitcherFactory` 分部**整文件删除**（含私有 `CreateContextSwitcher` 与 `_switcherFactories` 字典）。
+- **诊断出口释放**：`AppManagerDiagnostics.SwitcherFactoryOverwritten` 的唯一读取方即上述工厂的「重复注册覆盖」告警路径，随成员移除一并删除；`MudHttpClientLog` 的 `EventId 175` 释放为空号，不再另作分配。
+- **影响面**：① 调用这三个成员的代码将**编译失败**；② 直接实现 `IAppManager<T>` 的第三方类型需移除这三个成员。
+- **不受影响**：作用域面（`UseAppScope` / `UseDefaultAppScope`）、Holder 面（`Current` / `SwitchTo` / `BeginScope(IMudAppContext)`）、`SwitchToApp` / `SwitchToDefaultApp` 扩展，以及 `IAppManager<T>` 的其余成员**均保持不变**。
+- **PublicAPI 基线**：`PublicAPI/{netstandard2.0,net6.0,net7.0,net8.0,net10.0}/PublicAPI.Shipped.txt` 各删除 6 行（合计 30 行）。
+
+### 裁决说明（撤回 3.0.0 章的「明确不做」）
+
+3.0.0 章曾裁定「`IAppManager<T>` 三成员不废弃」，其两条理由现已均不成立，故本次撤回：
+
+- **理由 A**（「`GetWebApi` 返回**新的切换器实例**，与 `IAppScopeSwitcher`（在当前实例上切上下文）**语义不等价**」）：`SW-15` 的 `AppKeySwitchExtensions.SwitchToApp` 已补齐「不可信 appKey + 完整守卫 + **无作用域**（切换并保持）」这一组合；且下游 `Mud.Feishu` 的 `GetWebApi` 重写实现本身就是「DI 解析 + 授权守卫 + `SwitchTo`」的切换并保持形态，其迁移指引亦声明与 `SwitchToApp` **语义等价** —— 「语义无法表达」的缺口并不存在。
+- **理由 B**（「`RegisterSwitcherFactory` 是 AOT 友好实例创建的**唯一接缝**（无等价替代）」）：该工厂的唯一消费方是私有 `CreateContextSwitcher`，而后者只被 `GetWebApi` / `GetDefaultWebApi` 调用；前两成员移除后工厂**再无任何调用方**，保留它等于暴露一个「注册后永不生效」的公开 API。其接缝能力在 AOT 场景由 DI 解析覆盖；将来若出现「无 DI 且需 AOT 创建切换器」的真实宿主，应另立**对齐真实构造依赖**的新接缝 —— 现存的 1 参委托与生成器 3 参构造本就不对齐，对该场景不生效。
 
 ### 修复（Fixed）
 
@@ -31,8 +56,10 @@
 
 ### 升级提示
 
-- 本版本无公共 API 变化，无需修改消费方代码；仅建议刷新注释可追溯性相关的 IDE 索引。
-- 弃用标记与 4.0 移除计划不变：`IAppContextSwitcher.GetTokenAsync`（BC-28）、`IAppManager<T>` 的 `GetWebApi` / `GetDefaultWebApi` / `RegisterSwitcherFactory`（BC-30）在 3.x 继续以编译告警存在。
+- **调用面**：`appManager.GetWebApi<T>(appKey)` → `holder.SwitchToApp(appKey, appManager, sp)`；`appManager.GetDefaultWebApi<T>()` → `IAppScopeSwitcher.UseDefaultAppScope()`（或 `holder.SwitchToDefaultApp(appManager)`）。
+- **实现面**：自行实现 `IAppManager<T>` 的宿主需删除上述三个成员。
+- **本批次不含 `BC-28`**：`IAppContextSwitcher.GetTokenAsync()` 的移除排期另计，本批次只含 `BC-30` 三成员，该成员在本版中继续以编译告警存在。
+- **内部整理面**：文件重组与注释恢复不改动公共 API 与运行时行为，无需修改消费方代码；仅建议刷新注释可追溯性相关的 IDE 索引。
 
 ---
 

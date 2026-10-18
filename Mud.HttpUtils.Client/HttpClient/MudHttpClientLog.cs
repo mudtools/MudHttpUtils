@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划（纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、175 SwitcherFactoryOverwritten、176 MudHttpClientNameCaseCollision）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（预留）；180 MissingAppContextRejected；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，由原 170/171 迁移至此以消除撞号）；183 未占用（曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）；184-185 WX 轮（184 TokenRecoveryTriggeredByDetector、185 TokenInvalidationDetectionFailed，errcode 令牌失效恢复）；186-195 TMX 轮（令牌管理缺陷修复方案 2.1.0；186 TokenRecoverySkippedDuringRefresh、187 TokenRefreshWaitTimeout，其余预留）。</para>
+/// <para>EventId 规划（纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、176 MudHttpClientNameCaseCollision；175 已随 BC-30 三成员移除而释放）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（预留）；180 MissingAppContextRejected；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，由原 170/171 迁移至此以消除撞号）；183 未占用（曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）；184-185 WX 轮（184 TokenRecoveryTriggeredByDetector、185 TokenInvalidationDetectionFailed，errcode 令牌失效恢复）；186-195 TMX 轮（令牌管理缺陷修复方案 2.1.0；186 TokenRecoverySkippedDuringRefresh、187 TokenRefreshWaitTimeout，其余预留）。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -228,9 +228,6 @@ internal static partial class MudHttpClientLog
  Message = "命名客户端 '{RequestedName}' 未命中（客户端名大小写敏感），已回退匹配 '{ActualName}'。请统一大小写。")]
  public static partial void ClientNameCaseFallbackUsed(ILogger logger, string requestedName, string actualName);
 
- [LoggerMessage(EventId = 175, Level = LogLevel.Warning,
- Message = "上下文切换器工厂被重复注册并覆盖：{SwitcherType}。后注册的工厂生效。")]
- public static partial void SwitcherFactoryOverwritten(ILogger logger, string switcherType);
 
  [LoggerMessage(EventId = 176, Level = LogLevel.Warning,
  Message = "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。" +
@@ -540,11 +537,6 @@ internal static partial class MudHttpClientLog
  public static void ClientNameCaseFallbackUsed(ILogger logger, string requestedName, string actualName)
  => s_clientNameCaseFallbackUsed(logger, requestedName, actualName, null);
 
- private static readonly Action<ILogger, string, Exception?> s_switcherFactoryOverwritten =
- LoggerMessage.Define<string>(LogLevel.Warning, new EventId(175, nameof(SwitcherFactoryOverwritten)),
- "上下文切换器工厂被重复注册并覆盖：{SwitcherType}。后注册的工厂生效。");
- public static void SwitcherFactoryOverwritten(ILogger logger, string switcherType)
- => s_switcherFactoryOverwritten(logger, switcherType, null);
 
  private static readonly Action<ILogger, string, Exception?> s_mudHttpClientNameCaseCollision =
  LoggerMessage.Define<string>(LogLevel.Warning, new EventId(176, nameof(MudHttpClientNameCaseCollision)),

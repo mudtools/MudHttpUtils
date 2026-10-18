@@ -208,13 +208,13 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 > | `IAppContextSwitcher.UseApp(appKey)` | ❌ 已移除 | `IAppScopeSwitcher.UseAppScope(appKey)` | 守卫完全相同；新入口额外**自动归还上下文** |
 > | `IAppContextSwitcher.UseDefaultApp()` | ❌ 已移除 | `IAppScopeSwitcher.UseDefaultAppScope()` | 同上 |
 > | `IAppContextSwitcher.BeginScope(string appKey)` | ❌ 已移除 | `IAppScopeSwitcher.UseAppScope(appKey)` | **纯命名收敛**：生成体逐行等价，能力与安全性**完全一致**（不必视为安全缺陷） |
-> | `IAppContextSwitcher.GetTokenAsync()` | ⛔ 已废弃（Warning，`BC-28`，**4.0 移除**） | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器 |
+> | `IAppContextSwitcher.GetTokenAsync()` | ⛔ 已废弃（Warning，`BC-28`，**移除排期另计**） | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器 |
 >
 > ⚠️ **3.0.0 破坏性变更（`BC-27`）**：上表前三个成员已从 `IAppContextSwitcher` **移除**，生成类（非 HttpClient 模式）也不再发射 ——
 > 调用它们将**编译失败**（`UseApp`/`UseDefaultApp` ⇒ `CS1061`；`BeginScope("...")` ⇒ `CS1503`，因为只剩 Holder 面的 `BeginScope(IMudAppContext)`）。
 > 例外：若你的接口**自行声明**了这些成员（要求生成器实现），生成器仍会为其发射实现，该写法不受影响。
 > ✅ 附带收益：`BeginScope(null)` 的 `CS0121` 重载二义**已随之消失**。
-> 残留废弃面只有 `GetTokenAsync()`（`BC-28`）：经接口调用得到 `CS0618` 提示（生成类成员不标 `[Obsolete]`，经具体类型调用无噪音）；**3.x 保留告警，计划 4.0 移除**。
+> 残留废弃面只有 `GetTokenAsync()`（`BC-28`）：经接口调用得到 `CS0618` 提示（生成类成员不标 `[Obsolete]`，经具体类型调用无噪音）；**持续保留告警，移除排期另计**（3.0.8 的破坏性批次只含 `BC-30` 三成员）。
 >
 > **三个切换面如何选（`SW-15`，3.0.0 补缺）**：
 >
@@ -226,7 +226,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 >
 > `AppKeySwitchExtensions.SwitchToApp` 是 3.0.0 的**补缺**：`BC-27` 移除 `UseApp` 后，"不可信 appKey + 完整守卫 +
 > **无作用域**"这一组合一度无任何入口（`UseAppScope` 是作用域式、`SwitchTo` 是受信路径），
-> 需要使用该语义的下游（如 `IAppManager.GetWebApi` 类场景）只能保留已废弃的 `UseApp`。
+> 需要使用该语义的下游只能保留已废弃的 `UseApp`。
 > 该扩展用「受控的 `SwitchTo`」补齐，**不产生任何生成产物变更**，因此不影响生成类与既有快照。
 > ⚠️ 它**不会自动归还**上下文 —— 长生命周期宿主必须显式切回，否则后续请求会沿用该应用上下文。
 >
@@ -486,7 +486,7 @@ ITokenRefreshBackgroundService (StartAsync, StopAsync, RegisterTokenManager(ITok
 
 IMudAppContext (HttpClient, GetTokenManager, GetService<T>)
 ├── IAppContextSwitcher (UseApp(string), UseDefaultApp(), BeginScope(string), GetTokenAsync(); 继承 IAppContextHolder 获得 Current(init)/SwitchTo/BeginScope)
-└── IAppManager<T> (GetWebApi, GetDefaultWebApi, GetDefaultApp, GetApp, TryGetApp, GetAllApps, HasApp, RemoveApp, RegisterApp, RegisterAppAsync, UpdateApp, UpdateAppAsync, DefaultAppKey, SetDefaultApp, TrySetDefaultApp, RegisterSwitcherFactory, ConfigurationChanged)
+└── IAppManager<T> (GetDefaultApp, GetApp, TryGetApp, GetAllApps, HasApp, RemoveApp, RegisterApp, RegisterAppAsync, UpdateApp, UpdateAppAsync, DefaultAppKey, SetDefaultApp, TrySetDefaultApp, ConfigurationChanged)
 
 TokenInjectionMode (Header, Query, Path, ApiKey, HmacSignature, BasicAuth, Cookie)
 TokenTypes (常量: Bearer, Basic, AccessToken, RefreshToken)

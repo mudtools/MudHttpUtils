@@ -61,12 +61,6 @@ public class AppManagerComplianceTests
         public string? DefaultAppKey => _inner.DefaultAppKey;
         public void SetDefaultApp(string appKey) => _inner.SetDefaultApp(Norm(appKey));
         public bool TrySetDefaultApp(string appKey) => _inner.TrySetDefaultApp(Norm(appKey));
-
-#pragma warning disable CS0618   // BC-30：合规壳只做透传，不消费弃用入口
-        public TContextSwitcher GetWebApi<TContextSwitcher>(string appKey) where TContextSwitcher : IAppContextSwitcher => _inner.GetWebApi<TContextSwitcher>(Norm(appKey));
-        public TContextSwitcher GetDefaultWebApi<TContextSwitcher>() where TContextSwitcher : IAppContextSwitcher => _inner.GetDefaultWebApi<TContextSwitcher>();
-        public void RegisterSwitcherFactory<TContextSwitcher>(Func<IMudAppContext, TContextSwitcher> factory) where TContextSwitcher : IAppContextSwitcher => _inner.RegisterSwitcherFactory(factory);
-#pragma warning restore CS0618
     }
 
     // ── ① 基准实现全绿（含覆写 Fail 接到 xUnit 的下游用法演示） ─────────

@@ -35,18 +35,6 @@ internal static class AppManagerDiagnostics
     internal static Action<Exception, string, AppConfigurationChangeType>? SubscriberFailed { get; set; }
 
     /// <summary>
-    /// 上下文切换器工厂被重复注册并覆盖时的诊断委托。默认 null（静默）。
-    /// </summary>
-    /// <remarks>
-    /// 委托参数为被覆盖的切换器类型名。
-    /// <para>
-    /// <see cref="DefaultAppManager{TAppContext}.RegisterSwitcherFactory{TContextSwitcher}"/> 使用索引器赋值，
-    /// 重复注册会静默覆盖先前工厂，导致"注册了却未生效"的隐蔽问题。
-    /// </para>
-    /// </remarks>
-    internal static Action<string>? SwitcherFactoryOverwritten { get; set; }
-
-    /// <summary>
     /// 外部标识反查索引登记时发现<b>映射歧义</b>（同名键 + 同值被两个不同 appKey 声明）的诊断委托。
     /// 默认 null（静默）。
     /// </summary>

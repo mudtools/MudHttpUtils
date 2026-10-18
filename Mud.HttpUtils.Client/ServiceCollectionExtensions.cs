@@ -323,9 +323,6 @@ public static class HttpClientServiceCollectionExtensions
  "AppManager ConfigurationChanged 订阅者异常：AppKey={AppKey}, ChangeType={ChangeType}",
  AppKeyValidator.ToSafeText(appKey), changeType);
 
-// 切换器工厂被覆盖的可观测性（原先静默覆盖）。
- AppManagerDiagnostics.SwitcherFactoryOverwritten =
- switcherType => MudHttpClientLog.SwitcherFactoryOverwritten(logger, switcherType);
  }
  return new AppManagerDiagnosticsWiring();
  });

@@ -21,7 +21,7 @@ namespace Mud.HttpUtils.Client.Tests;
 /// <item><description><b>守卫顺序与内容</b>必须与生成代码（<c>GenerateAppKeyGuard</c>）一致 ——
 /// 格式校验 → 授权器默认拒绝 → 业务判定 → 才允许 <c>GetApp</c>（前两步任一失败时**不得**发生任何切换或应用解析）；</description></item>
 /// <item><description><b>无归还语义</b>：方法返回后上下文仍保持在目标应用（这正是它与
-/// <see cref="IAppScopeSwitcher.UseAppScope"/> 的区别，也是 <c>IAppManager.GetWebApi</c> 类场景所需）。</description></item>
+/// <see cref="IAppScopeSwitcher.UseAppScope"/> 的区别，也是「切换并保持」场景所需）。</description></item>
 /// </list>
 /// </remarks>
 public class AppKeySwitchExtensionsTests
@@ -79,7 +79,7 @@ public class AppKeySwitchExtensionsTests
 
         var returned = holder.SwitchToApp(AppB, manager, new AllowAllAppAccessAuthorizer());
 
-        returned.Should().BeSameAs(ctxB, "应返回切换后的上下文实例（与 GetWebApi 类场景的用法一致）");
+        returned.Should().BeSameAs(ctxB, "应返回切换后的上下文实例（即「切换并保持」语义）");
         holder.Current.Should().BeSameAs(ctxB, "切换应立即生效");
         // 「无作用域」= 不返回 IDisposable ⇒ 无法自动归还；此处再次读取仍为目标应用。
         holder.Current.Should().BeSameAs(ctxB,
@@ -155,7 +155,7 @@ public class AppKeySwitchExtensionsTests
         // 本条用例是本扩展**泛型化**（SW-15 订正）的编译期契约守卫：
         // SDK 以自己的上下文类型声明管理器（IAppManager<TSdkContext>），而 IAppManager<T> 是<b>不变</b>的，
         // 若扩展参数固定为 IAppManager<IMudAppContext>，此处的调用将无法编译（CS1503）——
-        // 而那正是本扩展的目标用户（Mud.Feishu / Mud.Wechat 的 GetWebApi 类场景）。
+        // 而那正是本扩展的目标用户（以自有上下文类型声明管理器的 SDK，如 Mud.Feishu / Mud.Wechat）。
         var holder = new AsyncLocalAppContextSwitcher();
         var manager = new DefaultAppManager<IProbeAppContext>();
         var ctx = new ProbeAppContext(AppA);
