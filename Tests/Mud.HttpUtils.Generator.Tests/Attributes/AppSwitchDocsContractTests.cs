@@ -18,11 +18,30 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class AppSwitchDocsContractTests
 {
-    // DefaultAppManager 为 partial class：工厂文案在 SwitcherFactory 分部，其余成员散落多个分部文件。
-    // 守卫须拼接全部分部，避免「只读单文件」在拆分后静默漏检（原路径 AppContext/DefaultAppManager.cs 已因
-    // 0fb0da0 拆分迁移至 AppContext/Management/，导致 FileNotFoundException）。
+    // DefaultAppManager 为 partial class：成员散落多个分部文件，守卫须拼接全部分部，避免「只读单文件」
+    // 在拆分后静默漏检（原路径 AppContext/DefaultAppManager.cs 已因 0fb0da0 拆分迁移至
+    // AppContext/Management/，导致 FileNotFoundException）。
     private static readonly string DefaultAppManagerDir =
         TestRepoRoot.PathOf("Mud.HttpUtils.Abstractions", "AppContext", "Management");
+
+    // SW-05 的工厂文案落点（DefaultAppManager.SwitcherFactory.cs）已随 0fd753e 的 BC-30 物理移除
+    // （RegisterSwitcherFactory / GetWebApi / GetDefaultWebApi 一并删除），管理器侧的「切换入口」指引
+    // 现落在 IAppManager 的切换扩展上，故守卫须同时覆盖该文件，否则文案面整体失守且测试恒红。
+    private static readonly string AppKeySwitchExtensionsFile =
+        TestRepoRoot.PathOf("Mud.HttpUtils.Abstractions", "AppContext", "Access", "AppKeySwitchExtensions.cs");
+
+    /// <summary>管理器切换指引面：全部分部文件 + 切换扩展（文案新一代落点）。</summary>
+    private static string ReadManagerSwitchGuidanceSources()
+    {
+        var managerPartials = Directory
+            .EnumerateFiles(DefaultAppManagerDir, "DefaultAppManager*.cs", SearchOption.TopDirectoryOnly)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .Select(File.ReadAllText);
+
+        return string.Join(
+            Environment.NewLine,
+            managerPartials.Append(File.ReadAllText(AppKeySwitchExtensionsFile)));
+    }
 
     private static readonly string ClientReadme =
         TestRepoRoot.PathOf("Mud.HttpUtils.Client", "README.md");
@@ -39,11 +58,7 @@ public class AppSwitchDocsContractTests
     [Fact]
     public void DefaultAppManager_FactoryHint_DoesNotSuggest_UncompilableLambda()
     {
-        var source = string.Join(
-            Environment.NewLine,
-            Directory.EnumerateFiles(DefaultAppManagerDir, "DefaultAppManager*.cs", SearchOption.TopDirectoryOnly)
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .Select(File.ReadAllText));
+        var source = ReadManagerSwitchGuidanceSources();
 
         source.Should().NotContain("ctx => new",
             "SW-05：工厂委托只有一个入参（Func<TAppContext, TContextSwitcher>），而生成类（默认模式）构造函数有 3 个必需参数，" +
