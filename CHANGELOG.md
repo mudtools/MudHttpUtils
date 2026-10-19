@@ -4,72 +4,37 @@
 
 ---
 
-## 3.0.9（正确性与安全缺陷修复、诊断与配置面完善，2026-10-19，未发布）
+## 3.0.9（可靠性修复与易用性增强，2026-10-19）
 
-> **状态：下一版本（未发布）**。`Directory.Build.props` 的 `<Version>` 已递增至 `3.0.9`；
-> **正式发布打包前**执行 `Tools/rebuild-publicapi.ps1`（见「裁决说明」），发布时删除本节标题中的「未发布」标记。
-> 本地验证包（`artifacts/3.0.9`）保持 PublicAPI Unshipped 不动，避免未发布版本提前登记基线。
-> 本版追加修复后已按同版本重打包纪律重建（清 3.0.9 全局缓存 → Release 打包，11 包 DLL 逐字节校验），
-> 两个下游仓已用该包重新还原并构建通过；下游若已消费过旧 3.0.9 缓存，需清缓存后重新还原。
+### 破坏性变更
 
-> 本版按《2026-10-19 架构评审 Bug 修复与功能完善方案》批次 A/B 实施：修复两处已实证缺陷、
-> 收敛配置绑定面的 AOT 标注、恢复一处被过度降级的提示可见性，并将 HTTPCLIENT018 迁至分析器
-> （目录级 `.editorconfig` 豁免从此可达）。含**一项行为变更**（令牌存储读故障降级）与**一项诊断位置变更**，升级前请阅读对应小节。
+- **令牌缓存读取失败不再向调用方抛出异常**：令牌存储不可用时，读取按「缓存未命中」处理并回落到正常刷新流程；取消操作仍会立即中止。若监控依赖捕获该读取异常，请改为观察新增的读取失败计数或告警日志。
+- **HTTPCLIENT018 改为在编译分析阶段报告**：提示内容与抑制方式不变（`NoWarn` / `#pragma` 继续有效），并新增目录级 `.editorconfig` 配置 `mud_suppress_token_manager_key_inference`，可按目录关闭该提示。
 
-### 破坏性变更（Breaking）
+### 新增
 
-| 变更 | 旧行为 | 新行为 | 下游适配动作 |
-| --- | --- | --- | --- |
-| 令牌存储桥接器读故障降级 | store 读异常直接抛给业务调用方 | 读故障按「未命中」降级：回落 API 刷新，记 Warning（EventId 197）+ `ReadThroughFailures` 计数；取消异常仍原样传播 | 依赖「读异常传播」做监控的宿主请改观测 `ReadThroughFailures` 计数 / Warning 日志（该行为已被下游实证为缺陷） |
-| HTTPCLIENT018 诊断位置 | 生成器生成期上报 | 分析器 `TokenManagerKeyInferenceAnalyzer` 编译期上报（`NoWarn` / `#pragma` 抑制语义不变） | 按生成期时相做的屏蔽仍有效；新增目录级 `.editorconfig` 豁免通道（`mud_suppress_token_manager_key_inference`） |
+- **AOT 友好的令牌恢复配置入口**：新增委托式 `AddMudHttpTokenRecovery(...)`；配置驱动的注册方式不再要求调用方添加 AOT / 裁剪相关标注，启用 Native AOT 的项目可直接使用。
+- **多应用（多租户）HTTP 客户端工厂**：新增 `IAppHttpClientFactory<T>` 与注册扩展 `AddAppHttpClientFactory<T>()`，按应用标识创建、缓存与失效客户端，无需各产品线重复自建工厂。
+- **异步请求体序列化扩展点**：新增 `IAsyncHttpContentSerializer`，支持在请求体就绪前需要异步操作（如签名、取密钥）的场景；未实现时行为保持不变。
+- **多个 JSON 序列化上下文合并注册**：新增 `AddMudHttpClientJsonContexts(...)`（.NET 8 及以上），按注册顺序合并，后注册者优先。
+- **启动期与热更新提示**：SSRF 严格模式下未配置任何域名白名单时给出一次性告警；配置热更新涉及需重建客户端才能生效的项时，逐客户端提示受影响项与生效方式。
 
-### 新增（Added）
+### 修复
 
-- **令牌恢复委托式注册（AOT 安全入口）**：`HttpClientServiceCollectionExtensions.AddMudHttpTokenRecovery(Action<TokenRecoveryOptions>)` —— 无 `Requires*` 标注；`AddMudHttpTokenRecoveryFromConfiguration` 内部改走纯 DTO 投影（`TokenRecoveryConfiguration` + `Apply`）并**去掉对外 AOT 标注**（反射绑定在库内以带理由抑制收敛，不再流向下游编译单元）；显式挂接配置变更令牌源，**热更新语义与原 `IConfigurationSection` 重载等价**。
-- **多应用 HTTP 客户端工厂接缝**：`IAppHttpClientFactory<TAppContext>`（按 appKey 创建 / 缓存 / 失效增强客户端）+ 默认实现 `AppHttpClientFactory<TAppContext>` + 注册扩展 `AddAppHttpClientFactory<TAppContext>(prefix)`；容器注册 `TokenRecoveryExecutor` 时自动挂接令牌恢复能力（复用既有 `CreateTokenRecoveryClient`）。`IHttpClientResolver` 新增扩展方法 `GetOrCreateClient`（未命中创建语义，接口形状不变）。
-- **异步内容构造扩展点**：`IAsyncHttpContentSerializer`（`ToHttpContentAsync`）—— 签名在报文体内、取密钥异步的场景（如支付报文签名）；运行期已注册即优先走异步路径，未注册逐字节保持既有同步行为。
-- **多 JSON 上下文合并便捷件**：`AddMudHttpClientJsonContexts(params JsonSerializerContext[])`（net8+，按传入顺序 Combine，**后者优先**）。
-- **启动期与热更新提示（两个新日志事件）**：EventId 198 `SsrfStrictModeWithoutAllowlist`（严格模式客户端 + 全局空白名单 ⇒ Warning，给出三个白名单登记入口）；EventId 199 `ClientConfigRebuildRequired`（配置变更涉及注册期固化项 ⇒ Info，逐客户端列出受影响项与两种生效方式）。
+- 令牌存储读取故障会导致业务调用失败的问题：现按缓存未命中降级并记录，不再中断请求。
+- 严格模式且未登记域名白名单时请求被静默拦截的问题：新增启动告警，明确指出受影响的客户端与三种白名单登记方式。
+- 配置绑定会将 AOT 标注传播到调用方编译单元的问题：绑定过程改为内部数据投影，调用方无需再为相关诊断做抑制。
+- HTTPCLIENT018 的目录级豁免此前不生效的问题。
+- 已注册令牌存储但未接入管线时提示过于隐蔽的问题：恢复为警告并按成因区分。
+- HTTPCLIENT013 / 014 的诊断消息补充具体修复指引（路径参数别名、HttpClient 类型全限定名）。
+- 令牌失效判定链中单个判定器异常会中断其余判定器的问题：现改为逐判定器隔离，单点故障不再影响其它判定。
 
-### 修复（Fixed）
+### 升级注意
 
-- **令牌存储桥接器读路径故障降级**：读穿透（租户 / 用户两维度）无异常捕获，存储抖动直接从「回落 API 刷新」恶化为「把异常抛给业务调用方」。现按「未命中」降级（与写路径补偿队列对齐），新增公共只读计数 `ReadThroughFailures`。
-- **SSRF 严格模式空白名单无诊断**：纯编程式注册、未登记任何白名单的宿主，其全部请求被连接期 SSRF 拦下且无任何提示。现按约定命名枚举严格模式客户端，空白名单时给一次性 Warning 与登记入口（fail-closed 默认值的可观测性兜底）。
-- **配置绑定污染消费方 AOT 编译单元**：`TokenRecoveryOptions.TokenInvalidationDetector`（接口类型属性）参与 `IConfiguration` 反射绑定，下游启用配置绑定源生成器后产出不可抑制的诊断。现绑定面收敛为纯 DTO 投影，调用方无 `Requires*` 标注。
-- **HTTPCLIENT018 目录级豁免不可达**：生成器缓存输入不含 `.editorconfig` 目录键，目录粒度豁免静默失效。诊断迁至分析器后三通道（MSBuild 属性 / `.globalconfig` 键 / 目录级 `.editorconfig` 键）全部可达。
-- **存储未接入桥接提示过度降级**：EventId 191 由 Warning 降为 Information 后，「已注册 store 但被旁路」几乎不可见。恢复 Warning 并按成因参数化（显式覆盖 `ITokenCache<T>` vs 无缓存消费解析）。
-- **HTTPCLIENT013 / 014 消息引导补强**：013 追加 `[Path(Name = "官方占位符名")]` 解耦能力指引；014 追加「自定义 HttpClient 类型名必须为全限定名（`nameof` 只产出短名）」指引。
-- **令牌失效判定链的逐判定器异常隔离**：执行器对「单槽 ∪ 追加集」整条链只做一次 `try/catch`，任一判定器抛异常会中断同次判定的后续判定器（多产品线共用追加集时，一条线的判定器缺陷会吞掉其它线的判定机会）；库内组合器本就是逐判定器隔离。现改为循环内逐判定器 `try/catch`（取消异常仍原样上抛），故障日志归属改为实际抛错的判定器类型。
-
-### 下游自建件替代映射（D-3）
-
-| 上游能力（本版起可用） | 可裁撤 / 可回迁的下游自建件 | 验证方式 |
-| --- | --- | --- |
-| 读路径故障降级（A-1） | MudFeishu `PurgeGateTokenStoreDecorator` 的读降级分支 | 移除装饰器后其读降级用例仍成立 |
-| `AddMudHttpTokenRecovery` / DTO 投影（B-2） | MudFeishu 自建 DTO 投影 + 逐字段 Apply + 手工变更监听 | 改用官方入口后编译单元无绑定源生成器诊断、热更新用例保持 |
-| 成员级 `[Token(Justification)]` 018 豁免（B-1 第一部分，**已生效无需等版本**） | **仅「本就注入令牌」的接口可迁移**；无令牌端点不可用（该特性会把接口级 TokenType 置为 `AccessToken` 并新增取令牌/参数注入）——MudWechat 经探针实测否决，保留 severity 通道 | 迁移后构建零警告**且生成物无新增注入代码** |
-| `[Path(Name)]` 指引（B-4） | MudWechat 因 013 用 C# 参数名路由的规避注释 | 按新指引消除规避注释 |
-| `IAppHttpClientFactory`（C-1，随 3.2.0） | MudFeishu `IFeishuHttpClientFactory`、MudWechat 三个 per-product-line 工厂 | 各自守卫测试保持 |
-
-### 裁决说明（PublicAPI 基线脱节，D-2）
-
-`TokenAttribute.Justification`、`TokenRecoveryConfiguration`、`TokenRecoveryOptionsExtensions.Apply`、`TokenRecoveryOptions.AdditionalTokenInvalidationDetectors` / `CompositeTokenInvalidationDetector` 五件自 3.0.4 起已随包发布（CHANGELOG 3.0.4「新增」在册），但一直登记于 `PublicAPI.Unshipped.txt` 未并入 Shipped，形成「声明已发布 / 基线未发布」脱节。**裁决**：上述 API 事实上已发布，脱节属发布流程遗漏——**3.0.9 正式发布打包前由 `Tools/rebuild-publicapi.ps1` 将其并入 Shipped**（本地验证包不提前登记）；同时 CI 新增 `changelog-publicapi-consistency` 作业（`scripts/check-changelog-publicapi.ps1`），此后「新增」声明与基线不一致将直接失败（仅 Unshipped 时给发布提示）。
-
-### 验证
-
-- **构建**：`dotnet build Mud.HttpUtils.slnx` 0 错误。
-- **测试**：本版新增用例覆盖每项验收标准——桥接器读降级（含取消传播与 Warning 断言）、SSRF 空白名单组合检测（正/反/自定义验证器三态）、令牌恢复绑定与热更新、非法值 setter 校验、存储未桥接两成因区分、013/014 消息 golden 断言、018 分析器豁免矩阵（含树粒度）、多上下文合并（覆盖 / 后者优先 / null 守卫）、多应用工厂三态与恢复挂接、异步内容构造调用次序、固化项热更新提示。
-- **AOT**：新增 API 无新增序列化 / 反射面；配置绑定类入口对调用方零 `Requires*` 标注。
-- **下游复验**：判定器隔离修复后同版本重打包；飞书 `Mud.Feishu.Abstractions`、微信 `Mud.Wechat.Abstractions` 以新包强制重编译 0 错误，微信判定器注册用例 7/7 通过（含"前序判定器抛异常、后续判定器仍命中"的逐判定器隔离断言）。
-
-### 升级提示
-
-- **行为变更**：见「破坏性变更」表——令牌存储读异常不再传播（降级为未命中 + 计数 / 日志）。
-- **诊断屏蔽**：HTTPCLIENT018 迁至分析器，既有 `NoWarn` / `#pragma` 仍有效；需要目录级豁免的工程可改用 `.editorconfig` 键 `mud_suppress_token_manager_key_inference = true`。
-- **`[Token(Justification)]` 的适用边界（重要）**：该特性在豁免 018 的同时会把接口级 `TokenType` 从 null 置为 `AccessToken`，生成器随即发射取令牌与参数注入代码——**只适用于本就注入令牌的接口**。无令牌端点（如无 `access_token` 的回调/事件域）请继续使用 severity 或 `.editorconfig` 键，否则会引入非预期的注入面。
-- **判定器异常语义**：判定链改为逐判定器隔离（单个判定器抛异常只降级该判定器，不再中断整条链）；依赖"一个判定器异常即整链跳过"的宿主行为会变化。
-- **日志事件**：EventId 191 恢复 Warning（按成因区分）；新增 EventId 197 / 198 / 199。
-- **PublicAPI 基线**：正式发布打包前将五件 3.0.4 期 API 并入 Shipped（见「裁决说明」），不影响编译，仅影响 RS0016 严格模式基线核对。
+- 令牌存储读取异常不再传播；如需保留告警能力，请改为订阅读取失败计数或警告日志。
+- 对不使用访问令牌的接口（如回调、事件通知），**不要**用 `[Token(Justification = "...")]` 免除 HTTPCLIENT018 提示——该写法会同时为该接口开启令牌获取与注入行为；这类接口请改用 `NoWarn` / `.editorconfig` 关闭提示。
+- 令牌失效判定链的异常语义已调整：单个判定器异常不再中止整条链。若既有逻辑依赖「一处异常即整体跳过」，请相应调整。
+- 日志事件调整：令牌存储未接入提示恢复为警告；新增读取失败、SSRF 白名单缺失、热更新需重建三类提示（EventId 191、197、198、199）。
 
 ---
 
@@ -84,11 +49,11 @@
 
 ### 破坏性变更（Breaking）
 
-| 已移除成员                                                                                                            | 替代路径                                                                     |
-| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `IAppManager<T>.GetWebApi<TContextSwitcher>(string appKey)`                                                            | `AppKeySwitchExtensions.SwitchToApp(appKey, appManager, sp)`（切换并保持，含完整守卫） |
-| `IAppManager<T>.GetDefaultWebApi<TContextSwitcher>()`                                                                  | `IAppScopeSwitcher.UseDefaultAppScope()` 或 `SwitchToDefaultApp(appManager)`   |
-| `IAppManager<T>.RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher>)`                        | 无（该工厂仅服务前两成员，随其消失）                                           |
+| 已移除成员                                                                                      | 替代路径                                                                               |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `IAppManager<T>.GetWebApi<TContextSwitcher>(string appKey)`                                     | `AppKeySwitchExtensions.SwitchToApp(appKey, appManager, sp)`（切换并保持，含完整守卫） |
+| `IAppManager<T>.GetDefaultWebApi<TContextSwitcher>()`                                           | `IAppScopeSwitcher.UseDefaultAppScope()` 或 `SwitchToDefaultApp(appManager)`           |
+| `IAppManager<T>.RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher>)` | 无（该工厂仅服务前两成员，随其消失）                                                   |
 
 - **实现侧同批删除**：`DefaultAppManager<TAppContext>` 上的两个 `virtual` 重写与 `RegisterSwitcherFactory` 实现随接口一并移除；`DefaultAppManager.SwitcherFactory` 分部**整文件删除**（含私有 `CreateContextSwitcher` 与 `_switcherFactories` 字典）。
 - **诊断出口释放**：`AppManagerDiagnostics.SwitcherFactoryOverwritten` 的唯一读取方即上述工厂的「重复注册覆盖」告警路径，随成员移除一并删除；`MudHttpClientLog` 的 `EventId 175` 释放为空号，不再另作分配。
