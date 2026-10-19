@@ -36,113 +36,113 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class AppManagementStartupValidator : IHostedService
 {
- private readonly IServiceProvider _serviceProvider;
- private readonly MudHttpAppManagementOptions _options;
- private readonly ILogger _logger;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly MudHttpAppManagementOptions _options;
+    private readonly ILogger _logger;
 
- public AppManagementStartupValidator(
- IServiceProvider serviceProvider,
- IOptions<MudHttpAppManagementOptions> options,
- ILogger<AppManagementStartupValidator>? logger = null)
- {
- _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
- _options = options?.Value ?? new MudHttpAppManagementOptions();
- _logger = logger ?? NullLogger<AppManagementStartupValidator>.Instance;
- }
+    public AppManagementStartupValidator(
+    IServiceProvider serviceProvider,
+    IOptions<MudHttpAppManagementOptions> options,
+    ILogger<AppManagementStartupValidator>? logger = null)
+    {
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _options = options?.Value ?? new MudHttpAppManagementOptions();
+        _logger = logger ?? NullLogger<AppManagementStartupValidator>.Instance;
+    }
 
-/// <inheritdoc />
- public Task StartAsync(CancellationToken cancellationToken)
- {
- var fatal = new List<string>();
- var warnings = new List<string>();
+    /// <inheritdoc />
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        var fatal = new List<string>();
+        var warnings = new List<string>();
 
- var holder = _serviceProvider.GetService<IAppContextHolder>();
- if (holder == null)
- {
- Add(fatal, warnings, _options.RequireAppContextHolder,
- "IAppContextHolder 未注册。多应用/多租户场景下必须注册，请调用 services.AddMudHttpAppContextHolder()。");
- }
+        var holder = _serviceProvider.GetService<IAppContextHolder>();
+        if (holder == null)
+        {
+            Add(fatal, warnings, _options.RequireAppContextHolder,
+            "IAppContextHolder 未注册。多应用/多租户场景下必须注册，请调用 services.AddMudHttpAppContextHolder()。");
+        }
 
- var appManager = _serviceProvider.GetService<IAppManager<IMudAppContext>>();
- if (appManager == null)
- {
- Add(fatal, warnings, _options.RequireAppManager,
- "IAppManager<IMudAppContext> 未注册。应用切换（UseApp/BeginScope）不可用，请注册 DefaultAppManager<IMudAppContext> 或自定义实现。");
- }
+        var appManager = _serviceProvider.GetService<IAppManager<IMudAppContext>>();
+        if (appManager == null)
+        {
+            Add(fatal, warnings, _options.RequireAppManager,
+            "IAppManager<IMudAppContext> 未注册。应用切换（UseApp/BeginScope）不可用，请注册 DefaultAppManager<IMudAppContext> 或自定义实现。");
+        }
 
- var authorizer = _serviceProvider.GetService<IAppAccessAuthorizer>();
- if (authorizer == null)
- {
- Add(fatal, warnings, _options.RequireAppAccessAuthorizer,
- "IAppAccessAuthorizer 未注册。MT-02起 UseApp/BeginScope(appKey) 在未注册授权器时直接抛异常；" +
- "多租户宿主请注册业务授权器，单应用/受信场景请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer。");
- }
+        var authorizer = _serviceProvider.GetService<IAppAccessAuthorizer>();
+        if (authorizer == null)
+        {
+            Add(fatal, warnings, _options.RequireAppAccessAuthorizer,
+            "IAppAccessAuthorizer 未注册。MT-02起 UseApp/BeginScope(appKey) 在未注册授权器时直接抛异常；" +
+            "多租户宿主请注册业务授权器，单应用/受信场景请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer。");
+        }
 
-// RegisteredAppKeys 闭合校验：仅当应用管理器可用时有意义。
- if (appManager != null)
- {
- foreach (var appKey in _options.RegisteredAppKeys)
- {
- if (string.IsNullOrWhiteSpace(appKey))
- continue;
+        // RegisteredAppKeys 闭合校验：仅当应用管理器可用时有意义。
+        if (appManager != null)
+        {
+            foreach (var appKey in _options.RegisteredAppKeys)
+            {
+                if (string.IsNullOrWhiteSpace(appKey))
+                    continue;
 
- if (!appManager.HasApp(appKey))
- {
- Add(fatal, warnings, _options.RequireRegisteredAppKeys,
- $"MudHttpAppManagementOptions.RegisteredAppKeys 声明了应用 '{AppKeyValidator.ToSafeText(appKey)}'，但应用管理器中未注册该应用。");
- }
- }
- }
+                if (!appManager.HasApp(appKey))
+                {
+                    Add(fatal, warnings, _options.RequireRegisteredAppKeys,
+                    $"MudHttpAppManagementOptions.RegisteredAppKeys 声明了应用 '{AppKeyValidator.ToSafeText(appKey)}'，但应用管理器中未注册该应用。");
+                }
+            }
+        }
 
- // B-1（诊断 A）：ITokenManagerRegistry 后注册被 TryAdd 静默忽略 —— EventId 194 告警（注册期无日志器，延迟至此输出）。
- var registrationDiagnostics = _serviceProvider.GetService<TokenManagerRegistrationDiagnostics>();
- if (registrationDiagnostics != null && registrationDiagnostics.RegistryRegistrationSuppressed)
- {
- var registeredTypeName = _serviceProvider.GetService<ITokenManagerRegistry>()?.GetType().Name ?? "ITokenManagerRegistry";
- MudHttpClientLog.TokenManagerRegistryRegistrationSuppressed(_logger, registeredTypeName);
- }
+        // B-1（诊断 A）：ITokenManagerRegistry 后注册被 TryAdd 静默忽略 —— EventId 194 告警（注册期无日志器，延迟至此输出）。
+        var registrationDiagnostics = _serviceProvider.GetService<TokenManagerRegistrationDiagnostics>();
+        if (registrationDiagnostics != null && registrationDiagnostics.RegistryRegistrationSuppressed)
+        {
+            var registeredTypeName = _serviceProvider.GetService<ITokenManagerRegistry>()?.GetType().Name ?? "ITokenManagerRegistry";
+            MudHttpClientLog.TokenManagerRegistryRegistrationSuppressed(_logger, registeredTypeName);
+        }
 
- // B-1（诊断 B）：同一管理器类型重复注册（描述符叠加）—— EventId 195 告警（每类型一条）。
- if (registrationDiagnostics != null)
- {
- foreach (var managerType in registrationDiagnostics.DuplicatedManagerTypes)
- {
- MudHttpClientLog.TokenManagerTypeRegisteredTwice(_logger, managerType.Name);
- }
- }
+        // B-1（诊断 B）：同一管理器类型重复注册（描述符叠加）—— EventId 195 告警（每类型一条）。
+        if (registrationDiagnostics != null)
+        {
+            foreach (var managerType in registrationDiagnostics.DuplicatedManagerTypes)
+            {
+                MudHttpClientLog.TokenManagerTypeRegisteredTwice(_logger, managerType.Name);
+            }
+        }
 
- // B-1（诊断 C）：TokenManagerKeyRegistry 重复键 —— 默认 Error 抛出，逃生开关降级 Warning。
- if (_serviceProvider.GetService<ITokenManagerRegistry>() is TokenManagerKeyRegistry keyRegistry && keyRegistry.DuplicateKeys.Count > 0)
- {
- var keys = string.Join(", ", keyRegistry.DuplicateKeys.OrderBy(k => k, StringComparer.Ordinal).Select(k => AppKeyValidator.ToSafeText(k)));
- Add(fatal, warnings, !_options.AllowDuplicateTokenManagerKeys,
- $"TokenManagerKeyRegistry 存在重复令牌管理器键（序数比较）：{keys}。" +
- "重复键会让 Resolve 命中错误的管理器、errcode 令牌自愈静默失效；请改用唯一键，" +
- "或有意按「后键覆盖」复用键时设置 MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys = true。");
- }
+        // B-1（诊断 C）：TokenManagerKeyRegistry 重复键 —— 默认 Error 抛出，逃生开关降级 Warning。
+        if (_serviceProvider.GetService<ITokenManagerRegistry>() is TokenManagerKeyRegistry keyRegistry && keyRegistry.DuplicateKeys.Count > 0)
+        {
+            var keys = string.Join(", ", keyRegistry.DuplicateKeys.OrderBy(k => k, StringComparer.Ordinal).Select(k => AppKeyValidator.ToSafeText(k)));
+            Add(fatal, warnings, !_options.AllowDuplicateTokenManagerKeys,
+            $"TokenManagerKeyRegistry 存在重复令牌管理器键（序数比较）：{keys}。" +
+            "重复键会让 Resolve 命中错误的管理器、errcode 令牌自愈静默失效；请改用唯一键，" +
+            "或有意按「后键覆盖」复用键时设置 MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys = true。");
+        }
 
- foreach (var message in warnings)
- {
- _logger.LogWarning("多应用管理接线不完整（告警）：{Message}", message);
- }
+        foreach (var message in warnings)
+        {
+            _logger.LogWarning("多应用管理接线不完整（告警）：{Message}", message);
+        }
 
- if (fatal.Count > 0)
- {
- throw new InvalidOperationException(
- "多应用管理接线不完整：\n" + string.Join("\n", fatal.Select((e, i) => $" {i + 1}. {e}")));
- }
+        if (fatal.Count > 0)
+        {
+            throw new InvalidOperationException(
+            "多应用管理接线不完整：\n" + string.Join("\n", fatal.Select((e, i) => $" {i + 1}. {e}")));
+        }
 
- return Task.CompletedTask;
- }
+        return Task.CompletedTask;
+    }
 
-/// <inheritdoc />
- public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    /// <inheritdoc />
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
- private static void Add(List<string> fatal, List<string> warnings, bool isFatal, string message)
- {
- if (isFatal)
- fatal.Add(message);
- else
- warnings.Add(message);
- }
+    private static void Add(List<string> fatal, List<string> warnings, bool isFatal, string message)
+    {
+        if (isFatal)
+            fatal.Add(message);
+        else
+            warnings.Add(message);
+    }
 }

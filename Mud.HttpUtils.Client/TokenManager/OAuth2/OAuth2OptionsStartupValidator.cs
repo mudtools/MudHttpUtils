@@ -26,21 +26,21 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class OAuth2OptionsStartupValidator : IHostedService
 {
- private readonly IOptions<OAuth2Options> _options;
+    private readonly IOptions<OAuth2Options> _options;
 
-/// <summary>初始化启动期校验器。</summary>
-/// <param name="options">OAuth2 选项（读取 <c>Value</c> 即触发 <c>IValidateOptions</c> 链）。</param>
- public OAuth2OptionsStartupValidator(IOptions<OAuth2Options> options)
- => _options = options ?? throw new ArgumentNullException(nameof(options));
+    /// <summary>初始化启动期校验器。</summary>
+    /// <param name="options">OAuth2 选项（读取 <c>Value</c> 即触发 <c>IValidateOptions</c> 链）。</param>
+    public OAuth2OptionsStartupValidator(IOptions<OAuth2Options> options)
+    => _options = options ?? throw new ArgumentNullException(nameof(options));
 
-/// <inheritdoc />
- public Task StartAsync(CancellationToken cancellationToken)
- {
-// 触发校验；校验失败会抛 OptionsValidationException（fail-fast，符合启动期语义）。
- _ = _options.Value;
- return Task.CompletedTask;
- }
+    /// <inheritdoc />
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        // 触发校验；校验失败会抛 OptionsValidationException（fail-fast，符合启动期语义）。
+        _ = _options.Value;
+        return Task.CompletedTask;
+    }
 
-/// <inheritdoc />
- public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    /// <inheritdoc />
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

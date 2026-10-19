@@ -31,7 +31,7 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class AllowAllAppAccessAuthorizer : IAppAccessAuthorizer
 {
-/// <inheritdoc />
-/// <returns>恒为 <c>true</c>。</returns>
- public bool CanSwitchTo(string appKey) => true;
+    /// <inheritdoc />
+    /// <returns>恒为 <c>true</c>。</returns>
+    public bool CanSwitchTo(string appKey) => true;
 }

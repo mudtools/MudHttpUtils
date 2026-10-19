@@ -16,16 +16,16 @@ namespace Mud.HttpUtils;
  Justification = "本类型只包装调用方已构造的实例（CurrentValue 直接返回同一引用），从不通过 IOptionsMonitor 的 PublicParameterlessConstructor 约束实例化 T，故该约束在本实现中不适用。")]
 internal sealed class OptionsWrapperMonitor<T> : IOptionsMonitor<T> where T : class
 {
- private readonly T _value;
+    private readonly T _value;
 
- public OptionsWrapperMonitor(T value)
- {
- _value = value ?? throw new ArgumentNullException(nameof(value));
- }
+    public OptionsWrapperMonitor(T value)
+    {
+        _value = value ?? throw new ArgumentNullException(nameof(value));
+    }
 
- public T CurrentValue => _value;
+    public T CurrentValue => _value;
 
- public T Get(string? name) => _value;
+    public T Get(string? name) => _value;
 
- public IDisposable? OnChange(Action<T, string?> listener) => null;
+    public IDisposable? OnChange(Action<T, string?> listener) => null;
 }

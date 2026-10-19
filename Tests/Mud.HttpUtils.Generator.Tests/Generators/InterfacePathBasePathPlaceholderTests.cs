@@ -148,5 +148,11 @@ public class InterfacePathBasePathPlaceholderTests
 
         diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT013",
             "方法参数上的 [Path] 未出现在 URL 模板中是真实用户错误，必须继续报 HTTPCLIENT013");
+
+        // 消息须引导 [Path(Name = "…")] 解耦能力（占位符与参数名解耦，无需为对齐官方契约改参数名）
+        diagnostics.Where(d => d.Id == "HTTPCLIENT013")
+            .Select(d => d.GetMessage())
+            .Should().Contain(m => m.Contains("[Path(Name =", StringComparison.Ordinal),
+                "HTTPCLIENT013 消息应提示 [Path(Name)] 重命名能力");
     }
 }

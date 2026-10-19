@@ -34,107 +34,107 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class DefaultSensitiveFieldExceptionRedactor : IExceptionRedactor
 {
-/// <summary>掩码后的占位符（与 URL query 脱敏同文案，便于日志检索对齐）。</summary>
- private const string Mask = "***REDACTED***";
+    /// <summary>掩码后的占位符（与 URL query 脱敏同文案，便于日志检索对齐）。</summary>
+    private const string Mask = "***REDACTED***";
 
-/// <inheritdoc />
- public void Redact(ApiException exception)
- {
- if (exception is null)
- return;
+    /// <inheritdoc />
+    public void Redact(ApiException exception)
+    {
+        if (exception is null)
+            return;
 
- exception.RequestContent = RedactBody(exception.RequestContent);
- exception.Content = RedactBody(exception.Content);
- }
+        exception.RequestContent = RedactBody(exception.RequestContent);
+        exception.Content = RedactBody(exception.Content);
+    }
 
-/// <summary>
-/// 按正文形态分派掩码（JSON 对象/数组 → JSON 路径；<c>k=v&amp;k2=v2</c> → form 路径；其余原样返回）。
-/// </summary>
-/// <param name="body">正文（可为 null / 空）。</param>
-/// <returns>掩码后的正文；非 JSON / form 形态时与输入一致。</returns>
- internal static string? RedactBody(string? body)
- {
- if (string.IsNullOrEmpty(body))
- return body;
+    /// <summary>
+    /// 按正文形态分派掩码（JSON 对象/数组 → JSON 路径；<c>k=v&amp;k2=v2</c> → form 路径；其余原样返回）。
+    /// </summary>
+    /// <param name="body">正文（可为 null / 空）。</param>
+    /// <returns>掩码后的正文；非 JSON / form 形态时与输入一致。</returns>
+    internal static string? RedactBody(string? body)
+    {
+        if (string.IsNullOrEmpty(body))
+            return body;
 
- var trimmed = body!.TrimStart();
- if (trimmed.Length == 0)
- return body;
+        var trimmed = body!.TrimStart();
+        if (trimmed.Length == 0)
+            return body;
 
- if (trimmed[0] == '{' || trimmed[0] == '[')
- {
- try
- {
- var node = JsonNode.Parse(body, new JsonNodeOptions { PropertyNameCaseInsensitive = true });
- return node is null ? body : (RedactJsonNode(node, 0)?.ToJsonString() ?? body);
- }
- catch (JsonException)
- {
- return body; // 形态像 JSON 但解析失败：保持原样，不做启发式改写
- }
- }
+        if (trimmed[0] == '{' || trimmed[0] == '[')
+        {
+            try
+            {
+                var node = JsonNode.Parse(body, new JsonNodeOptions { PropertyNameCaseInsensitive = true });
+                return node is null ? body : (RedactJsonNode(node, 0)?.ToJsonString() ?? body);
+            }
+            catch (JsonException)
+            {
+                return body; // 形态像 JSON 但解析失败：保持原样，不做启发式改写
+            }
+        }
 
- return RedactForm(body);
- }
+        return RedactForm(body);
+    }
 
- private static JsonNode? RedactJsonNode(JsonNode? node, int depth)
- {
-// 与 MessageSanitizer 同口径的深度护栏：畸形深嵌套输入不得导致栈溢出。
- if (node == null || depth > 32)
- return "***";
+    private static JsonNode? RedactJsonNode(JsonNode? node, int depth)
+    {
+        // 与 MessageSanitizer 同口径的深度护栏：畸形深嵌套输入不得导致栈溢出。
+        if (node == null || depth > 32)
+            return "***";
 
- switch (node)
- {
- case JsonObject obj:
- var redactedObj = new JsonObject();
- foreach (var property in obj)
- {
- redactedObj[property.Key] = IsSensitiveField(property.Key)
- ? Mask
- : RedactJsonNode(property.Value, depth + 1);
- }
- return redactedObj;
+        switch (node)
+        {
+            case JsonObject obj:
+                var redactedObj = new JsonObject();
+                foreach (var property in obj)
+                {
+                    redactedObj[property.Key] = IsSensitiveField(property.Key)
+                    ? Mask
+                    : RedactJsonNode(property.Value, depth + 1);
+                }
+                return redactedObj;
 
- case JsonArray arr:
- var redactedArr = new JsonArray();
- foreach (var item in arr)
- {
- redactedArr.Add(RedactJsonNode(item, depth + 1));
- }
- return redactedArr;
+            case JsonArray arr:
+                var redactedArr = new JsonArray();
+                foreach (var item in arr)
+                {
+                    redactedArr.Add(RedactJsonNode(item, depth + 1));
+                }
+                return redactedArr;
 
- default:
- return node.DeepClone();
- }
- }
+            default:
+                return node.DeepClone();
+        }
+    }
 
-/// <summary>
-/// form 形态掩码：<c>access_token=abc&amp;page=2</c> → <c>access_token=***REDACTED***&amp;page=2</c>。
-/// </summary>
- private static string RedactForm(string body)
- {
-// 无分隔且无 '=' ⇒ 不可能是 form（如纯文本 "unauthorized"），零改写返回。
- if (body.IndexOf('=') < 0)
- return body;
+    /// <summary>
+    /// form 形态掩码：<c>access_token=abc&amp;page=2</c> → <c>access_token=***REDACTED***&amp;page=2</c>。
+    /// </summary>
+    private static string RedactForm(string body)
+    {
+        // 无分隔且无 '=' ⇒ 不可能是 form（如纯文本 "unauthorized"），零改写返回。
+        if (body.IndexOf('=') < 0)
+            return body;
 
- var parts = body.Split('&');
- for (var i = 0; i < parts.Length; i++)
- {
- var part = parts[i];
- var eq = part.IndexOf('=');
- if (eq <= 0)
- continue; // 裸键或空键：无值可掩码
+        var parts = body.Split('&');
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+            var eq = part.IndexOf('=');
+            if (eq <= 0)
+                continue; // 裸键或空键：无值可掩码
 
- var key = part.Substring(0, eq);
- if (!IsSensitiveField(Uri.UnescapeDataString(key)))
- continue;
+            var key = part.Substring(0, eq);
+            if (!IsSensitiveField(Uri.UnescapeDataString(key)))
+                continue;
 
- parts[i] = key + "=" + Mask;
- }
+            parts[i] = key + "=" + Mask;
+        }
 
- return string.Join("&", parts);
- }
+        return string.Join("&", parts);
+    }
 
- private static bool IsSensitiveField(string fieldName)
- => Helpers.SensitiveUrlRedactor.SensitiveFieldNames.Contains(fieldName);
+    private static bool IsSensitiveField(string fieldName)
+    => Helpers.SensitiveUrlRedactor.SensitiveFieldNames.Contains(fieldName);
 }

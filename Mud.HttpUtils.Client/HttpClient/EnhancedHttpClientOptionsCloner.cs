@@ -26,35 +26,35 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal static class EnhancedHttpClientOptionsCloner
 {
-/// <summary>
-/// 克隆 <paramref name="source"/>；<paramref name="source"/> 为 <c>null</c> 时返回默认实例。
-/// </summary>
- public static EnhancedHttpClientOptions Clone(EnhancedHttpClientOptions? source)
- {
- if (source is null)
- return new EnhancedHttpClientOptions();
+    /// <summary>
+    /// 克隆 <paramref name="source"/>；<paramref name="source"/> 为 <c>null</c> 时返回默认实例。
+    /// </summary>
+    public static EnhancedHttpClientOptions Clone(EnhancedHttpClientOptions? source)
+    {
+        if (source is null)
+            return new EnhancedHttpClientOptions();
 
- return new EnhancedHttpClientOptions
- {
-// 运行时消费属性（EnhancedHttpClient 构造函数读取）
- RequestBodySerialization = source.RequestBodySerialization,
- ExceptionRedactor = source.ExceptionRedactor,
- MaxExceptionContentLength = source.MaxExceptionContentLength,
- CaptureRequestContent = source.CaptureRequestContent,
- UrlResolution = source.UrlResolution,
- MaxSuccessResponseBytes = source.MaxSuccessResponseBytes,
- HttpRequestMessageOptions = source.HttpRequestMessageOptions,
- AllowCustomBaseUrls = source.AllowCustomBaseUrls,
- JsonEncoder = source.JsonEncoder,
+        return new EnhancedHttpClientOptions
+        {
+            // 运行时消费属性（EnhancedHttpClient 构造函数读取）
+            RequestBodySerialization = source.RequestBodySerialization,
+            ExceptionRedactor = source.ExceptionRedactor,
+            MaxExceptionContentLength = source.MaxExceptionContentLength,
+            CaptureRequestContent = source.CaptureRequestContent,
+            UrlResolution = source.UrlResolution,
+            MaxSuccessResponseBytes = source.MaxSuccessResponseBytes,
+            HttpRequestMessageOptions = source.HttpRequestMessageOptions,
+            AllowCustomBaseUrls = source.AllowCustomBaseUrls,
+            JsonEncoder = source.JsonEncoder,
 #if NET6_0_OR_GREATER
- HttpVersion = source.HttpVersion,
- HttpVersionPolicy = source.HttpVersionPolicy,
+            HttpVersion = source.HttpVersion,
+            HttpVersionPolicy = source.HttpVersionPolicy,
 #endif
 #if NET8_0_OR_GREATER
- JsonTypeInfoResolver = source.JsonTypeInfoResolver,
+            JsonTypeInfoResolver = source.JsonTypeInfoResolver,
 #endif
-// 接口/委托属性由 DI 覆盖，此处不拷贝：
-// Logger / RequestInterceptors / ResponseInterceptors / SensitiveDataMasker / AppAccessAuthorizer
- };
- }
+            // 接口/委托属性由 DI 覆盖，此处不拷贝：
+            // Logger / RequestInterceptors / ResponseInterceptors / SensitiveDataMasker / AppAccessAuthorizer
+        };
+    }
 }

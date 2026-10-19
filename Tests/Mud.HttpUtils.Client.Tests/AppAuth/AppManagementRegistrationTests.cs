@@ -273,11 +273,12 @@ public class AppManagementRegistrationTests
         var act = () => sp.ValidateMudHttpAppManagement();
 
         // Assert —— 不阻断启动，但给出"已注册但未接入管理器"的提示（EventId 191）。
-        // B-2（2026-10-13）：自动桥接落地后该事件由 Warning 降为 Information（store 未桥接是可接受状态，仅提示自理）。
+        // 「store 被静默旁路」是配置错误信号：该事件恢复为 Warning（按成因参数化区分
+        // 「显式覆盖 ITokenCache<T>」与「无缓存消费解析」两种情形）。
         act.Should().NotThrow();
         capturingFactory.Logger.Records.Should().Contain(r =>
             r.EventId.Id == 191
-            && r.Level == LogLevel.Information
+            && r.Level == LogLevel.Warning
             && r.FormattedMessage.Contains("MemoryTokenStore")
             && r.FormattedMessage.Contains("TokenStoreBackedTokenCache"), "提示语义必须指向接入指引而非'已废弃'");
     }

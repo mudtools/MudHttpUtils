@@ -16,24 +16,24 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public static class MudHttpClientNamingPresets
 {
-/// <summary>
-/// CamelCase：JSON 属性名为 camelCase。
-/// </summary>
-/// <returns>配置了 <see cref="JsonNamingPolicy.CamelCase"/> 的 <see cref="JsonSerializerOptions"/>。</returns>
- public static JsonSerializerOptions CamelCase() =>
- new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    /// <summary>
+    /// CamelCase：JSON 属性名为 camelCase。
+    /// </summary>
+    /// <returns>配置了 <see cref="JsonNamingPolicy.CamelCase"/> 的 <see cref="JsonSerializerOptions"/>。</returns>
+    public static JsonSerializerOptions CamelCase() =>
+    new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-/// <summary>
-/// SnakeCase：JSON 属性名为 snake_case。
-/// </summary>
-/// <returns>配置了 snake_case 命名策略的 <see cref="JsonSerializerOptions"/>。</returns>
- public static JsonSerializerOptions SnakeCase() =>
- new() { PropertyNamingPolicy = SeparatedCaseJsonNamingPolicy.Snake };
+    /// <summary>
+    /// SnakeCase：JSON 属性名为 snake_case。
+    /// </summary>
+    /// <returns>配置了 snake_case 命名策略的 <see cref="JsonSerializerOptions"/>。</returns>
+    public static JsonSerializerOptions SnakeCase() =>
+    new() { PropertyNamingPolicy = SeparatedCaseJsonNamingPolicy.Snake };
 
-/// <summary>
-/// KebabCase：JSON 属性名为 kebab-case。
-/// </summary>
-/// <returns>配置了 kebab-case 命名策略的 <see cref="JsonSerializerOptions"/>。</returns>
- public static JsonSerializerOptions KebabCase() =>
- new() { PropertyNamingPolicy = SeparatedCaseJsonNamingPolicy.Kebab };
+    /// <summary>
+    /// KebabCase：JSON 属性名为 kebab-case。
+    /// </summary>
+    /// <returns>配置了 kebab-case 命名策略的 <see cref="JsonSerializerOptions"/>。</returns>
+    public static JsonSerializerOptions KebabCase() =>
+    new() { PropertyNamingPolicy = SeparatedCaseJsonNamingPolicy.Kebab };
 }

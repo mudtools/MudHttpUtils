@@ -17,23 +17,23 @@ namespace Mud.HttpUtils;
 /// </summary>
 internal sealed class OAuth2OptionsPostConfigure : IPostConfigureOptions<OAuth2Options>
 {
- private readonly ILogger<OAuth2OptionsPostConfigure> _logger;
+    private readonly ILogger<OAuth2OptionsPostConfigure> _logger;
 
- public OAuth2OptionsPostConfigure(ILogger<OAuth2OptionsPostConfigure>? logger)
- {
- _logger = logger ?? NullLogger<OAuth2OptionsPostConfigure>.Instance;
- }
+    public OAuth2OptionsPostConfigure(ILogger<OAuth2OptionsPostConfigure>? logger)
+    {
+        _logger = logger ?? NullLogger<OAuth2OptionsPostConfigure>.Instance;
+    }
 
-/// <inheritdoc />
- public void PostConfigure(string? name, OAuth2Options options)
- {
- if (options == null)
- return;
+    /// <inheritdoc />
+    public void PostConfigure(string? name, OAuth2Options options)
+    {
+        if (options == null)
+            return;
 
- var warning = options.GetConflictWarning();
- if (warning != null)
- {
- _logger.LogWarning("{Warning}", warning);
- }
- }
+        var warning = options.GetConflictWarning();
+        if (warning != null)
+        {
+            _logger.LogWarning("{Warning}", warning);
+        }
+    }
 }

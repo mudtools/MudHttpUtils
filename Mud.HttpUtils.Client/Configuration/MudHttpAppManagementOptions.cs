@@ -13,44 +13,44 @@ namespace Mud.HttpUtils;
 /// </summary>
 public sealed class MudHttpAppManagementOptions
 {
-/// <summary>是否要求必须注册 <see cref="IAppContextHolder"/>。默认 <c>true</c>。</summary>
- public bool RequireAppContextHolder { get; set; } = true;
+    /// <summary>是否要求必须注册 <see cref="IAppContextHolder"/>。默认 <c>true</c>。</summary>
+    public bool RequireAppContextHolder { get; set; } = true;
 
-/// <summary>是否要求必须注册 <see cref="IAppManager{IMudAppContext}"/>。默认 <c>false</c>（仅告警不阻断）。</summary>
- public bool RequireAppManager { get; set; }
+    /// <summary>是否要求必须注册 <see cref="IAppManager{IMudAppContext}"/>。默认 <c>false</c>（仅告警不阻断）。</summary>
+    public bool RequireAppManager { get; set; }
 
-/// <summary>
-/// 是否要求必须注册 <see cref="IAppAccessAuthorizer"/>。默认 <c>false</c>（仅告警不阻断）。
-/// </summary>
-/// <remarks>
- // 已将生成代码 <c>UseApp</c>/<c>BeginScope(appKey)</c> 改为「授权器缺失即抛异常」，
-/// 因此未注册授权器时按 appKey 切换在运行期必然失败。此处仅决定是否把该缺陷提升为<b>启动期阻断</b>；
-/// 多租户宿主建议设为 <c>true</c>，把接线缺陷前移到启动阶段。
-/// </remarks>
- public bool RequireAppAccessAuthorizer { get; set; }
+    /// <summary>
+    /// 是否要求必须注册 <see cref="IAppAccessAuthorizer"/>。默认 <c>false</c>（仅告警不阻断）。
+    /// </summary>
+    /// <remarks>
+    /// 已将生成代码 <c>UseApp</c>/<c>BeginScope(appKey)</c> 改为「授权器缺失即抛异常」，
+    /// 因此未注册授权器时按 appKey 切换在运行期必然失败。此处仅决定是否把该缺陷提升为<b>启动期阻断</b>；
+    /// 多租户宿主建议设为 <c>true</c>，把接线缺陷前移到启动阶段。
+    /// </remarks>
+    public bool RequireAppAccessAuthorizer { get; set; }
 
-/// <summary>已注册应用（用于校验 DefaultClientName/AppKey 映射闭合）。默认为空。</summary>
- public IList<string> RegisteredAppKeys { get; } = new List<string>();
+    /// <summary>已注册应用（用于校验 DefaultClientName/AppKey 映射闭合）。默认为空。</summary>
+    public IList<string> RegisteredAppKeys { get; } = new List<string>();
 
-/// <summary>是否要求 <see cref="RegisteredAppKeys"/> 中的应用必须已在
-/// <see cref="IAppManager{IMudAppContext}"/> 中注册。默认 <c>false</c>（仅告警不阻断）。</summary>
- public bool RequireRegisteredAppKeys { get; set; }
+    /// <summary>是否要求 <see cref="RegisteredAppKeys"/> 中的应用必须已在
+    /// <see cref="IAppManager{IMudAppContext}"/> 中注册。默认 <c>false</c>（仅告警不阻断）。</summary>
+    public bool RequireRegisteredAppKeys { get; set; }
 
-/// <summary>
-/// B-1：是否允许令牌管理器键重复注册（<see cref="TokenManagerKeyRegistry"/> 的逃生开关）。默认 <c>false</c>。
-/// </summary>
-/// <remarks>
-/// <para>
-/// 默认（<c>false</c>）：<see cref="TokenManagerKeyRegistry"/> 中出现重复键（序数比较）时，
-/// 启动期校验（<c>AppManagementStartupValidator</c>）按 <b>Error</b> 处理并抛出异常阻断启动 ——
-/// 重复键会让 <c>Resolve</c> 命中错误的管理器，errcode 令牌自愈静默失效。
-/// </para>
-/// <para>
-/// 逃生开关（<c>true</c>）：降级为 Warning，且<b>后注册的键覆盖</b>先前注册（后键胜）。
-/// 仅在宿主有意以"后注册覆盖"方式复用键时开启。
-/// </para>
-/// </remarks>
- public bool AllowDuplicateTokenManagerKeys { get; set; }
+    /// <summary>
+    /// B-1：是否允许令牌管理器键重复注册（<see cref="TokenManagerKeyRegistry"/> 的逃生开关）。默认 <c>false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 默认（<c>false</c>）：<see cref="TokenManagerKeyRegistry"/> 中出现重复键（序数比较）时，
+    /// 启动期校验（<c>AppManagementStartupValidator</c>）按 <b>Error</b> 处理并抛出异常阻断启动 ——
+    /// 重复键会让 <c>Resolve</c> 命中错误的管理器，errcode 令牌自愈静默失效。
+    /// </para>
+    /// <para>
+    /// 逃生开关（<c>true</c>）：降级为 Warning，且<b>后注册的键覆盖</b>先前注册（后键胜）。
+    /// 仅在宿主有意以"后注册覆盖"方式复用键时开启。
+    /// </para>
+    /// </remarks>
+    public bool AllowDuplicateTokenManagerKeys { get; set; }
 }
 
 /// <summary>
@@ -58,30 +58,30 @@ public sealed class MudHttpAppManagementOptions
 /// </summary>
 internal sealed class MudHttpAppManagementOptionsValidator : IValidateOptions<MudHttpAppManagementOptions>
 {
-/// <inheritdoc />
- public ValidateOptionsResult Validate(string? name, MudHttpAppManagementOptions options)
- {
- if (options is null)
- return ValidateOptionsResult.Success;
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, MudHttpAppManagementOptions options)
+    {
+        if (options is null)
+            return ValidateOptionsResult.Success;
 
- var errors = new List<string>();
+        var errors = new List<string>();
 
-// 校验 RegisteredAppKeys 中的 key 格式
- foreach (var appKey in options.RegisteredAppKeys)
- {
- try
- {
- AppKeyValidator.Validate(appKey, nameof(appKey));
- }
- catch (ArgumentException ex)
- {
- errors.Add($"RegisteredAppKeys 包含非法 appKey '{appKey}'：{ex.Message}");
- }
- }
+        // 校验 RegisteredAppKeys 中的 key 格式
+        foreach (var appKey in options.RegisteredAppKeys)
+        {
+            try
+            {
+                AppKeyValidator.Validate(appKey, nameof(appKey));
+            }
+            catch (ArgumentException ex)
+            {
+                errors.Add($"RegisteredAppKeys 包含非法 appKey '{appKey}'：{ex.Message}");
+            }
+        }
 
- if (errors.Count > 0)
- return ValidateOptionsResult.Fail(string.Join("; ", errors));
+        if (errors.Count > 0)
+            return ValidateOptionsResult.Fail(string.Join("; ", errors));
 
- return ValidateOptionsResult.Success;
- }
+        return ValidateOptionsResult.Success;
+    }
 }

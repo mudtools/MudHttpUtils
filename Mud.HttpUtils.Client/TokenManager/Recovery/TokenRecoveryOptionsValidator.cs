@@ -12,44 +12,44 @@ namespace Mud.HttpUtils;
 /// </summary>
 public class TokenRecoveryOptionsValidator : IValidateOptions<TokenRecoveryOptions>
 {
-/// <inheritdoc />
- public ValidateOptionsResult Validate(string? name, TokenRecoveryOptions? options)
- {
- if (options == null)
- return ValidateOptionsResult.Success;
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, TokenRecoveryOptions? options)
+    {
+        if (options == null)
+            return ValidateOptionsResult.Success;
 
- var failures = new List<string>();
+        var failures = new List<string>();
 
- if (options.RecoveryMaxRetries < 0)
- failures.Add($"TokenRecoveryOptions: RecoveryMaxRetries 不能为负数，当前值为 {options.RecoveryMaxRetries}。");
+        if (options.RecoveryMaxRetries < 0)
+            failures.Add($"TokenRecoveryOptions: RecoveryMaxRetries 不能为负数，当前值为 {options.RecoveryMaxRetries}。");
 
- if (string.IsNullOrWhiteSpace(options.TokenScheme))
- failures.Add("TokenRecoveryOptions: TokenScheme 不能为 null 或空字符串。");
+        if (string.IsNullOrWhiteSpace(options.TokenScheme))
+            failures.Add("TokenRecoveryOptions: TokenScheme 不能为 null 或空字符串。");
 
-// 请求体缓冲上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
- if (options.MaxCachedRequestBodyBytes < 0)
- failures.Add($"TokenRecoveryOptions: MaxCachedRequestBodyBytes 不能为负数，当前值为 {options.MaxCachedRequestBodyBytes}。");
+        // 请求体缓冲上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
+        if (options.MaxCachedRequestBodyBytes < 0)
+            failures.Add($"TokenRecoveryOptions: MaxCachedRequestBodyBytes 不能为负数，当前值为 {options.MaxCachedRequestBodyBytes}。");
 
- // WX-01（Phase A）响应体捕获上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
- if (options.MaxCapturedResponseBodyBytes < 0)
- failures.Add($"TokenRecoveryOptions: MaxCapturedResponseBodyBytes 不能为负数，当前值为 {options.MaxCapturedResponseBodyBytes}。");
+        // WX-01（Phase A）响应体捕获上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
+        if (options.MaxCapturedResponseBodyBytes < 0)
+            failures.Add($"TokenRecoveryOptions: MaxCapturedResponseBodyBytes 不能为负数，当前值为 {options.MaxCapturedResponseBodyBytes}。");
 
-// I3等待硬超时非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
- if (options.RefreshWaitHardTimeoutSeconds < 0)
- failures.Add($"TokenRecoveryOptions: RefreshWaitHardTimeoutSeconds 不能为负数，当前值为 {options.RefreshWaitHardTimeoutSeconds}。");
+        // I3等待硬超时非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
+        if (options.RefreshWaitHardTimeoutSeconds < 0)
+            failures.Add($"TokenRecoveryOptions: RefreshWaitHardTimeoutSeconds 不能为负数，当前值为 {options.RefreshWaitHardTimeoutSeconds}。");
 
- // R-P3-02 ①：补齐既有属性的取值校验（此前仅校验 RecoveryMaxRetries / TokenScheme / 两个字节上限）
- if (options.RefreshTimeoutSeconds <= 0)
- failures.Add($"TokenRecoveryOptions: RefreshTimeoutSeconds 必须大于 0，当前值为 {options.RefreshTimeoutSeconds}。");
+        // R-P3-02 ①：补齐既有属性的取值校验（此前仅校验 RecoveryMaxRetries / TokenScheme / 两个字节上限）
+        if (options.RefreshTimeoutSeconds <= 0)
+            failures.Add($"TokenRecoveryOptions: RefreshTimeoutSeconds 必须大于 0，当前值为 {options.RefreshTimeoutSeconds}。");
 
- if (options.RefreshDedupWindowSeconds < 0)
- failures.Add($"TokenRecoveryOptions: RefreshDedupWindowSeconds 不能为负数，当前值为 {options.RefreshDedupWindowSeconds}。");
+        if (options.RefreshDedupWindowSeconds < 0)
+            failures.Add($"TokenRecoveryOptions: RefreshDedupWindowSeconds 不能为负数，当前值为 {options.RefreshDedupWindowSeconds}。");
 
- if (options.MaxDedupEntries <= 0)
- failures.Add($"TokenRecoveryOptions: MaxDedupEntries 必须大于 0，当前值为 {options.MaxDedupEntries}。");
+        if (options.MaxDedupEntries <= 0)
+            failures.Add($"TokenRecoveryOptions: MaxDedupEntries 必须大于 0，当前值为 {options.MaxDedupEntries}。");
 
- return failures.Count > 0
- ? ValidateOptionsResult.Fail(failures)
- : ValidateOptionsResult.Success;
- }
+        return failures.Count > 0
+        ? ValidateOptionsResult.Fail(failures)
+        : ValidateOptionsResult.Success;
+    }
 }

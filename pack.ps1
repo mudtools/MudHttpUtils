@@ -97,9 +97,11 @@ if (-not [string]::IsNullOrWhiteSpace($targetVersion)) {
         $changelogLines = [System.IO.File]::ReadAllLines($changelogPath)
         $latestPublished = $null
         foreach ($line in $changelogLines) {
-            if ($line -match '^##\s+(\d+\.\d+\.\d+)') {
+            # 跳过标注「未发布」的在研版本节：其版本号不构成"已发布版本"基线，
+            # 否则首次打包该版本会误报"不高于最新发布版本"的版本纪律告警。
+            if ($line -match '^##\s+(\d+\.\d+\.\d+)' -and $line -notmatch '未发布') {
                 $latestPublished = $Matches[1]
-                break   # 版本段自新到旧排列，首个数字版本号即最新发布版本
+                break   # 版本段自新到旧排列，首个未标注「未发布」的数字版本号即最新发布版本
             }
         }
         if ($latestPublished -and ([version]$targetVersion -le [version]$latestPublished)) {

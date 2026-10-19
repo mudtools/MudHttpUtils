@@ -276,6 +276,22 @@ jobs:
         run: dotnet build ${{ matrix.project_path || format('{0}/{0}.csproj', matrix.library) }} -f ${{ matrix.target_framework }} --configuration Release -p:PublicApiStrictMode=true
 
   # ──────────────────────────────────────────────
+  # CHANGELOG × PublicAPI 基线一致性（演进治理 D-2）
+  # ──────────────────────────────────────────────
+  changelog-publicapi-consistency:
+    name: CHANGELOG 与 PublicAPI 基线一致性
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 声称「新增」的 API 必须登记于 PublicAPI 基线（Shipped 或 Unshipped）；
+      # 仅 Unshipped 时给出发布提示（须在发布时 rebuild-publicapi 并入 Shipped）。
+      - name: CHANGELOG × PublicAPI 一致性校验
+        shell: pwsh
+        run: pwsh ./scripts/check-changelog-publicapi.ps1
+
+  # ──────────────────────────────────────────────
   # Demo 项目构建
   # ──────────────────────────────────────────────
   build-demos:

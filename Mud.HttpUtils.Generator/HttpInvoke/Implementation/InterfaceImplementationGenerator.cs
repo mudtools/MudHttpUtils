@@ -46,12 +46,6 @@ internal class InterfaceImplementationGenerator
     private readonly bool _emitGeneratedCodeMarkers;
 
     /// <summary>
-    /// F6(b)/G8：HTTPCLIENT018 的<b>声明式豁免</b>（<c>build_property.MudHttpSuppressTokenManagerKeyInference</c>，
-    /// 由 <c>GeneratorConfigSnapshot</c> 从全局分析器配置读取）。默认 <c>false</c> ⇒ 仍告警。
-    /// </summary>
-    private readonly bool _suppressTokenManagerKeyInference;
-
-    /// <summary>
     /// 生成代码缓冲区。在 <see cref="GenerateCode"/> 中于 <see cref="GeneratorContext"/> 构造之后按
     /// 实际方法数分配容量（§6.5：避免构造期二次遍历接口方法树）。
     /// </summary>
@@ -66,8 +60,7 @@ internal class InterfaceImplementationGenerator
         string optionsName,
         bool isAotEnabled = false,
         bool emitNullableEnable = true,
-        bool emitGeneratedCodeMarkers = true,
-        bool suppressTokenManagerKeyInference = false)
+        bool emitGeneratedCodeMarkers = true)
     {
         _compilation = compilation;
         _interfaceDecl = interfaceDecl;
@@ -78,7 +71,6 @@ internal class InterfaceImplementationGenerator
         _isAotEnabled = isAotEnabled;
         _emitNullableEnable = emitNullableEnable;
         _emitGeneratedCodeMarkers = emitGeneratedCodeMarkers;
-        _suppressTokenManagerKeyInference = suppressTokenManagerKeyInference;
     }
 
     /// <summary>
@@ -94,31 +86,6 @@ internal class InterfaceImplementationGenerator
             return;
 
         var configuration = ExtractConfigurationFromAttributes();
-
-        // GEN-04 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
-        // 生成器会使用默认值（GetDefaultTokenType），多接口共享同一 TokenManager 场景下可能产生注册冲突。
-        // 注意：此处使用 !string.IsNullOrEmpty(configuration.TokenManager) 而非 GeneratorContext.HasTokenManager，
-        // 因为 GeneratorContext 尚未构造（在 ExtractConfigurationFromAttributes 之后、new GeneratorContext 之前）。
-        if (!string.IsNullOrEmpty(configuration.TokenManager)
-            && string.IsNullOrEmpty(configuration.TokenManagerKey)
-            && string.IsNullOrEmpty(configuration.TokenType))
-        {
-            // F6(b)/G8② 一等豁免（默认仍报，豁免必须显式）：仅声明式开关
-            // MudHttpSuppressTokenManagerKeyInference（MSBuild 属性 / .globalconfig 键）。
-            // 此前只有项目级 NoWarn 与逐文件 #pragma 两条路（后者曾在下游微信 7 个接口文件重复出现）。
-            // 注意：接口声明上存在 [Token] 时本诊断本就不会触发 —— TokenAttribute 的构造形参带默认值
-            // （tokenType = AccessToken）且 TokenManagerKey 默认取该值 ⇒ 上述两个 IsNullOrEmpty 条件
-            // 天然不成立（"已显式指定"的既有语义，见 TokenManagerKeyInferenceExemptionTests 的固定用例）。
-            if (!_suppressTokenManagerKeyInference)
-            {
-                var defaultKeyType = TokenHelper.GetDefaultTokenType();
-                _context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.TokenManagerKeyInferredFromDefault,
-                    _interfaceDecl.GetLocation(),
-                    _interfaceSymbol.Name,
-                    defaultKeyType));
-            }
-        }
 
         if (!ValidateConfiguration(configuration))
             return;

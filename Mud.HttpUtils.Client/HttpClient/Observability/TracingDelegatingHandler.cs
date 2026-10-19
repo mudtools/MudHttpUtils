@@ -27,173 +27,173 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class TracingDelegatingHandler : DelegatingHandler
 {
-/// <summary>
-/// 标记请求已被可观测性采集的属性键。
-/// G31：收敛为 <see cref="MudHttpObservability.ObservedPropertyKey"/> 的统一引用（单一事实源）。
-/// </summary>
- public const string ObservedPropertyKey = MudHttpObservability.ObservedPropertyKey;
+    /// <summary>
+    /// 标记请求已被可观测性采集的属性键。
+    /// G31：收敛为 <see cref="MudHttpObservability.ObservedPropertyKey"/> 的统一引用（单一事实源）。
+    /// </summary>
+    public const string ObservedPropertyKey = MudHttpObservability.ObservedPropertyKey;
 
-/// <summary>
-//共享的无状态单例实例。
-/// </summary>
-/// <remarks>
-/// 仅供测试使用。生产路径由 IHttpClientFactory 池化 DelegatingHandler，不应使用此静态字段。
-/// 本 Handler 不持有任何可变状态（所有数据均从 request 参数获取），可安全跨请求/客户端共享。
-/// </remarks>
- public static readonly TracingDelegatingHandler Shared = new();
+    /// <summary>
+    /// 共享的无状态单例实例。
+    /// </summary>
+    /// <remarks>
+    /// 仅供测试使用。生产路径由 IHttpClientFactory 池化 DelegatingHandler，不应使用此静态字段。
+    /// 本 Handler 不持有任何可变状态（所有数据均从 request 参数获取），可安全跨请求/客户端共享。
+    /// </remarks>
+    public static readonly TracingDelegatingHandler Shared = new();
 
-/// <inheritdoc />
- protected override async Task<HttpResponseMessage> SendAsync(
- HttpRequestMessage request,
- CancellationToken cancellationToken)
- {
-// 已被 EnhancedHttpClient 兜底采集过则跳过
- if (MudHttpObservability.IsObserved(request))
- return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+    /// <inheritdoc />
+    protected override async Task<HttpResponseMessage> SendAsync(
+    HttpRequestMessage request,
+    CancellationToken cancellationToken)
+    {
+        // 已被 EnhancedHttpClient 兜底采集过则跳过
+        if (MudHttpObservability.IsObserved(request))
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
- var clientName = MudHttpObservability.GetClientName(request);
- var activity = MudHttpObservability.StartRequestActivity(request, clientName);
- var sw = ValueStopwatch.StartNew();
+        var clientName = MudHttpObservability.GetClientName(request);
+        var activity = MudHttpObservability.StartRequestActivity(request, clientName);
+        var sw = ValueStopwatch.StartNew();
 
-// G28：门控前移到调用点，关闭状态下不构造 payload/tags 工厂（零分配）
- if (MudHttpActivitySource.EventsEnabled)
- {
- MudHttpActivitySource.AddActivityEvent(
- MudHttpDiagnosticNames.RequestStarted,
- () => new HttpRequestDiagnosticPayload(request.Method.Method, SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), clientName),
- MudHttpDiagnosticNames.RequestStarted,
- () => new[]
- {
+        // G28：门控前移到调用点，关闭状态下不构造 payload/tags 工厂（零分配）
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.RequestStarted,
+            () => new HttpRequestDiagnosticPayload(request.Method.Method, SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), clientName),
+            MudHttpDiagnosticNames.RequestStarted,
+            () => new[]
+            {
  new KeyValuePair<string, object?>("method", request.Method.Method),
  new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
  new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
- });
- }
+            });
+        }
 
- HttpResponseMessage? response = null;
- try
- {
- response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
- var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
- MudHttpObservability.RecordResponse(activity, response, elapsedMs, clientName);
- MudHttpObservability.MarkObserved(request);
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            MudHttpObservability.RecordResponse(activity, response, elapsedMs, clientName);
+            MudHttpObservability.MarkObserved(request);
 
- if (MudHttpActivitySource.EventsEnabled)
- {
- MudHttpActivitySource.AddActivityEvent(
- MudHttpDiagnosticNames.RequestStopped,
- () => new HttpResponseDiagnosticPayload(
- request.Method.Method,
- SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
- clientName,
- (int)response.StatusCode,
- elapsedMs),
- MudHttpDiagnosticNames.RequestStopped,
- () => new[]
- {
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStopped,
+                () => new HttpResponseDiagnosticPayload(
+                request.Method.Method,
+                SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
+                clientName,
+                (int)response.StatusCode,
+                elapsedMs),
+                MudHttpDiagnosticNames.RequestStopped,
+                () => new[]
+                {
  new KeyValuePair<string, object?>("method", request.Method.Method),
  new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
  new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
  new KeyValuePair<string, object?>("status_code", (int)response.StatusCode),
  new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
- });
- }
+                });
+            }
 
- return response;
- }
- catch (Exception ex)
- {
- var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            return response;
+        }
+        catch (Exception ex)
+        {
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
 
-// G32：取消（OCE 且调用方令牌已触发）→ outcome=cancelled，Span 不设 Error（OTel 语义）；
-// 超时路径的 TCE 满足 !IsCancellationRequested，仍走 error/timeout。其余异常走 RecordError。
- if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
- MudHttpObservability.RecordCancellation(activity, elapsedMs, clientName);
- else
- MudHttpObservability.RecordError(activity, ex, elapsedMs, clientName);
- MudHttpObservability.MarkObserved(request);
+            // G32：取消（OCE 且调用方令牌已触发）→ outcome=cancelled，Span 不设 Error（OTel 语义）；
+            // 超时路径的 TCE 满足 !IsCancellationRequested，仍走 error/timeout。其余异常走 RecordError。
+            if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                MudHttpObservability.RecordCancellation(activity, elapsedMs, clientName);
+            else
+                MudHttpObservability.RecordError(activity, ex, elapsedMs, clientName);
+            MudHttpObservability.MarkObserved(request);
 
- if (MudHttpActivitySource.EventsEnabled)
- {
- MudHttpActivitySource.AddActivityEvent(
- MudHttpDiagnosticNames.RequestFailed,
- () => new HttpRequestErrorDiagnosticPayload(
- request.Method.Method,
- SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
- clientName,
- elapsedMs,
- ex),
- MudHttpDiagnosticNames.RequestFailed,
- () => new[]
- {
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestFailed,
+                () => new HttpRequestErrorDiagnosticPayload(
+                request.Method.Method,
+                SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
+                clientName,
+                elapsedMs,
+                ex),
+                MudHttpDiagnosticNames.RequestFailed,
+                () => new[]
+                {
  new KeyValuePair<string, object?>("method", request.Method.Method),
  new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
  new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
  new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
  new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
- });
- }
+                });
+            }
 
- throw;
- }
- finally
- {
- activity?.Dispose();
- }
- }
+            throw;
+        }
+        finally
+        {
+            activity?.Dispose();
+        }
+    }
 }
 
 /// <summary>HTTP 请求开始/停止事件的诊断负载。</summary>
 internal sealed class HttpRequestDiagnosticPayload
 {
- public string Method { get; }
- public string? Url { get; }
- public string? ClientName { get; }
+    public string Method { get; }
+    public string? Url { get; }
+    public string? ClientName { get; }
 
- public HttpRequestDiagnosticPayload(string method, string? url, string? clientName)
- {
- Method = method;
- Url = url;
- ClientName = clientName;
- }
+    public HttpRequestDiagnosticPayload(string method, string? url, string? clientName)
+    {
+        Method = method;
+        Url = url;
+        ClientName = clientName;
+    }
 }
 
 /// <summary>HTTP 请求停止事件的诊断负载（含响应状态码与耗时）。</summary>
 internal sealed class HttpResponseDiagnosticPayload
 {
- public string Method { get; }
- public string? Url { get; }
- public string? ClientName { get; }
- public int StatusCode { get; }
- public double ElapsedMs { get; }
+    public string Method { get; }
+    public string? Url { get; }
+    public string? ClientName { get; }
+    public int StatusCode { get; }
+    public double ElapsedMs { get; }
 
- public HttpResponseDiagnosticPayload(string method, string? url, string? clientName, int statusCode, double elapsedMs)
- {
- Method = method;
- Url = url;
- ClientName = clientName;
- StatusCode = statusCode;
- ElapsedMs = elapsedMs;
- }
+    public HttpResponseDiagnosticPayload(string method, string? url, string? clientName, int statusCode, double elapsedMs)
+    {
+        Method = method;
+        Url = url;
+        ClientName = clientName;
+        StatusCode = statusCode;
+        ElapsedMs = elapsedMs;
+    }
 }
 
 /// <summary>HTTP 请求失败事件的诊断负载（含异常）。</summary>
 internal sealed class HttpRequestErrorDiagnosticPayload
 {
- public string Method { get; }
- public string? Url { get; }
- public string? ClientName { get; }
- public double ElapsedMs { get; }
- public Exception Exception { get; }
+    public string Method { get; }
+    public string? Url { get; }
+    public string? ClientName { get; }
+    public double ElapsedMs { get; }
+    public Exception Exception { get; }
 
- public HttpRequestErrorDiagnosticPayload(string method, string? url, string? clientName, double elapsedMs, Exception exception)
- {
- Method = method;
- Url = url;
- ClientName = clientName;
- ElapsedMs = elapsedMs;
- Exception = exception;
- }
+    public HttpRequestErrorDiagnosticPayload(string method, string? url, string? clientName, double elapsedMs, Exception exception)
+    {
+        Method = method;
+        Url = url;
+        ClientName = clientName;
+        ElapsedMs = elapsedMs;
+        Exception = exception;
+    }
 }
 
 /// <summary>
@@ -201,20 +201,20 @@ internal sealed class HttpRequestErrorDiagnosticPayload
 /// </summary>
 internal readonly struct ValueStopwatch
 {
- private static readonly double s_timestampToTicks = TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency;
+    private static readonly double s_timestampToTicks = TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency;
 
- private readonly long _startTimestamp;
+    private readonly long _startTimestamp;
 
- private ValueStopwatch(long startTimestamp)
- {
- _startTimestamp = startTimestamp;
- }
+    private ValueStopwatch(long startTimestamp)
+    {
+        _startTimestamp = startTimestamp;
+    }
 
- public static ValueStopwatch StartNew() => new(Stopwatch.GetTimestamp());
+    public static ValueStopwatch StartNew() => new(Stopwatch.GetTimestamp());
 
- public TimeSpan GetElapsedTime()
- {
- var elapsedTicks = (long)((Stopwatch.GetTimestamp() - _startTimestamp) * s_timestampToTicks);
- return new TimeSpan(elapsedTicks);
- }
+    public TimeSpan GetElapsedTime()
+    {
+        var elapsedTicks = (long)((Stopwatch.GetTimestamp() - _startTimestamp) * s_timestampToTicks);
+        return new TimeSpan(elapsedTicks);
+    }
 }

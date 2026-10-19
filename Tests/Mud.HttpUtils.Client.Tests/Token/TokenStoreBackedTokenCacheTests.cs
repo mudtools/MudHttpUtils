@@ -7,6 +7,8 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
+using Microsoft.Extensions.Logging;
 
 namespace Mud.HttpUtils.Client.Tests.Token;
 
@@ -27,6 +29,23 @@ public class TokenStoreBackedTokenCacheTests
         public List<string> Removes { get; } = new();
         public List<string> Clears { get; } = new();
         public bool FailWrites;
+
+        /// <summary>读故障注入：非 null 时读方法原样抛出该异常（用于验证读穿透降级语义）。</summary>
+        public Exception? ReadFailure;
+
+        public override Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
+        {
+            if (ReadFailure != null)
+                return Task.FromException<string?>(ReadFailure);
+            return base.GetAccessTokenAsync(tokenType, cancellationToken);
+        }
+
+        public override Task<string?> GetRefreshTokenAsync(string tokenType, CancellationToken cancellationToken = default)
+        {
+            if (ReadFailure != null)
+                return Task.FromException<string?>(ReadFailure);
+            return base.GetRefreshTokenAsync(tokenType, cancellationToken);
+        }
 
         public override Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
         {
@@ -67,6 +86,9 @@ public class TokenStoreBackedTokenCacheTests
         public int ClearAllCalls;   // 桥接器绝不应触发（ClearAsync 会清空全部用户）
         public bool FailWrites;
 
+        /// <summary>读故障注入：非 null 时带 userId 的读方法原样抛出该异常（用于验证用户维度读穿透降级语义）。</summary>
+        public Exception? ReadFailure;
+
         public Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
             => throw new NotSupportedException("桥接器不得调用无 userId 成员（C7）");
 
@@ -93,6 +115,8 @@ public class TokenStoreBackedTokenCacheTests
 
         public Task<string?> GetAccessTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
         {
+            if (ReadFailure != null)
+                return Task.FromException<string?>(ReadFailure);
             if (_data.TryGetValue(userId, out var bucket) && bucket.TryGetValue(tokenType, out var entry) && entry.Expires > DateTimeOffset.UtcNow.ToUnixTimeSeconds())
                 return Task.FromResult<string?>(entry.Access);
             return Task.FromResult<string?>(null);
@@ -605,6 +629,79 @@ public class TokenStoreBackedTokenCacheTests
         var value = await bridge.GetAsync("default");
 
         value!.AccessToken.Should().Be("mirror-token", "镜像优先，保住热路径零 I/O（方案 B 限制）");
+    }
+
+    // ---- S2 真穿透：读故障按「未命中」降级（与写路径补偿队列对齐） ----
+
+    [Fact]
+    public async Task GetAsync_StoreReadFailure_DegradesToMiss_AndCounts()
+    {
+        var store = new CapturingTenantStore { ReadFailure = new IOException("store 读不可用") };
+        var bridge = CreateTenantBridge(store);
+
+        var value = await bridge.GetAsync("default");
+
+        value.Should().BeNull("读故障按「未命中」降级：回落 API 刷新，不把存储抖动抛给业务调用方");
+        bridge.ReadThroughFailures.Should().Be(1);
+        bridge.Keys.Should().BeEmpty("降级结果不入镜像");
+    }
+
+    [Fact]
+    public async Task GetAsync_StoreReadFailure_LogsWarning()
+    {
+        var loggerProvider = new CollectingLoggerProvider();
+        var logger = loggerProvider.CreateLogger("Mud.HttpUtils.Tests.TokenStoreReadThrough");
+        var store = new CapturingTenantStore { ReadFailure = new IOException("store 读不可用") };
+        var bridge = new TokenStoreBackedTokenCache<CredentialToken>(store, TenantAdapter, TenantFactory, logger: logger);
+
+        var value = await bridge.GetAsync("default");
+
+        value.Should().BeNull();
+        var warnings = loggerProvider.GetLogRecords(LogLevel.Warning);
+        warnings.Should().ContainSingle("读穿透失败必须记 Warning（可观测性兜底）");
+        warnings[0].Message.Should().Contain("读穿透失败");
+    }
+
+    [Fact]
+    public async Task GetAsync_StoreReadCancellation_PropagatesUncounted()
+    {
+        var store = new CapturingTenantStore { ReadFailure = new OperationCanceledException() };
+        var bridge = CreateTenantBridge(store);
+
+        var act = () => bridge.GetAsync("default").AsTask();
+
+        await FluentActions.Awaiting(act).Should().ThrowAsync<OperationCanceledException>("取消异常保持原样上抛（与写路径过滤器一致）");
+        bridge.ReadThroughFailures.Should().Be(0, "取消不是故障，不计数");
+    }
+
+    [Fact]
+    public async Task UserBridge_GetAsync_StoreReadFailure_DegradesToMiss()
+    {
+        var userStore = new CapturingUserStore { ReadFailure = new IOException("store 读不可用") };
+        var bridge = new TokenStoreBackedTokenCache<CredentialToken>(
+            userStore,
+            TokenStoreBackedTokenCache<CredentialToken>.DefaultUserKeyMapper,
+            TenantAdapter, TenantFactory);
+
+        var value = await bridge.GetAsync("u1");
+
+        value.Should().BeNull("用户维度读穿透同样按「未命中」降级");
+        bridge.ReadThroughFailures.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UserBridge_GetAsync_StoreReadCancellation_Propagates()
+    {
+        var userStore = new CapturingUserStore { ReadFailure = new OperationCanceledException() };
+        var bridge = new TokenStoreBackedTokenCache<CredentialToken>(
+            userStore,
+            TokenStoreBackedTokenCache<CredentialToken>.DefaultUserKeyMapper,
+            TenantAdapter, TenantFactory);
+
+        var act = () => bridge.GetAsync("u1").AsTask();
+
+        await FluentActions.Awaiting(act).Should().ThrowAsync<OperationCanceledException>();
+        bridge.ReadThroughFailures.Should().Be(0);
     }
 
     [Fact]

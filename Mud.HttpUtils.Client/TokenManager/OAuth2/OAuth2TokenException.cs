@@ -20,20 +20,20 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class OAuth2TokenException : InvalidOperationException
 {
-/// <summary>OAuth2 错误码（RFC 6749 §5.2），如 "invalid_grant" / "invalid_client"。</summary>
- public string? ErrorCode { get; }
+    /// <summary>OAuth2 错误码（RFC 6749 §5.2），如 "invalid_grant" / "invalid_client"。</summary>
+    public string? ErrorCode { get; }
 
-/// <summary>服务端返回的错误描述（不含令牌本体）。</summary>
- public string? ErrorDescription { get; }
+    /// <summary>服务端返回的错误描述（不含令牌本体）。</summary>
+    public string? ErrorDescription { get; }
 
-/// <summary>HTTP 状态码（响应可解析时）。</summary>
- public int? HttpStatusCode { get; }
+    /// <summary>HTTP 状态码（响应可解析时）。</summary>
+    public int? HttpStatusCode { get; }
 
- internal OAuth2TokenException(string? code, string? description, int? statusCode)
- : base($"OAuth2 令牌请求失败: {code}" + (string.IsNullOrEmpty(description) ? "" : $" - {description}"))
- {
- ErrorCode = code;
- ErrorDescription = description;
- HttpStatusCode = statusCode;
- }
+    internal OAuth2TokenException(string? code, string? description, int? statusCode)
+    : base($"OAuth2 令牌请求失败: {code}" + (string.IsNullOrEmpty(description) ? "" : $" - {description}"))
+    {
+        ErrorCode = code;
+        ErrorDescription = description;
+        HttpStatusCode = statusCode;
+    }
 }

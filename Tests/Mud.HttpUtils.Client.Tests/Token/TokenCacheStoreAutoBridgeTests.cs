@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Mud.HttpUtils.Client.Tests.Token;
 
@@ -235,5 +236,74 @@ public class TokenCacheStoreAutoBridgeTests
 
         manager.InjectedCache.Should()
             .BeOfType<TokenStoreBackedTokenCache<CredentialToken>>("经构造注入 ITokenCache 的管理器消费自动桥接结果");
+    }
+
+    // ---- 启动期提示（EventId 191）：store 未接入桥接的两种成因区分 ----
+
+    private const string BridgeMissMarker = "未接入自动桥接";
+
+    private static ServiceProvider BuildWiredHost(CollectingLoggerProvider logProvider, Action<IServiceCollection> configure)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddProvider(logProvider));
+        configure(services);
+        // 配齐多应用接线自检的前置注册，使 ValidateMudHttpAppManagement 能走到存储提示分支。
+        services.AddMudHttpAppContextHolder();
+        services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>();
+        services.AddSingleton<IAppAccessAuthorizer, AllowAllAppAccessAuthorizer>();
+        return services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public void ExplicitCacheOverridesStore_WarningDistinguishesExplicitOverrideCause()
+    {
+        var logProvider = new CollectingLoggerProvider();
+        using var sp = BuildWiredHost(logProvider, s =>
+        {
+            s.AddSingleton<ITokenStore, MemoryTokenStore>();
+            s.AddSingleton<ITokenCache<CredentialToken>>(new ConcurrentDictionaryTokenCache<CredentialToken>());
+            s.AddMudHttpTokenManager<StubTokenManager>();
+        });
+
+        sp.ValidateMudHttpAppManagement();
+
+        var warning = logProvider.GetLogRecords(LogLevel.Warning)
+            .Single(w => w.Message.Contains(BridgeMissMarker, StringComparison.Ordinal));
+        warning.Message.Should().Contain("显式注册了 ITokenCache<T>",
+            "成因须区分为「显式覆盖」（自动桥接被有意旁路）");
+    }
+
+    [Fact]
+    public void StoreWithoutTokenManager_WarningDistinguishesNoCacheConsumerCause()
+    {
+        var logProvider = new CollectingLoggerProvider();
+        using var sp = BuildWiredHost(logProvider, s =>
+        {
+            s.AddSingleton<ITokenStore, MemoryTokenStore>();
+        });
+
+        sp.ValidateMudHttpAppManagement();
+
+        var warning = logProvider.GetLogRecords(LogLevel.Warning)
+            .Single(w => w.Message.Contains(BridgeMissMarker, StringComparison.Ordinal));
+        warning.Message.Should().Contain("解析不到 ITokenCache<T>",
+            "成因须区分为「尚无缓存消费解析」（自动桥接未落地）");
+    }
+
+    [Fact]
+    public void StoreAutoBridged_NoRegistrationIgnoredWarning()
+    {
+        var logProvider = new CollectingLoggerProvider();
+        using var sp = BuildWiredHost(logProvider, s =>
+        {
+            s.AddSingleton<ITokenStore, MemoryTokenStore>();
+            s.AddMudHttpTokenManager<StubTokenManager>();
+        });
+
+        sp.ValidateMudHttpAppManagement();
+
+        logProvider.GetLogRecords(LogLevel.Warning)
+            .Should().NotContain(w => w.Message.Contains(BridgeMissMarker, StringComparison.Ordinal),
+                "仅注册 store 仍自动接入 ⇒ 不提示（既有自动桥接用例不回退）");
     }
 }

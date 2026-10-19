@@ -18,7 +18,7 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class DefaultIpAddressPolicy : IIpAddressPolicy
 {
-/// <inheritdoc/>
- public bool IsAllowed(IPAddress address)
- => !UrlValidator.IsPrivateIpAddress(address);
+    /// <inheritdoc/>
+    public bool IsAllowed(IPAddress address)
+    => !UrlValidator.IsPrivateIpAddress(address);
 }

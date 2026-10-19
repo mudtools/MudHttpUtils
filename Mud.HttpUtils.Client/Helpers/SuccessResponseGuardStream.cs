@@ -23,52 +23,52 @@ namespace Mud.HttpUtils.Helpers;
 /// </remarks>
 internal sealed class SuccessResponseGuardStream : Stream
 {
- private readonly Stream _inner;
- private readonly long _maxBytes;
- private readonly string? _requestUri;
- private long _totalRead;
+    private readonly Stream _inner;
+    private readonly long _maxBytes;
+    private readonly string? _requestUri;
+    private long _totalRead;
 
- public SuccessResponseGuardStream(Stream inner, long maxBytes, string? requestUri)
- {
- _inner = inner ?? throw new ArgumentNullException(nameof(inner));
- if (maxBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));
- _maxBytes = maxBytes;
- _requestUri = requestUri;
- }
+    public SuccessResponseGuardStream(Stream inner, long maxBytes, string? requestUri)
+    {
+        _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        if (maxBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        _maxBytes = maxBytes;
+        _requestUri = requestUri;
+    }
 
- public override bool CanRead => _inner.CanRead;
- public override bool CanSeek => _inner.CanSeek;
- public override bool CanWrite => false;
- public override long Length => _inner.Length;
- public override long Position
- {
- get => _inner.Position;
- set
- {
-// STJ 反序列化对可 seek 流会先探测 BOM 再回卷重读（Position = 0 / Seek(0, Begin)）。
-// 必须支持回卷而非抛 NotSupportedException，否则可 seek 的响应体在守卫模式下功能全坏。
-// 回卷时同步减少已读计数，避免重复读取同一段导致超限误报。
- _inner.Position = value;
- _totalRead = Math.Min(_totalRead, value);
- }
- }
+    public override bool CanRead => _inner.CanRead;
+    public override bool CanSeek => _inner.CanSeek;
+    public override bool CanWrite => false;
+    public override long Length => _inner.Length;
+    public override long Position
+    {
+        get => _inner.Position;
+        set
+        {
+            // STJ 反序列化对可 seek 流会先探测 BOM 再回卷重读（Position = 0 / Seek(0, Begin)）。
+            // 必须支持回卷而非抛 NotSupportedException，否则可 seek 的响应体在守卫模式下功能全坏。
+            // 回卷时同步减少已读计数，避免重复读取同一段导致超限误报。
+            _inner.Position = value;
+            _totalRead = Math.Min(_totalRead, value);
+        }
+    }
 
- public override void Flush() => _inner.Flush();
+    public override void Flush() => _inner.Flush();
 
- public override int Read(byte[] buffer, int offset, int count)
- {
- var read = _inner.Read(buffer, offset, count);
- OnRead(read);
- return read;
- }
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        var read = _inner.Read(buffer, offset, count);
+        OnRead(read);
+        return read;
+    }
 
 #if NET6_0_OR_GREATER
- public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
- {
- var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
- OnRead(read);
- return read;
- }
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        OnRead(read);
+        return read;
+    }
 #else
  public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
  {
@@ -78,31 +78,31 @@ internal sealed class SuccessResponseGuardStream : Stream
  }
 #endif
 
- private void OnRead(int read)
- {
- if (read <= 0) return;
- _totalRead += read;
- if (_totalRead > _maxBytes)
- {
- throw new Mud.HttpUtils.ApiRequestException(
- $"成功响应体大小超过限制（{_maxBytes} 字节），已读取 {_totalRead} 字节",
- requestUri: _requestUri);
- }
- }
+    private void OnRead(int read)
+    {
+        if (read <= 0) return;
+        _totalRead += read;
+        if (_totalRead > _maxBytes)
+        {
+            throw new Mud.HttpUtils.ApiRequestException(
+            $"成功响应体大小超过限制（{_maxBytes} 字节），已读取 {_totalRead} 字节",
+            requestUri: _requestUri);
+        }
+    }
 
- public override long Seek(long offset, SeekOrigin origin)
- {
-// 与 Position 回卷语义一致：STJ 等反序列化器对可 seek 流的回卷探测不得误伤计数。
- var newPos = _inner.Seek(offset, origin);
- _totalRead = Math.Min(_totalRead, newPos);
- return newPos;
- }
- public override void SetLength(long value) => throw new NotSupportedException();
- public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        // 与 Position 回卷语义一致：STJ 等反序列化器对可 seek 流的回卷探测不得误伤计数。
+        var newPos = _inner.Seek(offset, origin);
+        _totalRead = Math.Min(_totalRead, newPos);
+        return newPos;
+    }
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
- protected override void Dispose(bool disposing)
- {
- if (disposing) _inner.Dispose();
- base.Dispose(disposing);
- }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _inner.Dispose();
+        base.Dispose(disposing);
+    }
 }

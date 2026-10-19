@@ -16,23 +16,23 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public class AesEncryptionOptionsValidator : IValidateOptions<AesEncryptionOptions>
 {
-/// <inheritdoc />
- public ValidateOptionsResult Validate(string? name, AesEncryptionOptions? options)
- {
- if (options == null)
- return ValidateOptionsResult.Success;
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, AesEncryptionOptions? options)
+    {
+        if (options == null)
+            return ValidateOptionsResult.Success;
 
-// 仅在已设置 Key 时校验长度；未设置 Key 时由 DefaultAesEncryptionProvider 在解析时校验
- var key = options.Key;
- if (key.Length == 0)
- return ValidateOptionsResult.Success;
+        // 仅在已设置 Key 时校验长度；未设置 Key 时由 DefaultAesEncryptionProvider 在解析时校验
+        var key = options.Key;
+        if (key.Length == 0)
+            return ValidateOptionsResult.Success;
 
- if (key.Length != 16 && key.Length != 24 && key.Length != 32)
- {
- return ValidateOptionsResult.Fail(
- $"AesEncryptionOptions: Key 长度必须为 16、24 或 32 字节，当前为 {key.Length} 字节。");
- }
+        if (key.Length != 16 && key.Length != 24 && key.Length != 32)
+        {
+            return ValidateOptionsResult.Fail(
+            $"AesEncryptionOptions: Key 长度必须为 16、24 或 32 字节，当前为 {key.Length} 字节。");
+        }
 
- return ValidateOptionsResult.Success;
- }
+        return ValidateOptionsResult.Success;
+    }
 }

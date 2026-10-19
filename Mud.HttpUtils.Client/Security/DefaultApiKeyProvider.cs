@@ -41,49 +41,49 @@ namespace Mud.HttpUtils;
 /// </example>
 public class DefaultApiKeyProvider : IApiKeyProvider
 {
-/// <summary>
-/// 配置实例，用于读取 API Key 配置。
-/// </summary>
- private readonly IConfiguration _configuration;
+    /// <summary>
+    /// 配置实例，用于读取 API Key 配置。
+    /// </summary>
+    private readonly IConfiguration _configuration;
 
-/// <summary>
-/// 初始化 <see cref="DefaultApiKeyProvider"/> 类的新实例。
-/// </summary>
-/// <param name="configuration">配置实例，用于读取 API Key 配置。</param>
-/// <exception cref="ArgumentNullException">当 <paramref name="configuration"/> 为 null 时抛出。</exception>
- public DefaultApiKeyProvider(IConfiguration configuration)
- {
- _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
- }
+    /// <summary>
+    /// 初始化 <see cref="DefaultApiKeyProvider"/> 类的新实例。
+    /// </summary>
+    /// <param name="configuration">配置实例，用于读取 API Key 配置。</param>
+    /// <exception cref="ArgumentNullException">当 <paramref name="configuration"/> 为 null 时抛出。</exception>
+    public DefaultApiKeyProvider(IConfiguration configuration)
+    {
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+    }
 
-/// <summary>
-/// 异步获取 API Key。
-/// </summary>
-/// <param name="keyName">API Key 的名称。如果为 null 或空字符串，则使用默认配置键 "ApiKey"。</param>
-/// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
-/// <returns>包含 API Key 的任务。</returns>
-/// <exception cref="InvalidOperationException">当配置中找不到指定的 API Key 时抛出。</exception>
-/// <remarks>
-/// <para>
-/// 该方法根据 <paramref name="keyName"/> 参数确定配置键：
-/// <list type="bullet">
-/// <item><description>如果 <paramref name="keyName"/> 为 null 或空，使用配置键 <c>"ApiKey"</c></description></item>
-/// <item><description>如果 <paramref name="keyName"/> 有值，使用配置键 <c>"ApiKeys:{keyName}"</c></description></item>
-/// </list>
-/// </para>
-/// <para>
-/// 该方法是同步实现的，包装在 Task 中以符合异步接口要求。
-/// </para>
-/// </remarks>
- public Task<string> GetApiKeyAsync(string? keyName = null, CancellationToken cancellationToken = default)
- {
- var configKey = string.IsNullOrEmpty(keyName) ? "ApiKey" : $"ApiKeys:{keyName}";
- var apiKey = _configuration[configKey];
+    /// <summary>
+    /// 异步获取 API Key。
+    /// </summary>
+    /// <param name="keyName">API Key 的名称。如果为 null 或空字符串，则使用默认配置键 "ApiKey"。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>包含 API Key 的任务。</returns>
+    /// <exception cref="InvalidOperationException">当配置中找不到指定的 API Key 时抛出。</exception>
+    /// <remarks>
+    /// <para>
+    /// 该方法根据 <paramref name="keyName"/> 参数确定配置键：
+    /// <list type="bullet">
+    /// <item><description>如果 <paramref name="keyName"/> 为 null 或空，使用配置键 <c>"ApiKey"</c></description></item>
+    /// <item><description>如果 <paramref name="keyName"/> 有值，使用配置键 <c>"ApiKeys:{keyName}"</c></description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 该方法是同步实现的，包装在 Task 中以符合异步接口要求。
+    /// </para>
+    /// </remarks>
+    public Task<string> GetApiKeyAsync(string? keyName = null, CancellationToken cancellationToken = default)
+    {
+        var configKey = string.IsNullOrEmpty(keyName) ? "ApiKey" : $"ApiKeys:{keyName}";
+        var apiKey = _configuration[configKey];
 
- if (string.IsNullOrEmpty(apiKey))
- throw new InvalidOperationException($"未找到 API Key 配置: {configKey}");
+        if (string.IsNullOrEmpty(apiKey))
+            throw new InvalidOperationException($"未找到 API Key 配置: {configKey}");
 
-// apiKey 的非空性已由上方 IsNullOrEmpty 守卫收敛。
- return Task.FromResult(apiKey!);
- }
+        // apiKey 的非空性已由上方 IsNullOrEmpty 守卫收敛。
+        return Task.FromResult(apiKey!);
+    }
 }

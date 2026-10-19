@@ -14,42 +14,42 @@ namespace Mud.HttpUtils;
 /// <inheritdoc/>
 public sealed class HttpClientResolver(IEnhancedHttpClientFactory clientFactory) : IHttpClientResolver
 {
- private readonly IEnhancedHttpClientFactory _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+    private readonly IEnhancedHttpClientFactory _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
 
-/// <inheritdoc />
- public IEnhancedHttpClient GetClient(string clientName)
- {
- if (string.IsNullOrWhiteSpace(clientName))
- throw new ArgumentNullException(nameof(clientName));
+    /// <inheritdoc />
+    public IEnhancedHttpClient GetClient(string clientName)
+    {
+        if (string.IsNullOrWhiteSpace(clientName))
+            throw new ArgumentNullException(nameof(clientName));
 
- if (!TryGetClient(clientName, out var client) || client == null)
-// MT-13：客户端名区分大小写（Ordinal），与配置字典 / keyed DI / 命名 HttpClient 一致。
-// 失败消息中显式提示该点，避免"配置写 Default、代码传 default"的排查成本。
- throw new InvalidOperationException(
- $"未注册名为 '{clientName}' 的 HttpClient。请先调用 AddMudHttpClient 注册。" +
- "注意：客户端名称区分大小写，请确认与注册/配置中的大小写完全一致。");
+        if (!TryGetClient(clientName, out var client) || client == null)
+            // MT-13：客户端名区分大小写（Ordinal），与配置字典 / keyed DI / 命名 HttpClient 一致。
+            // 失败消息中显式提示该点，避免"配置写 Default、代码传 default"的排查成本。
+            throw new InvalidOperationException(
+            $"未注册名为 '{clientName}' 的 HttpClient。请先调用 AddMudHttpClient 注册。" +
+            "注意：客户端名称区分大小写，请确认与注册/配置中的大小写完全一致。");
 
- return client;
- }
+        return client;
+    }
 
-/// <inheritdoc />
- public bool TryGetClient(string clientName, out IEnhancedHttpClient? client)
- {
- if (string.IsNullOrWhiteSpace(clientName))
- {
- client = null;
- return false;
- }
+    /// <inheritdoc />
+    public bool TryGetClient(string clientName, out IEnhancedHttpClient? client)
+    {
+        if (string.IsNullOrWhiteSpace(clientName))
+        {
+            client = null;
+            return false;
+        }
 
- try
- {
- client = _clientFactory.CreateClient(clientName);
- return true;
- }
- catch (InvalidOperationException)
- {
- client = null;
- return false;
- }
- }
+        try
+        {
+            client = _clientFactory.CreateClient(clientName);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            client = null;
+            return false;
+        }
+    }
 }

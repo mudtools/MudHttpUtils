@@ -81,7 +81,10 @@ public class HeaderCollectionEndToEndTests : IDisposable
         services.AddLogging();
         services.AddOptions();
         services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true }));
-        // 注册 IHttpContentSerializer 和 IHttpRequestExecutor（AddWebApiHttpClient 仅注册接口→实现映射，不注册基础设施服务）
+        // 显式注册序列化内容与执行器（AddWebApiHttpClient 发射的 AddMudHttpClient 已以 TryAdd 注册
+        // TracingDelegatingHandler / IExceptionRedactor / IHttpResponseCache / IAppContextHolder /
+        // IEnhancedHttpClientFactory / IHttpContentSerializer / IHttpRequestExecutor 等基础设施，
+        // 此处保留显式注册以固定测试装配，避免依赖生成物内部细节）
         services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
         services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();

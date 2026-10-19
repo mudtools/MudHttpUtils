@@ -3,6 +3,7 @@
 // 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils;
@@ -20,142 +21,173 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class EnhancedHttpClientFactoryChangeNotifier : IDisposable
 {
- private readonly IDisposable? _subscription;
- private readonly object _gate = new();
+    private readonly IDisposable? _subscription;
+    private readonly object _gate = new();
+    private readonly ILogger? _logger;
 
-// G5：上一份 per-client 配置指纹（用于"仅失效变更过的客户端"，而非全量 InvalidateAll）。
- private Dictionary<string, ClientFingerprint> _fingerprints;
+    // G5：上一份 per-client 配置指纹（用于"仅失效变更过的客户端"，而非全量 InvalidateAll）。
+    private Dictionary<string, ClientFingerprint> _fingerprints;
 
- public EnhancedHttpClientFactoryChangeNotifier(
- IOptionsMonitor<MudHttpClientApplicationOptions> monitor,
- IEnhancedHttpClientFactory factory)
- {
- _fingerprints = Snapshot(monitor.CurrentValue);
+    public EnhancedHttpClientFactoryChangeNotifier(
+    IOptionsMonitor<MudHttpClientApplicationOptions> monitor,
+    IEnhancedHttpClientFactory factory,
+    ILoggerFactory? loggerFactory = null)
+    {
+        _logger = loggerFactory?.CreateLogger("Mud.HttpUtils.EnhancedHttpClientFactoryChangeNotifier");
+        _fingerprints = Snapshot(monitor.CurrentValue);
 
-// G5：配置节变更 → **逐客户端**失效（此前为全量 InvalidateAll：任一客户端变更都会丢弃全部缓存实例）。
- _subscription = monitor.OnChange((_, _) =>
- {
- Dictionary<string, ClientFingerprint> changed;
- lock (_gate)
- {
- if (_disposed)
- return;
+        // G5：配置节变更 → **逐客户端**失效（此前为全量 InvalidateAll：任一客户端变更都会丢弃全部缓存实例）。
+        _subscription = monitor.OnChange((_, _) =>
+        {
+            Dictionary<string, ClientFingerprint> previous;
+            Dictionary<string, ClientFingerprint> changed;
+            lock (_gate)
+            {
+                if (_disposed)
+                    return;
 
- var next = Snapshot(monitor.CurrentValue);
- changed = Diff(_fingerprints, next);
- _fingerprints = next;
- }
+                var next = Snapshot(monitor.CurrentValue);
+                previous = _fingerprints;
+                changed = Diff(previous, next);
+                _fingerprints = next;
+            }
 
- foreach (var name in changed.Keys)
- {
- factory.Invalidate(name);
- }
- });
- }
+            foreach (var kvp in changed)
+            {
+                factory.Invalidate(kvp.Key);
 
- private volatile bool _disposed;
+                // 注册期固化项（BaseAddress / TimeoutSeconds / DefaultHeaders）的变更仅失效缓存不能使其生效 ——
+                // 逐客户端列出受影响项与两种生效方式（不抛错：热更新语义边界，见 README 配置热更新矩阵）。
+                if (_logger != null && previous.TryGetValue(kvp.Key, out var old))
+                {
+                    var items = old.GetRegistrationBoundChanges(kvp.Value);
+                    if (items != null)
+                        MudHttpClientLog.ClientConfigRebuildRequired(_logger, kvp.Key, items);
+                }
+            }
+        });
+    }
 
-/// <summary>
-/// G5：计算"需要失效"的客户端名集合 = 新增 + 变更 + 移除。
-/// 未变更的客户端**不**失效（避免无关客户端被连带丢弃）。
-/// </summary>
- private static Dictionary<string, ClientFingerprint> Diff(
- Dictionary<string, ClientFingerprint> previous,
- Dictionary<string, ClientFingerprint> next)
- {
- var changed = new Dictionary<string, ClientFingerprint>(StringComparer.Ordinal);
+    private volatile bool _disposed;
 
- foreach (var kvp in next)
- {
- if (!previous.TryGetValue(kvp.Key, out var old) || !old.Equals(kvp.Value))
- changed[kvp.Key] = kvp.Value;
- }
+    /// <summary>
+    /// G5：计算"需要失效"的客户端名集合 = 新增 + 变更 + 移除。
+    /// 未变更的客户端**不**失效（避免无关客户端被连带丢弃）。
+    /// </summary>
+    private static Dictionary<string, ClientFingerprint> Diff(
+    Dictionary<string, ClientFingerprint> previous,
+    Dictionary<string, ClientFingerprint> next)
+    {
+        var changed = new Dictionary<string, ClientFingerprint>(StringComparer.Ordinal);
 
-// 被移除的客户端：其缓存实例同样需要失效（配置里已不存在）。
- foreach (var kvp in previous)
- {
- if (!next.ContainsKey(kvp.Key))
- changed[kvp.Key] = kvp.Value;
- }
+        foreach (var kvp in next)
+        {
+            if (!previous.TryGetValue(kvp.Key, out var old) || !old.Equals(kvp.Value))
+                changed[kvp.Key] = kvp.Value;
+        }
 
- return changed;
- }
+        // 被移除的客户端：其缓存实例同样需要失效（配置里已不存在）。
+        foreach (var kvp in previous)
+        {
+            if (!next.ContainsKey(kvp.Key))
+                changed[kvp.Key] = kvp.Value;
+        }
 
- private static Dictionary<string, ClientFingerprint> Snapshot(MudHttpClientApplicationOptions options)
- {
- var snapshot = new Dictionary<string, ClientFingerprint>(StringComparer.Ordinal);
- if (options?.Clients is null)
- return snapshot;
+        return changed;
+    }
 
- foreach (var kvp in options.Clients)
- {
- snapshot[kvp.Key] = ClientFingerprint.From(kvp.Value);
- }
+    private static Dictionary<string, ClientFingerprint> Snapshot(MudHttpClientApplicationOptions options)
+    {
+        var snapshot = new Dictionary<string, ClientFingerprint>(StringComparer.Ordinal);
+        if (options?.Clients is null)
+            return snapshot;
 
- return snapshot;
- }
+        foreach (var kvp in options.Clients)
+        {
+            snapshot[kvp.Key] = ClientFingerprint.From(kvp.Value);
+        }
 
-/// <summary>per-client 配置的轻量指纹（仅覆盖"可在创建期生效"的字段）。</summary>
-/// <remarks>
-/// G5 语义边界：<c>BaseAddress</c> / <c>TimeoutSeconds</c> / <c>DefaultHeaders</c>
-/// 在<b>注册期</b>固化于命名 HttpClient（<c>IHttpClientFactory</c> 语义），仅失效缓存<b>不能</b>使其变更生效
-/// （需由宿主重建命名客户端或经 <c>WithBaseAddress</c> 派生）。此处纳入指纹只是为了在它们变化时
-/// 也触发一次失效，不留"改了却毫无动作"的静默面。
-/// </remarks>
- private readonly struct ClientFingerprint : IEquatable<ClientFingerprint>
- {
- private readonly string? _baseAddress;
- private readonly double? _timeoutSeconds;
- private readonly bool _allowCustomBaseUrls;
- private readonly int _headersHash;
+        return snapshot;
+    }
 
- private ClientFingerprint(string? baseAddress, double? timeoutSeconds, bool allowCustomBaseUrls, int headersHash)
- {
- _baseAddress = baseAddress;
- _timeoutSeconds = timeoutSeconds;
- _allowCustomBaseUrls = allowCustomBaseUrls;
- _headersHash = headersHash;
- }
+    /// <summary>per-client 配置的轻量指纹（仅覆盖"可在创建期生效"的字段）。</summary>
+    /// <remarks>
+    /// G5 语义边界：<c>BaseAddress</c> / <c>TimeoutSeconds</c> / <c>DefaultHeaders</c>
+    /// 在<b>注册期</b>固化于命名 HttpClient（<c>IHttpClientFactory</c> 语义），仅失效缓存<b>不能</b>使其变更生效
+    /// （需由宿主重建命名客户端或经 <c>WithBaseAddress</c> 派生）。此处纳入指纹只是为了在它们变化时
+    /// 也触发一次失效，不留"改了却毫无动作"的静默面。
+    /// </remarks>
+    private readonly struct ClientFingerprint : IEquatable<ClientFingerprint>
+    {
+        private readonly string? _baseAddress;
+        private readonly double? _timeoutSeconds;
+        private readonly bool _allowCustomBaseUrls;
+        private readonly int _headersHash;
 
- public static ClientFingerprint From(MudHttpClientOptions options)
- {
- var headersHash = 0;
- if (options.DefaultHeaders is not null)
- {
- foreach (var header in options.DefaultHeaders)
- {
- unchecked
- {
- headersHash = (headersHash * 397)
- ^ (header.Key is null ? 0 : StringComparer.Ordinal.GetHashCode(header.Key))
- ^ (header.Value is null ? 0 : StringComparer.Ordinal.GetHashCode(header.Value));
- }
- }
- }
+        private ClientFingerprint(string? baseAddress, double? timeoutSeconds, bool allowCustomBaseUrls, int headersHash)
+        {
+            _baseAddress = baseAddress;
+            _timeoutSeconds = timeoutSeconds;
+            _allowCustomBaseUrls = allowCustomBaseUrls;
+            _headersHash = headersHash;
+        }
 
- return new ClientFingerprint(
- options.BaseAddress, options.TimeoutSeconds, options.AllowCustomBaseUrls, headersHash);
- }
+        public static ClientFingerprint From(MudHttpClientOptions options)
+        {
+            var headersHash = 0;
+            if (options.DefaultHeaders is not null)
+            {
+                foreach (var header in options.DefaultHeaders)
+                {
+                    unchecked
+                    {
+                        headersHash = (headersHash * 397)
+                        ^ (header.Key is null ? 0 : StringComparer.Ordinal.GetHashCode(header.Key))
+                        ^ (header.Value is null ? 0 : StringComparer.Ordinal.GetHashCode(header.Value));
+                    }
+                }
+            }
 
- public bool Equals(ClientFingerprint other)
- => string.Equals(_baseAddress, other._baseAddress, StringComparison.Ordinal)
- && _timeoutSeconds == other._timeoutSeconds
- && _allowCustomBaseUrls == other._allowCustomBaseUrls
- && _headersHash == other._headersHash;
+            return new ClientFingerprint(
+            options.BaseAddress, options.TimeoutSeconds, options.AllowCustomBaseUrls, headersHash);
+        }
 
- public override bool Equals(object? obj) => obj is ClientFingerprint other && Equals(other);
+        /// <summary>
+        /// 相对下一份指纹，返回发生变化的<b>注册期固化项</b>名称列表（无变化返回 null）。
+        /// 这三项（BaseAddress / TimeoutSeconds / DefaultHeaders）固化于命名 HttpClient，
+        /// 仅失效缓存不能使其变更生效 —— 调用方据此给出生效方式提示。
+        /// </summary>
+        public string? GetRegistrationBoundChanges(ClientFingerprint next)
+        {
+            var items = new List<string>(3);
+            if (!string.Equals(_baseAddress, next._baseAddress, StringComparison.Ordinal))
+                items.Add("BaseAddress");
+            if (_timeoutSeconds != next._timeoutSeconds)
+                items.Add("TimeoutSeconds");
+            if (_headersHash != next._headersHash)
+                items.Add("DefaultHeaders");
+            return items.Count == 0 ? null : string.Join(", ", items);
+        }
 
- public override int GetHashCode() => _headersHash;
- }
+        public bool Equals(ClientFingerprint other)
+        => string.Equals(_baseAddress, other._baseAddress, StringComparison.Ordinal)
+        && _timeoutSeconds == other._timeoutSeconds
+        && _allowCustomBaseUrls == other._allowCustomBaseUrls
+        && _headersHash == other._headersHash;
 
- public void Dispose()
- {
- lock (_gate)
- {
- _disposed = true;
- }
+        public override bool Equals(object? obj) => obj is ClientFingerprint other && Equals(other);
 
- _subscription?.Dispose();
- }
+        public override int GetHashCode() => _headersHash;
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _disposed = true;
+        }
+
+        _subscription?.Dispose();
+    }
 }
 #endif

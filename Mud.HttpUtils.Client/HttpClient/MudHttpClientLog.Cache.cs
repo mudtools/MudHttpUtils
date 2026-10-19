@@ -9,20 +9,20 @@ namespace Mud.HttpUtils;
 // 纯移动拆分（原 MudHttpClientLog.cs 的 Cache 模块 region）。
 internal static partial class MudHttpClientLog
 {
- #region Cache 模块 (EventId: 121-130)
+    #region Cache 模块 (EventId: 121-130)
 
 #if NET6_0_OR_GREATER
- [LoggerMessage(EventId = 121, Level = LogLevel.Debug,
- Message = "从缓存返回: {CacheKey}")]
- public static partial void CacheHit(ILogger logger, string cacheKey);
+    [LoggerMessage(EventId = 121, Level = LogLevel.Debug,
+    Message = "从缓存返回: {CacheKey}")]
+    public static partial void CacheHit(ILogger logger, string cacheKey);
 
- [LoggerMessage(EventId = 122, Level = LogLevel.Debug,
- Message = "已缓存: {CacheKey}, 持续 {Duration} 秒, 滑动过期: {UseSliding}")]
- public static partial void CacheSet(ILogger logger, string cacheKey, double duration, bool useSliding);
+    [LoggerMessage(EventId = 122, Level = LogLevel.Debug,
+    Message = "已缓存: {CacheKey}, 持续 {Duration} 秒, 滑动过期: {UseSliding}")]
+    public static partial void CacheSet(ILogger logger, string cacheKey, double duration, bool useSliding);
 
- [LoggerMessage(EventId = 123, Level = LogLevel.Debug,
- Message = "已移除缓存: {CacheKey}")]
- public static partial void CacheRemoved(ILogger logger, string cacheKey);
+    [LoggerMessage(EventId = 123, Level = LogLevel.Debug,
+    Message = "已移除缓存: {CacheKey}")]
+    public static partial void CacheRemoved(ILogger logger, string cacheKey);
 #else
  private static readonly Action<ILogger, string, Exception?> s_cacheHit =
  LoggerMessage.Define<string>(LogLevel.Debug, new EventId(121, nameof(CacheHit)),
@@ -41,5 +41,5 @@ internal static partial class MudHttpClientLog
  public static void CacheRemoved(ILogger logger, string cacheKey) => s_cacheRemoved(logger, cacheKey, null);
 #endif
 
- #endregion
+    #endregion
 }

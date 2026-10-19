@@ -11,28 +11,28 @@ namespace Mud.HttpUtils;
 
 internal static class ExceptionUtils
 {
-/// <summary>
-/// 如果对象为null则抛出ArgumentNullException
-/// </summary>
+    /// <summary>
+    /// 如果对象为null则抛出ArgumentNullException
+    /// </summary>
 #if NET6_0_OR_GREATER
- public static void ThrowIfNull<T>(
- this T? obj,
- [CallerArgumentExpression(nameof(obj))] string? paramName = null)
- {
- if (obj is null)
- throw new ArgumentNullException(paramName);
- }
+    public static void ThrowIfNull<T>(
+    this T? obj,
+    [CallerArgumentExpression(nameof(obj))] string? paramName = null)
+    {
+        if (obj is null)
+            throw new ArgumentNullException(paramName);
+    }
 
- public static void ThrowIfNullOrEmpty(
- this string? argument,
- [CallerArgumentExpression(nameof(argument))] string? paramName = null)
- {
- if (argument == null)
- throw new ArgumentNullException(paramName);
+    public static void ThrowIfNullOrEmpty(
+    this string? argument,
+    [CallerArgumentExpression(nameof(argument))] string? paramName = null)
+    {
+        if (argument == null)
+            throw new ArgumentNullException(paramName);
 
- if (string.IsNullOrEmpty(argument))
- throw new ArgumentException("值不能为空字符串", paramName);
- }
+        if (string.IsNullOrEmpty(argument))
+            throw new ArgumentException("值不能为空字符串", paramName);
+    }
 #else
  public static void ThrowIfNull<T>(this T? obj, string? paramName = null)
  {

@@ -207,32 +207,9 @@ namespace TestNamespace
 
     #endregion
 
-    #region HTTPCLIENT018 - TokenManager Without Explicit Key
-
-    [Fact]
-    public void Generator_WithTokenManagerButNoKey_GeneratesHTTPCLIENT018()
-    {
-        var source = @"
-using Mud.HttpUtils;
-using Mud.HttpUtils.Attributes;
-
-namespace TestNamespace
-{
-    [HttpClientApi(TokenManage = ""myManager"")]
-    public interface ITestApi
-    {
-        [Get(""/data"")]
-        Task<string> GetDataAsync();
-    }
-}";
-
-        var driver = RunGenerator(source);
-        var diagnostics = driver.GetRunResult().Diagnostics;
-
-        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT018");
-    }
-
-    #endregion
+    // HTTPCLIENT018（TokenManagerKey 使用默认推断值）已自生成器迁移至
+    // TokenManagerKeyInferenceAnalyzer（目录级 .editorconfig 豁免在生成器缓存模型下不可达）。
+    // 覆盖迁移至 TokenManagerKeyInferenceExemptionTests（分析器驱动，含树粒度豁免用例）。
 
     #region HTTPCLIENT022 - Path/HmacSignature token injection mode lacks recovery capability (P3.3 / TK-18)
 

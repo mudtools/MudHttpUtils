@@ -34,33 +34,33 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal static class TokenRefreshAmbient
 {
- private static readonly AsyncLocal<int> s_depth = new();
+    private static readonly AsyncLocal<int> s_depth = new();
 
-/// <summary>当前异步流是否处于令牌刷新调用栈内。</summary>
- internal static bool InRefresh => s_depth.Value > 0;
+    /// <summary>当前异步流是否处于令牌刷新调用栈内。</summary>
+    internal static bool InRefresh => s_depth.Value > 0;
 
-/// <summary>
-/// 进入一次刷新作用域；<see cref="Scope"/> 释放后恢复进入前的深度。
-/// </summary>
-/// <returns>应在刷新全程（含失效 + 刷新）以 <c>using</c> 持有的作用域句柄。</returns>
- internal static Scope Enter()
- {
- var previous = s_depth.Value;
- s_depth.Value = previous + 1;
- return new Scope(previous);
- }
+    /// <summary>
+    /// 进入一次刷新作用域；<see cref="Scope"/> 释放后恢复进入前的深度。
+    /// </summary>
+    /// <returns>应在刷新全程（含失效 + 刷新）以 <c>using</c> 持有的作用域句柄。</returns>
+    internal static Scope Enter()
+    {
+        var previous = s_depth.Value;
+        s_depth.Value = previous + 1;
+        return new Scope(previous);
+    }
 
-/// <summary>
-/// 刷新作用域句柄。<see cref="Dispose"/> 恢复<b>捕获的</b>先前深度（而非无条件递减），
-/// 保证父上下文与并行子分支的深度互不污染。
-/// </summary>
- internal readonly struct Scope : IDisposable
- {
- private readonly int _previous;
+    /// <summary>
+    /// 刷新作用域句柄。<see cref="Dispose"/> 恢复<b>捕获的</b>先前深度（而非无条件递减），
+    /// 保证父上下文与并行子分支的深度互不污染。
+    /// </summary>
+    internal readonly struct Scope : IDisposable
+    {
+        private readonly int _previous;
 
- internal Scope(int previous) => _previous = previous;
+        internal Scope(int previous) => _previous = previous;
 
-/// <inheritdoc />
- public void Dispose() => s_depth.Value = _previous;
- }
+        /// <inheritdoc />
+        public void Dispose() => s_depth.Value = _previous;
+    }
 }

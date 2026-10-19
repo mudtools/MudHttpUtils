@@ -22,32 +22,32 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class PushStreamContent : System.Net.Http.HttpContent
 {
- private readonly Action<Stream> _onStreamAvailable;
- private readonly string _mediaType;
+    private readonly Action<Stream> _onStreamAvailable;
+    private readonly string _mediaType;
 
-/// <summary>
-/// 初始化 <see cref="PushStreamContent"/> 实例。
-/// </summary>
-/// <param name="onStreamAvailable">当目标流可用时调用的回调，直接写入流。</param>
-/// <param name="mediaType">Content-Type 媒体类型。</param>
- public PushStreamContent(Action<Stream> onStreamAvailable, string mediaType = "application/json")
- {
- _onStreamAvailable = onStreamAvailable ?? throw new ArgumentNullException(nameof(onStreamAvailable));
- _mediaType = mediaType;
- Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
- }
+    /// <summary>
+    /// 初始化 <see cref="PushStreamContent"/> 实例。
+    /// </summary>
+    /// <param name="onStreamAvailable">当目标流可用时调用的回调，直接写入流。</param>
+    /// <param name="mediaType">Content-Type 媒体类型。</param>
+    public PushStreamContent(Action<Stream> onStreamAvailable, string mediaType = "application/json")
+    {
+        _onStreamAvailable = onStreamAvailable ?? throw new ArgumentNullException(nameof(onStreamAvailable));
+        _mediaType = mediaType;
+        Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
+    }
 
-/// <inheritdoc/>
- protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
- {
- _onStreamAvailable(stream);
- return Task.CompletedTask;
- }
+    /// <inheritdoc/>
+    protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
+    {
+        _onStreamAvailable(stream);
+        return Task.CompletedTask;
+    }
 
-/// <inheritdoc/>
- protected override bool TryComputeLength(out long length)
- {
- length = -1;
- return false;
- }
+    /// <inheritdoc/>
+    protected override bool TryComputeLength(out long length)
+    {
+        length = -1;
+        return false;
+    }
 }

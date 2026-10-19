@@ -36,8 +36,7 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
         bool emitMarkers,
         AotRuntimeMode aotMode,
         bool force,
-        string version,
-        bool suppressTokenManagerKeyInference = false)
+        string version)
     {
         Disable = disable;
         OptionsName = optionsName;
@@ -46,7 +45,6 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
         AotMode = aotMode;
         Force = force;
         Version = version;
-        SuppressTokenManagerKeyInference = suppressTokenManagerKeyInference;
     }
 
     /// <summary>T5.3：全局禁用开关。</summary>
@@ -70,18 +68,6 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
     /// <summary>生成器版本号（与 salt 的 失效语义一致）。</summary>
     public string Version { get; }
 
-    /// <summary>
-    /// F6(b)：HTTPCLIENT018（TokenManagerKey 使用默认推断值）的<b>声明式豁免</b>开关
-    /// （<c>build_property.MudHttpSuppressTokenManagerKeyInference</c>，等价 <c>.globalconfig</c> 键
-    /// <c>mud_suppress_token_manager_key_inference</c>）。
-    /// </summary>
-    /// <remarks>
-    /// 快照只读取<b>全局</b>配置（<see cref="AnalyzerConfigOptionsProvider.GlobalOptions"/>）：
-    /// 生成器管道不持有语法树，故普通 <c>.editorconfig</c> 的目录粒度键对本开关不生效
-    /// （需要目录粒度时请改用接口级 <c>[Token(Justification = "…")]</c>）。默认 <c>false</c>（仍报）。
-    /// </remarks>
-    public bool SuppressTokenManagerKeyInference { get; }
-
     /// <summary>值相等比较器（与 <c>Combine</c> 的 <c>WithComparer</c> 配套）。</summary>
     public static IEqualityComparer<GeneratorConfigSnapshot> Comparer { get; } =
         new GeneratorConfigSnapshotEqualityComparer();
@@ -95,8 +81,7 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
         && EmitMarkers == other.EmitMarkers
         && AotMode == other.AotMode
         && Force == other.Force
-        && string.Equals(Version, other.Version, StringComparison.Ordinal)
-        && SuppressTokenManagerKeyInference == other.SuppressTokenManagerKeyInference;
+        && string.Equals(Version, other.Version, StringComparison.Ordinal);
 
     /// <inheritdoc />
     public override bool Equals(object? obj) => obj is GeneratorConfigSnapshot other && Equals(other);
@@ -114,7 +99,6 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
             hash = (hash * 31) + AotMode.GetHashCode();
             hash = (hash * 31) + Force.GetHashCode();
             hash = (hash * 31) + (Version?.GetHashCode() ?? 0);
-            hash = (hash * 31) + SuppressTokenManagerKeyInference.GetHashCode();
             return hash;
         }
     }
@@ -133,8 +117,7 @@ internal sealed class GeneratorConfigSnapshot : IEquatable<GeneratorConfigSnapsh
             ProjectConfigHelper.ReadConfigValueAsBool(g, "build_property.MudEmitGeneratedCodeMarkers", true),
             AotModeResolver.Resolve(g),
             ProjectConfigHelper.ReadConfigValueAsBool(g, "build_property.ForceHttpGenerator", false),
-            GeneratedCodeConsts.GeneratorVersion,
-            MudHttpAnalyzerConfig.IsTokenManagerKeyInferenceSuppressed(g));
+            GeneratedCodeConsts.GeneratorVersion);
     }
 
     /// <summary>快照值相等比较器（委托给 <see cref="IEquatable{T}.Equals"/>）。</summary>

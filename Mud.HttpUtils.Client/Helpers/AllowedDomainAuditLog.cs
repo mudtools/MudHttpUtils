@@ -20,17 +20,17 @@ public readonly struct AllowedDomainsChangedEvent(
  System.Collections.Generic.IReadOnlyCollection<string> added,
  System.Collections.Generic.IReadOnlyCollection<string> removed)
 {
-/// <summary>变更前的域名集合快照。</summary>
- public System.Collections.Generic.IReadOnlyCollection<string> Previous { get; } = previous;
+    /// <summary>变更前的域名集合快照。</summary>
+    public System.Collections.Generic.IReadOnlyCollection<string> Previous { get; } = previous;
 
-/// <summary>变更后的域名集合快照。</summary>
- public System.Collections.Generic.IReadOnlyCollection<string> Next { get; } = next;
+    /// <summary>变更后的域名集合快照。</summary>
+    public System.Collections.Generic.IReadOnlyCollection<string> Next { get; } = next;
 
-/// <summary>新增的域名集合。</summary>
- public System.Collections.Generic.IReadOnlyCollection<string> Added { get; } = added;
+    /// <summary>新增的域名集合。</summary>
+    public System.Collections.Generic.IReadOnlyCollection<string> Added { get; } = added;
 
-/// <summary>移除的域名集合。</summary>
- public System.Collections.Generic.IReadOnlyCollection<string> Removed { get; } = removed;
+    /// <summary>移除的域名集合。</summary>
+    public System.Collections.Generic.IReadOnlyCollection<string> Removed { get; } = removed;
 }
 
 /// <summary>
@@ -50,31 +50,31 @@ public readonly struct AllowedDomainsChangedEvent(
 /// </remarks>
 internal static class AllowedDomainAuditLog
 {
-/// <summary>
-/// 审计输出委托。默认 null（静默）。由宿主在启动时挂接。
-/// </summary>
- internal static Action<AllowedDomainsChangedEvent>? Sink { get; set; }
+    /// <summary>
+    /// 审计输出委托。默认 null（静默）。由宿主在启动时挂接。
+    /// </summary>
+    internal static Action<AllowedDomainsChangedEvent>? Sink { get; set; }
 
-/// <summary>
-/// 记录白名单整体替换事件，计算 added/removed 差异集合并输出到 <see cref="Sink"/>。
-/// </summary>
-/// <param name="previous">变更前的域名集合。</param>
-/// <param name="next">变更后的域名集合。</param>
- internal static void Record(
- System.Collections.Generic.IReadOnlyCollection<string> previous,
- System.Collections.Generic.IReadOnlyCollection<string> next)
- {
- if (Sink is null)
- return;
+    /// <summary>
+    /// 记录白名单整体替换事件，计算 added/removed 差异集合并输出到 <see cref="Sink"/>。
+    /// </summary>
+    /// <param name="previous">变更前的域名集合。</param>
+    /// <param name="next">变更后的域名集合。</param>
+    internal static void Record(
+    System.Collections.Generic.IReadOnlyCollection<string> previous,
+    System.Collections.Generic.IReadOnlyCollection<string> next)
+    {
+        if (Sink is null)
+            return;
 
- var added = new System.Collections.Generic.HashSet<string>(next, System.StringComparer.OrdinalIgnoreCase);
- foreach (var p in previous)
- added.Remove(p);
+        var added = new System.Collections.Generic.HashSet<string>(next, System.StringComparer.OrdinalIgnoreCase);
+        foreach (var p in previous)
+            added.Remove(p);
 
- var removed = new System.Collections.Generic.HashSet<string>(previous, System.StringComparer.OrdinalIgnoreCase);
- foreach (var n in next)
- removed.Remove(n);
+        var removed = new System.Collections.Generic.HashSet<string>(previous, System.StringComparer.OrdinalIgnoreCase);
+        foreach (var n in next)
+            removed.Remove(n);
 
- Sink(new AllowedDomainsChangedEvent(previous, next, added, removed));
- }
+        Sink(new AllowedDomainsChangedEvent(previous, next, added, removed));
+    }
 }

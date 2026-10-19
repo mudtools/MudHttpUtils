@@ -24,26 +24,26 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public static class HttpHeaderValueValidator
 {
-/// <summary>
-/// 校验指定 HTTP 头值（或头名）是否合法。
-/// </summary>
-/// <param name="value">要校验的值。</param>
-/// <returns>
-/// <c>true</c> 表示合法（含 null / 空白）；<c>false</c> 表示含 CR/LF、其它 C0 控制字符或 DEL。
-/// </returns>
-/// <remarks>HTAB（<c>\t</c>）视为合法，与 RFC 7230 及 .NET 5+ 实现一致。</remarks>
- public static bool IsValid(string? value)
- {
- if (value is null || value.Length == 0)
- return true;
+    /// <summary>
+    /// 校验指定 HTTP 头值（或头名）是否合法。
+    /// </summary>
+    /// <param name="value">要校验的值。</param>
+    /// <returns>
+    /// <c>true</c> 表示合法（含 null / 空白）；<c>false</c> 表示含 CR/LF、其它 C0 控制字符或 DEL。
+    /// </returns>
+    /// <remarks>HTAB（<c>\t</c>）视为合法，与 RFC 7230 及 .NET 5+ 实现一致。</remarks>
+    public static bool IsValid(string? value)
+    {
+        if (value is null || value.Length == 0)
+            return true;
 
-// 逐字符核对，避免分配 char[]（原实现仅查 CR/LF，漏检 \0 等其它控制字符）。
- foreach (var c in value)
- {
- if ((c < 0x20 && c != '\t') || c == 0x7F)
- return false;
- }
+        // 逐字符核对，避免分配 char[]（原实现仅查 CR/LF，漏检 \0 等其它控制字符）。
+        foreach (var c in value)
+        {
+            if ((c < 0x20 && c != '\t') || c == 0x7F)
+                return false;
+        }
 
- return true;
- }
+        return true;
+    }
 }

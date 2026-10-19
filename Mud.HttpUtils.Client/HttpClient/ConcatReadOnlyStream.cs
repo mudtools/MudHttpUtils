@@ -25,95 +25,95 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class ConcatReadOnlyStream : Stream
 {
- private readonly Stream _first;
- private readonly Stream _second;
- private readonly bool _leaveOpen;
- private bool _firstExhausted;
- private bool _disposed;
+    private readonly Stream _first;
+    private readonly Stream _second;
+    private readonly bool _leaveOpen;
+    private bool _firstExhausted;
+    private bool _disposed;
 
-/// <param name="first">先读的流（通常为日志截断缓冲）。</param>
-/// <param name="second"><c>first</c> 读尽后接续读取的流（通常为原始响应流）。</param>
-/// <param name="leaveOpen">是否在释放时不级联释放底层两段流（默认 <c>false</c>）。</param>
- public ConcatReadOnlyStream(Stream first, Stream second, bool leaveOpen = false)
- {
- _first = first ?? throw new ArgumentNullException(nameof(first));
- _second = second ?? throw new ArgumentNullException(nameof(second));
- _leaveOpen = leaveOpen;
- }
+    /// <param name="first">先读的流（通常为日志截断缓冲）。</param>
+    /// <param name="second"><c>first</c> 读尽后接续读取的流（通常为原始响应流）。</param>
+    /// <param name="leaveOpen">是否在释放时不级联释放底层两段流（默认 <c>false</c>）。</param>
+    public ConcatReadOnlyStream(Stream first, Stream second, bool leaveOpen = false)
+    {
+        _first = first ?? throw new ArgumentNullException(nameof(first));
+        _second = second ?? throw new ArgumentNullException(nameof(second));
+        _leaveOpen = leaveOpen;
+    }
 
- public override bool CanRead => !_disposed;
- public override bool CanSeek => false;
- public override bool CanWrite => false;
- public override long Length => throw new NotSupportedException("组合流为顺序只读流，不支持查询长度。");
- public override long Position
- {
- get => throw new NotSupportedException("组合流为顺序只读流，不支持查询位置。");
- set => throw new NotSupportedException("组合流为顺序只读流，不支持设置位置。");
- }
+    public override bool CanRead => !_disposed;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException("组合流为顺序只读流，不支持查询长度。");
+    public override long Position
+    {
+        get => throw new NotSupportedException("组合流为顺序只读流，不支持查询位置。");
+        set => throw new NotSupportedException("组合流为顺序只读流，不支持设置位置。");
+    }
 
- public override void Flush() { }
+    public override void Flush() { }
 
- public override int Read(byte[] buffer, int offset, int count)
- {
- if (count == 0) return 0;
- if (!_firstExhausted)
- {
- var read = _first.Read(buffer, offset, count);
- if (read > 0) return read;
- _firstExhausted = true;
- }
- return _second.Read(buffer, offset, count);
- }
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        if (count == 0) return 0;
+        if (!_firstExhausted)
+        {
+            var read = _first.Read(buffer, offset, count);
+            if (read > 0) return read;
+            _firstExhausted = true;
+        }
+        return _second.Read(buffer, offset, count);
+    }
 
- public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
- {
- if (count == 0) return 0;
- if (!_firstExhausted)
- {
+    public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        if (count == 0) return 0;
+        if (!_firstExhausted)
+        {
 #if NETSTANDARD2_0
  var read = await _first.ReadAsync(buffer, offset, count).ConfigureAwait(false);
 #else
- var read = await _first.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+            var read = await _first.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
 #endif
- if (read > 0) return read;
- _firstExhausted = true;
- }
+            if (read > 0) return read;
+            _firstExhausted = true;
+        }
 #if NETSTANDARD2_0
  return await _second.ReadAsync(buffer, offset, count).ConfigureAwait(false);
 #else
- return await _second.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+        return await _second.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
 #endif
- }
+    }
 
 #if !NETSTANDARD2_0
- public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
- {
- if (buffer.Length == 0) return 0;
- if (!_firstExhausted)
- {
- var read = await _first.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
- if (read > 0) return read;
- _firstExhausted = true;
- }
- return await _second.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
- }
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (buffer.Length == 0) return 0;
+        if (!_firstExhausted)
+        {
+            var read = await _first.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read > 0) return read;
+            _firstExhausted = true;
+        }
+        return await _second.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+    }
 #endif
 
- public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException("组合流为顺序只读流，不支持寻址。");
- public override void SetLength(long value) => throw new NotSupportedException("组合流为顺序只读流，不支持设置长度。");
- public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("组合流为只读流，不支持写入。");
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException("组合流为顺序只读流，不支持寻址。");
+    public override void SetLength(long value) => throw new NotSupportedException("组合流为顺序只读流，不支持设置长度。");
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("组合流为只读流，不支持写入。");
 
- protected override void Dispose(bool disposing)
- {
- if (!_disposed)
- {
- _disposed = true;
- if (disposing && !_leaveOpen)
- {
- _first.Dispose();
- _second.Dispose();
- }
- }
- base.Dispose(disposing);
- }
+    protected override void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+            if (disposing && !_leaveOpen)
+            {
+                _first.Dispose();
+                _second.Dispose();
+            }
+        }
+        base.Dispose(disposing);
+    }
 }

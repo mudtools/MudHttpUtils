@@ -12,17 +12,17 @@ namespace Mud.HttpUtils;
 /// </summary>
 public sealed class DelegateExceptionRedactor : IExceptionRedactor
 {
- private readonly Action<ApiException> _action;
+    private readonly Action<ApiException> _action;
 
-/// <summary>
-/// 初始化 <see cref="DelegateExceptionRedactor"/> 实例。
-/// </summary>
-/// <param name="action">擦除委托。</param>
- public DelegateExceptionRedactor(Action<ApiException> action)
- {
- _action = action ?? throw new ArgumentNullException(nameof(action));
- }
+    /// <summary>
+    /// 初始化 <see cref="DelegateExceptionRedactor"/> 实例。
+    /// </summary>
+    /// <param name="action">擦除委托。</param>
+    public DelegateExceptionRedactor(Action<ApiException> action)
+    {
+        _action = action ?? throw new ArgumentNullException(nameof(action));
+    }
 
-/// <inheritdoc/>
- public void Redact(ApiException exception) => _action(exception);
+    /// <inheritdoc/>
+    public void Redact(ApiException exception) => _action(exception);
 }

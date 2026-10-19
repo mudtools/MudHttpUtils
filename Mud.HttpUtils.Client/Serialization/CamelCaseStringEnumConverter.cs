@@ -33,36 +33,36 @@ namespace Mud.HttpUtils;
 public sealed class CamelCaseStringEnumConverter<TEnum> : JsonConverter<TEnum>
  where TEnum : struct, Enum
 {
- private static readonly string[] s_enumNames = Enum.GetNames(typeof(TEnum));
+    private static readonly string[] s_enumNames = Enum.GetNames(typeof(TEnum));
 
-/// <inheritdoc/>
- public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
- {
- if (reader.TokenType != JsonTokenType.String)
- {
- throw new JsonException(
- $"期望字符串形式的枚举值 {typeof(TEnum).Name}，实际为 {reader.TokenType}。");
- }
+    /// <inheritdoc/>
+    public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException(
+            $"期望字符串形式的枚举值 {typeof(TEnum).Name}，实际为 {reader.TokenType}。");
+        }
 
- var value = reader.GetString();
- if (!string.IsNullOrEmpty(value))
- {
-// 1) 匹配原始名称；2) 匹配 camelCase 名称。均大小写不敏感。
- for (var i = 0; i < s_enumNames.Length; i++)
- {
- var name = s_enumNames[i];
- if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase) ||
- string.Equals(JsonNamingPolicy.CamelCase.ConvertName(name), value, StringComparison.OrdinalIgnoreCase))
- {
- return (TEnum)Enum.Parse(typeof(TEnum), name);
- }
- }
- }
+        var value = reader.GetString();
+        if (!string.IsNullOrEmpty(value))
+        {
+            // 1) 匹配原始名称；2) 匹配 camelCase 名称。均大小写不敏感。
+            for (var i = 0; i < s_enumNames.Length; i++)
+            {
+                var name = s_enumNames[i];
+                if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(JsonNamingPolicy.CamelCase.ConvertName(name), value, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (TEnum)Enum.Parse(typeof(TEnum), name);
+                }
+            }
+        }
 
- throw new JsonException($"无法将 JSON 值 '{value}' 转换为枚举类型 {typeof(TEnum).Name}。");
- }
+        throw new JsonException($"无法将 JSON 值 '{value}' 转换为枚举类型 {typeof(TEnum).Name}。");
+    }
 
-/// <inheritdoc/>
- public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
- => writer.WriteStringValue(JsonNamingPolicy.CamelCase.ConvertName(value.ToString()));
+    /// <inheritdoc/>
+    public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
+    => writer.WriteStringValue(JsonNamingPolicy.CamelCase.ConvertName(value.ToString()));
 }

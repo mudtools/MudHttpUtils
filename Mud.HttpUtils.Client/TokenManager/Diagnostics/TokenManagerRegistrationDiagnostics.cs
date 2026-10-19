@@ -19,13 +19,13 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class TokenManagerRegistrationDiagnostics
 {
-/// <summary>
-/// 诊断 A：<see cref="ITokenManagerRegistry"/> 已存在、后续注册被 TryAdd 静默忽略。
-/// </summary>
- public bool RegistryRegistrationSuppressed { get; set; }
+    /// <summary>
+    /// 诊断 A：<see cref="ITokenManagerRegistry"/> 已存在、后续注册被 TryAdd 静默忽略。
+    /// </summary>
+    public bool RegistryRegistrationSuppressed { get; set; }
 
-/// <summary>
-/// 诊断 B：<c>AddMudHttpTokenManager&lt;T&gt;</c> 对同一管理器类型重复注册（描述符叠加）的类型集合。
-/// </summary>
- public ISet<Type> DuplicatedManagerTypes { get; } = new HashSet<Type>();
+    /// <summary>
+    /// 诊断 B：<c>AddMudHttpTokenManager&lt;T&gt;</c> 对同一管理器类型重复注册（描述符叠加）的类型集合。
+    /// </summary>
+    public ISet<Type> DuplicatedManagerTypes { get; } = new HashSet<Type>();
 }

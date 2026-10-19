@@ -9,9 +9,9 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class EnhancedHttpClientFactoryOptions
 {
-/// <summary>
-/// 获取按客户端名称索引的工厂委托字典。
-/// 键为客户端名称，值为创建 <see cref="IEnhancedHttpClient"/> 实例的工厂委托。
-/// </summary>
- public Dictionary<string, Func<IServiceProvider, IEnhancedHttpClient>> ClientFactories { get; } = new(StringComparer.Ordinal);
+    /// <summary>
+    /// 获取按客户端名称索引的工厂委托字典。
+    /// 键为客户端名称，值为创建 <see cref="IEnhancedHttpClient"/> 实例的工厂委托。
+    /// </summary>
+    public Dictionary<string, Func<IServiceProvider, IEnhancedHttpClient>> ClientFactories { get; } = new(StringComparer.Ordinal);
 }

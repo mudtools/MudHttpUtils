@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-// 基于委托的 <see cref="ITokenManagerRegistry"/> 默认实现。
+/// 基于委托的 <see cref="ITokenManagerRegistry"/> 默认实现。
 /// </summary>
 /// <remarks>
 /// 配合 <c>AddTokenManagerRegistry</c> DI 助手注册；委托内通常查询
@@ -16,18 +16,18 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class DelegateTokenManagerRegistry : ITokenManagerRegistry
 {
- private readonly Func<string, ITokenManager?> _resolver;
+    private readonly Func<string, ITokenManager?> _resolver;
 
-/// <summary>
-/// 初始化委托注册表。
-/// </summary>
-/// <param name="resolver">解析委托（未知键返回 null，由调用方回退）。</param>
- public DelegateTokenManagerRegistry(Func<string, ITokenManager?> resolver)
- {
- _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
- }
+    /// <summary>
+    /// 初始化委托注册表。
+    /// </summary>
+    /// <param name="resolver">解析委托（未知键返回 null，由调用方回退）。</param>
+    public DelegateTokenManagerRegistry(Func<string, ITokenManager?> resolver)
+    {
+        _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+    }
 
-/// <inheritdoc />
- public ITokenManager? Resolve(string tokenManagerKey)
- => string.IsNullOrEmpty(tokenManagerKey) ? null : _resolver(tokenManagerKey);
+    /// <inheritdoc />
+    public ITokenManager? Resolve(string tokenManagerKey)
+    => string.IsNullOrEmpty(tokenManagerKey) ? null : _resolver(tokenManagerKey);
 }

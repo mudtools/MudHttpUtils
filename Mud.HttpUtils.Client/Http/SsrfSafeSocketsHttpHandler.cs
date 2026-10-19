@@ -32,77 +32,77 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class SsrfSafeSocketsHttpHandler : HttpMessageHandler
 {
- private readonly IIpAddressPolicy _policy;
- private readonly SocketsHttpHandler _inner;
- private readonly HttpMessageInvoker _invoker;
+    private readonly IIpAddressPolicy _policy;
+    private readonly SocketsHttpHandler _inner;
+    private readonly HttpMessageInvoker _invoker;
 
-/// <summary>
-/// 创建连接期 SSRF 校验处理器。
-/// </summary>
-/// <param name="policy">IP 准入策略（如 <see cref="DefaultIpAddressPolicy"/>）。</param>
- public SsrfSafeSocketsHttpHandler(IIpAddressPolicy policy)
- {
- _policy = policy ?? throw new ArgumentNullException(nameof(policy));
+    /// <summary>
+    /// 创建连接期 SSRF 校验处理器。
+    /// </summary>
+    /// <param name="policy">IP 准入策略（如 <see cref="DefaultIpAddressPolicy"/>）。</param>
+    public SsrfSafeSocketsHttpHandler(IIpAddressPolicy policy)
+    {
+        _policy = policy ?? throw new ArgumentNullException(nameof(policy));
 
- _inner = new SocketsHttpHandler
- {
- ConnectCallback = ConnectAsyncCallback,
-// 主链路关闭自动重定向 —— 重定向逐跳复验由 EnhancedHttpClient.SendCoreAsync
-// 的手动循环承接（自动重定向跨主机不做白名单/私网复验，属 SSRF 绕过面）。
- AllowAutoRedirect = false,
- };
-// .NET 5+ 的 HttpMessageHandler.SendAsync 为 protected —— 公开发送入口是 HttpMessageInvoker
- _invoker = new HttpMessageInvoker(_inner, disposeHandler: false);
- }
+        _inner = new SocketsHttpHandler
+        {
+            ConnectCallback = ConnectAsyncCallback,
+            // 主链路关闭自动重定向 —— 重定向逐跳复验由 EnhancedHttpClient.SendCoreAsync
+            // 的手动循环承接（自动重定向跨主机不做白名单/私网复验，属 SSRF 绕过面）。
+            AllowAutoRedirect = false,
+        };
+        // .NET 5+ 的 HttpMessageHandler.SendAsync 为 protected —— 公开发送入口是 HttpMessageInvoker
+        _invoker = new HttpMessageInvoker(_inner, disposeHandler: false);
+    }
 
-/// <inheritdoc/>
- protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
- => _invoker.SendAsync(request, cancellationToken);
+    /// <inheritdoc/>
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    => _invoker.SendAsync(request, cancellationToken);
 
-/// <inheritdoc/>
- protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
- => throw new NotSupportedException("SsrfSafeSocketsHttpHandler 仅支持异步发送（SendAsync），不支持同步 HttpClient.Send。");
+    /// <inheritdoc/>
+    protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
+    => throw new NotSupportedException("SsrfSafeSocketsHttpHandler 仅支持异步发送（SendAsync），不支持同步 HttpClient.Send。");
 
-/// <inheritdoc/>
- protected override void Dispose(bool disposing)
- {
- if (disposing)
- _inner.Dispose();
- base.Dispose(disposing);
- }
+    /// <inheritdoc/>
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _inner.Dispose();
+        base.Dispose(disposing);
+    }
 
- private async ValueTask<Stream> ConnectAsyncCallback(
- SocketsHttpConnectionContext context, CancellationToken cancellationToken)
- {
- var endPoint = context.DnsEndPoint;
+    private async ValueTask<Stream> ConnectAsyncCallback(
+    SocketsHttpConnectionContext context, CancellationToken cancellationToken)
+    {
+        var endPoint = context.DnsEndPoint;
 
-// 注意：DnsEndPoint 无 Address 属性（仅 Host/Port/AddressFamily）——
-// Host 为 IP 字面量时直接使用；否则视为未解析的主机名，在回调内自行 DNS 解析（见类备注）。
- var host = endPoint.Host;
- var candidates = IPAddress.TryParse(host, out var literal)
- ? [literal]
- : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+        // 注意：DnsEndPoint 无 Address 属性（仅 Host/Port/AddressFamily）——
+        // Host 为 IP 字面量时直接使用；否则视为未解析的主机名，在回调内自行 DNS 解析（见类备注）。
+        var host = endPoint.Host;
+        var candidates = IPAddress.TryParse(host, out var literal)
+        ? [literal]
+        : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
 
- var target = candidates.FirstOrDefault(_policy.IsAllowed);
- if (target is null)
- {
-// P3（M6 阶段五）：异常消息只回显主机名，不回显解析出的候选 IP 列表 ——
-// 该消息会进入异常 / 日志链路，披露内网解析结果等于泄漏内网拓扑（DNS 反查辅助）。
- throw new InvalidOperationException(
- $"不允许连接到目标地址: {host}（DNS 解析结果均被 IP 准入策略拒绝）");
- }
+        var target = candidates.FirstOrDefault(_policy.IsAllowed);
+        if (target is null)
+        {
+            // P3（M6 阶段五）：异常消息只回显主机名，不回显解析出的候选 IP 列表 ——
+            // 该消息会进入异常 / 日志链路，披露内网解析结果等于泄漏内网拓扑（DNS 反查辅助）。
+            throw new InvalidOperationException(
+            $"不允许连接到目标地址: {host}（DNS 解析结果均被 IP 准入策略拒绝）");
+        }
 
- var socket = new Socket(target.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
- try
- {
- await socket.ConnectAsync(target, endPoint.Port, cancellationToken).ConfigureAwait(false);
- return new NetworkStream(socket, ownsSocket: true);
- }
- catch
- {
- socket.Dispose();
- throw;
- }
- }
+        var socket = new Socket(target.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(target, endPoint.Port, cancellationToken).ConfigureAwait(false);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
 }
 #endif

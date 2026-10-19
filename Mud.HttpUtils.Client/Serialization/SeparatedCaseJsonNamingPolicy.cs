@@ -18,28 +18,28 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class SeparatedCaseJsonNamingPolicy : JsonNamingPolicy
 {
- private readonly char _separator;
+    private readonly char _separator;
 
- private SeparatedCaseJsonNamingPolicy(char separator) => _separator = separator;
+    private SeparatedCaseJsonNamingPolicy(char separator) => _separator = separator;
 
-/// <summary>snake_case 命名策略（下划线分隔）。</summary>
- public static SeparatedCaseJsonNamingPolicy Snake { get; } = new('_');
+    /// <summary>snake_case 命名策略（下划线分隔）。</summary>
+    public static SeparatedCaseJsonNamingPolicy Snake { get; } = new('_');
 
-/// <summary>kebab-case 命名策略（短横线分隔）。</summary>
- public static SeparatedCaseJsonNamingPolicy Kebab { get; } = new('-');
+    /// <summary>kebab-case 命名策略（短横线分隔）。</summary>
+    public static SeparatedCaseJsonNamingPolicy Kebab { get; } = new('-');
 
-/// <inheritdoc/>
- public override string ConvertName(string name)
- {
- if (string.IsNullOrEmpty(name)) return name;
+    /// <inheritdoc/>
+    public override string ConvertName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
 
- var sb = new System.Text.StringBuilder(name.Length * 2);
- for (var i = 0; i < name.Length; i++)
- {
- if (i > 0 && char.IsUpper(name[i]))
- sb.Append(_separator);
- sb.Append(char.ToLowerInvariant(name[i]));
- }
- return sb.ToString();
- }
+        var sb = new System.Text.StringBuilder(name.Length * 2);
+        for (var i = 0; i < name.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(name[i]))
+                sb.Append(_separator);
+            sb.Append(char.ToLowerInvariant(name[i]));
+        }
+        return sb.ToString();
+    }
 }

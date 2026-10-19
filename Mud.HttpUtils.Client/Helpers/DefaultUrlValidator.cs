@@ -23,40 +23,40 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class DefaultUrlValidator : IUrlValidator
 {
-/// <inheritdoc/>
- public void ConfigureAllowedDomains(IEnumerable<string> domains)
- => UrlValidator.ConfigureAllowedDomains(domains);
+    /// <inheritdoc/>
+    public void ConfigureAllowedDomains(IEnumerable<string> domains)
+    => UrlValidator.ConfigureAllowedDomains(domains);
 
-/// <inheritdoc/>
- public void SetConfigurationDomains(IEnumerable<string> domains)
- => UrlValidator.SetConfigurationDomains(domains);
+    /// <inheritdoc/>
+    public void SetConfigurationDomains(IEnumerable<string> domains)
+    => UrlValidator.SetConfigurationDomains(domains);
 
-/// <inheritdoc/>
- public IReadOnlyCollection<string> GetAllowedDomains()
- => UrlValidator.GetAllowedDomains();
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> GetAllowedDomains()
+    => UrlValidator.GetAllowedDomains();
 
-/// <inheritdoc/>
- public void AddAllowedDomain(string domain)
- => UrlValidator.AddAllowedDomain(domain);
+    /// <inheritdoc/>
+    public void AddAllowedDomain(string domain)
+    => UrlValidator.AddAllowedDomain(domain);
 
-/// <inheritdoc/>
- public void RemoveAllowedDomain(string domain)
- => UrlValidator.RemoveAllowedDomain(domain);
+    /// <inheritdoc/>
+    public void RemoveAllowedDomain(string domain)
+    => UrlValidator.RemoveAllowedDomain(domain);
 
-/// <inheritdoc/>
- public void ValidateUrl(string? url, bool allowCustomBaseUrls = false)
- => UrlValidator.ValidateUrl(url, allowCustomBaseUrls);
+    /// <inheritdoc/>
+    public void ValidateUrl(string? url, bool allowCustomBaseUrls = false)
+    => UrlValidator.ValidateUrl(url, allowCustomBaseUrls);
 
-/// <inheritdoc/>
- public System.Threading.Tasks.ValueTask ValidateUrlAsync(
- string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default)
- => UrlValidator.ValidateUrlAsync(url, allowCustomBaseUrls, cancellationToken);
+    /// <inheritdoc/>
+    public System.Threading.Tasks.ValueTask ValidateUrlAsync(
+    string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default)
+    => UrlValidator.ValidateUrlAsync(url, allowCustomBaseUrls, cancellationToken);
 
-/// <inheritdoc/>
- public void ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false)
- => UrlValidator.ValidateBaseUrl(baseUrl, allowCustomBaseUrls);
+    /// <inheritdoc/>
+    public void ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false)
+    => UrlValidator.ValidateBaseUrl(baseUrl, allowCustomBaseUrls);
 
-/// <inheritdoc/>
- public void ClearDnsCache()
- => UrlValidator.ClearDnsCache();
+    /// <inheritdoc/>
+    public void ClearDnsCache()
+    => UrlValidator.ClearDnsCache();
 }

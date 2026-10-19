@@ -22,24 +22,24 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public class TokenRefreshBackgroundOptionsValidator : IValidateOptions<TokenRefreshBackgroundOptions>
 {
-/// <inheritdoc />
- public ValidateOptionsResult Validate(string? name, TokenRefreshBackgroundOptions? options)
- {
- if (options == null)
- return ValidateOptionsResult.Success;
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, TokenRefreshBackgroundOptions? options)
+    {
+        if (options == null)
+            return ValidateOptionsResult.Success;
 
- var failures = new List<string>();
+        var failures = new List<string>();
 
-// 交叉校验：重试延迟不应超过刷新间隔
- if (options.Enabled && options.RetryDelaySeconds >= options.RefreshIntervalSeconds)
- {
- failures.Add(
- $"TokenRefreshBackgroundOptions: RetryDelaySeconds（{options.RetryDelaySeconds} 秒）大于等于 RefreshIntervalSeconds（{options.RefreshIntervalSeconds} 秒）。" +
- "重试延迟会跨越下一个刷新周期，可能导致刷新逻辑混乱。建议将 RetryDelaySeconds 设置为小于 RefreshIntervalSeconds 的值。");
- }
+        // 交叉校验：重试延迟不应超过刷新间隔
+        if (options.Enabled && options.RetryDelaySeconds >= options.RefreshIntervalSeconds)
+        {
+            failures.Add(
+            $"TokenRefreshBackgroundOptions: RetryDelaySeconds（{options.RetryDelaySeconds} 秒）大于等于 RefreshIntervalSeconds（{options.RefreshIntervalSeconds} 秒）。" +
+            "重试延迟会跨越下一个刷新周期，可能导致刷新逻辑混乱。建议将 RetryDelaySeconds 设置为小于 RefreshIntervalSeconds 的值。");
+        }
 
- return failures.Count > 0
- ? ValidateOptionsResult.Fail(failures)
- : ValidateOptionsResult.Success;
- }
+        return failures.Count > 0
+        ? ValidateOptionsResult.Fail(failures)
+        : ValidateOptionsResult.Success;
+    }
 }

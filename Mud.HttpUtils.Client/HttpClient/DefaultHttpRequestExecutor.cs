@@ -69,572 +69,572 @@ public class DefaultHttpRequestExecutor(
  Dictionary<string, object?>? httpRequestMessageOptions = null) : IHttpRequestExecutor
 {
 #pragma warning restore CS1573 // net6.0+ 专属参数 httpVersion / httpVersionPolicy 的说明见 <remarks>
- private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
- private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
- private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
- private readonly IAppContextHolder? _appContextHolder = appContextHolder;
- private readonly IAppManager<IMudAppContext>? _appManager = appManager;
- private readonly ILogger _logger = logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance;
- private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-// Phase 2 字段
- private readonly IExceptionRedactor? _exceptionRedactor = exceptionRedactor;
-// N-1：统一默认值（10240），与 EnhancedHttpClient 路径一致；<= 0 表示不限制
- private readonly int _maxExceptionContentLength =
- maxExceptionContentLength ?? HttpExecutionConstants.DefaultMaxExceptionContentLength;
- private readonly bool _captureRequestContent = captureRequestContent;
-// 成功响应体守卫（0 = 不限制）
- private readonly long _maxSuccessResponseBytes = maxSuccessResponseBytes;
-// M2-#18：日志脱敏掩码器（与 EnhancedHttpClient 同一回退链 MessageSanitizer）
- private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
+    private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
+    private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
+    private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
+    private readonly IAppContextHolder? _appContextHolder = appContextHolder;
+    private readonly IAppManager<IMudAppContext>? _appManager = appManager;
+    private readonly ILogger _logger = logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance;
+    private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+    // Phase 2 字段
+    private readonly IExceptionRedactor? _exceptionRedactor = exceptionRedactor;
+    // N-1：统一默认值（10240），与 EnhancedHttpClient 路径一致；<= 0 表示不限制
+    private readonly int _maxExceptionContentLength =
+    maxExceptionContentLength ?? HttpExecutionConstants.DefaultMaxExceptionContentLength;
+    private readonly bool _captureRequestContent = captureRequestContent;
+    // 成功响应体守卫（0 = 不限制）
+    private readonly long _maxSuccessResponseBytes = maxSuccessResponseBytes;
+    // M2-#18：日志脱敏掩码器（与 EnhancedHttpClient 同一回退链 MessageSanitizer）
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
 #if NET6_0_OR_GREATER
- private readonly Version? _httpVersion = httpVersion;
- private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy = httpVersionPolicy;
+    private readonly Version? _httpVersion = httpVersion;
+    private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy = httpVersionPolicy;
 #endif
- private readonly Dictionary<string, object?>? _httpRequestMessageOptions = httpRequestMessageOptions;
+    private readonly Dictionary<string, object?>? _httpRequestMessageOptions = httpRequestMessageOptions;
 
-/// <summary>
-/// 解析当前请求应使用的弹性策略解析器。
-/// 优先使用 per-app 解析器（如果可用且当前有应用上下文），回退到全局解析器。
-/// </summary>
- private IResiliencePolicyResolver? ResolveEffectiveResilienceResolver()
- {
- if (_appResilienceResolver != null)
- {
-// 1) 显式环境上下文优先（UseApp / BeginScope 建立）
- var currentAppKey = _appContextHolder?.Current?.AppKey;
+    /// <summary>
+    /// 解析当前请求应使用的弹性策略解析器。
+    /// 优先使用 per-app 解析器（如果可用且当前有应用上下文），回退到全局解析器。
+    /// </summary>
+    private IResiliencePolicyResolver? ResolveEffectiveResilienceResolver()
+    {
+        if (_appResilienceResolver != null)
+        {
+            // 1) 显式环境上下文优先（UseApp / BeginScope 建立）
+            var currentAppKey = _appContextHolder?.Current?.AppKey;
 
-// 2) 回退：由注册表给出默认应用（不再依赖构造函数写入环境上下文）
- if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
- {
- try
- {
- currentAppKey = _appManager.GetDefaultApp().AppKey;
- }
- catch
- {
-// 默认应用未设置时不阻断请求，回退到全局策略
- }
- }
+            // 2) 回退：由注册表给出默认应用（不再依赖构造函数写入环境上下文）
+            if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
+            {
+                try
+                {
+                    currentAppKey = _appManager.GetDefaultApp().AppKey;
+                }
+                catch
+                {
+                    // 默认应用未设置时不阻断请求，回退到全局策略
+                }
+            }
 
- if (!string.IsNullOrEmpty(currentAppKey))
- {
- var perAppResolver = _appResilienceResolver.ResolveResolver(currentAppKey!);
- if (perAppResolver != null)
- return perAppResolver;
- }
- }
+            if (!string.IsNullOrEmpty(currentAppKey))
+            {
+                var perAppResolver = _appResilienceResolver.ResolveResolver(currentAppKey!);
+                if (perAppResolver != null)
+                    return perAppResolver;
+            }
+        }
 
- return _resilienceResolver;
- }
+        return _resilienceResolver;
+    }
 
-/// <summary>
-/// 解析当前缓存键的应用维度前缀（层B）。
-/// </summary>
-/// <remarks>
-/// <para>
-/// <see cref="IHttpResponseCache"/> 为进程级单例，缓存键必须显式携带应用维度，否则
-/// AsyncLocal 切换应用后同名同参请求会跨应用串缓存。取键口径与
-/// <see cref="ResolveEffectiveResilienceResolver"/> 的 per-app 策略解析一致：
-/// 显式环境上下文（UseApp / BeginScope）优先，回退默认应用；默认应用未设置时回退
-/// <c>"default"</c>（fail-open 仅影响键维度隔离，不产生脏读）。
-/// </para>
-/// </remarks>
- private string ResolveCurrentCacheScopeKey()
- {
- var currentAppKey = _appContextHolder?.Current?.AppKey;
- if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
- {
- try
- {
- currentAppKey = _appManager.GetDefaultApp().AppKey;
- }
- catch
- {
-// 默认应用未设置时不阻断请求，回退 "default"（与弹性路径容错口径一致）
- }
- }
+    /// <summary>
+    /// 解析当前缓存键的应用维度前缀（层B）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="IHttpResponseCache"/> 为进程级单例，缓存键必须显式携带应用维度，否则
+    /// AsyncLocal 切换应用后同名同参请求会跨应用串缓存。取键口径与
+    /// <see cref="ResolveEffectiveResilienceResolver"/> 的 per-app 策略解析一致：
+    /// 显式环境上下文（UseApp / BeginScope）优先，回退默认应用；默认应用未设置时回退
+    /// <c>"default"</c>（fail-open 仅影响键维度隔离，不产生脏读）。
+    /// </para>
+    /// </remarks>
+    private string ResolveCurrentCacheScopeKey()
+    {
+        var currentAppKey = _appContextHolder?.Current?.AppKey;
+        if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
+        {
+            try
+            {
+                currentAppKey = _appManager.GetDefaultApp().AppKey;
+            }
+            catch
+            {
+                // 默认应用未设置时不阻断请求，回退 "default"（与弹性路径容错口径一致）
+            }
+        }
 
- return string.IsNullOrEmpty(currentAppKey) ? "default" : currentAppKey!;
- }
+        return string.IsNullOrEmpty(currentAppKey) ? "default" : currentAppKey!;
+    }
 
-/// <inheritdoc/>
-// XML 响应路径在 Native AOT 下不可达：AOT007（编译期）拒绝 XML 方法，ConstructorGenerator 在
-// AOT 上下文中将 XmlSerializer 字段改为抛 PlatformNotSupportedException 的属性。故此处压制 IL2026 是安全的。
- [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
- Justification = "XML 响应反序列化在 AOT 下不可达（AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫）。")]
- [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
- Justification = "同上：XmlSerializer 反序列化在 Native AOT 下不可达。")]
- public async Task<TResult?> SendAndDeserializeAsync<TResult>(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ResponseDescriptor descriptor,
- object? jsonSerializerOptions,
- CancellationToken cancellationToken = default)
- {
- var encryptableClient = httpClient as IEncryptableHttpClient;
+    /// <inheritdoc/>
+    // XML 响应路径在 Native AOT 下不可达：AOT007（编译期）拒绝 XML 方法，ConstructorGenerator 在
+    // AOT 上下文中将 XmlSerializer 字段改为抛 PlatformNotSupportedException 的属性。故此处压制 IL2026 是安全的。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+    Justification = "XML 响应反序列化在 AOT 下不可达（AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+    Justification = "同上：XmlSerializer 反序列化在 Native AOT 下不可达。")]
+    public async Task<TResult?> SendAndDeserializeAsync<TResult>(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ResponseDescriptor descriptor,
+    object? jsonSerializerOptions,
+    CancellationToken cancellationToken = default)
+    {
+        var encryptableClient = httpClient as IEncryptableHttpClient;
 
-// Phase 2 (T2.3)：发送前捕获请求体（启用时）
- string? capturedRequestContent = _captureRequestContent
- ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
- : null;
+        // Phase 2 (T2.3)：发送前捕获请求体（启用时）
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
- ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
-// 1. 发送请求
- using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        // 1. 发送请求
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
-// 2. 错误处理（非 AllowAnyStatusCode 模式）
- if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
- {
- var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
-// M2-#18：日志路径统一脱敏（URL 走 SensitiveUrlRedactor，内容走 masker 回退 MessageSanitizer）
- _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
- (int)response.StatusCode,
- Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
- MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
- throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
- }
+        // 2. 错误处理（非 AllowAnyStatusCode 模式）
+        if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
+        {
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏（URL 走 SensitiveUrlRedactor，内容走 masker 回退 MessageSanitizer）
+            _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+            (int)response.StatusCode,
+            Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
+            MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
+            throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
+        }
 
-// 3. void 返回类型
- if (descriptor.IsVoidReturn)
- return default;
+        // 3. void 返回类型
+        if (descriptor.IsVoidReturn)
+            return default;
 
-// 4. 读取响应内容（成功响应体守卫）
- var rawContent = await ReadContentAsync(
- response, Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), cancellationToken)
- .ConfigureAwait(false);
+        // 4. 读取响应内容（成功响应体守卫）
+        var rawContent = await ReadContentAsync(
+        response, Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), cancellationToken)
+        .ConfigureAwait(false);
 
-// 5. string 返回类型特殊处理（不经过 JSON 反序列化）
- if (typeof(TResult) == typeof(string))
- {
- if (descriptor.EnableDecrypt && encryptableClient != null)
- rawContent = encryptableClient.DecryptContent(rawContent);
- return (TResult)(object)rawContent;
- }
+        // 5. string 返回类型特殊处理（不经过 JSON 反序列化）
+        if (typeof(TResult) == typeof(string))
+        {
+            if (descriptor.EnableDecrypt && encryptableClient != null)
+                rawContent = encryptableClient.DecryptContent(rawContent);
+            return (TResult)(object)rawContent;
+        }
 
-// 6. 解密（在反序列化之前解密原始内容）
- if (descriptor.EnableDecrypt && encryptableClient != null)
- rawContent = encryptableClient.DecryptContent(rawContent);
+        // 6. 解密（在反序列化之前解密原始内容）
+        if (descriptor.EnableDecrypt && encryptableClient != null)
+            rawContent = encryptableClient.DecryptContent(rawContent);
 
-// 7. 反序列化
- var isXml = IsXmlContentType(descriptor.ResponseContentType);
- TResult? result;
+        // 7. 反序列化
+        var isXml = IsXmlContentType(descriptor.ResponseContentType);
+        TResult? result;
 
- if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
- {
-// chunked 空响应体（读为空串）返回 default，与 JSON 路径语义一致
- if (string.IsNullOrEmpty(rawContent))
- return default;
- try
- {
- using var reader = new StringReader(rawContent);
- result = xmlSerializer.Deserialize(reader) is TResult typed ? typed : default;
- }
- catch (Exception ex) when (ex is InvalidOperationException || ex is System.Xml.XmlException)
- {
- throw CreateApiException(response.StatusCode,
- "Failed to deserialize XML response: " + ex.Message + ". Raw content: "
- + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
- request.RequestUri?.ToString(), capturedRequestContent);
- }
- }
- else
- {
- try
- {
-// M3-#23：object? 直接透传给序列化器（由 SystemTextJsonContentSerializer 自行分派
-// JsonSerializerOptions / JsonTypeInfo<T>），删除 as 窄化 —— 否则 JsonTypeInfo 快路径不可达
- result = _contentSerializer.Deserialize<TResult>(rawContent, jsonSerializerOptions);
- }
- catch (JsonException ex)
- {
- throw CreateApiException(response.StatusCode,
- "Failed to deserialize JSON response: " + ex.Message + ". Raw content: "
- + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
- request.RequestUri?.ToString(), capturedRequestContent);
- }
- }
+        if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
+        {
+            // chunked 空响应体（读为空串）返回 default，与 JSON 路径语义一致
+            if (string.IsNullOrEmpty(rawContent))
+                return default;
+            try
+            {
+                using var reader = new StringReader(rawContent);
+                result = xmlSerializer.Deserialize(reader) is TResult typed ? typed : default;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException || ex is System.Xml.XmlException)
+            {
+                throw CreateApiException(response.StatusCode,
+                "Failed to deserialize XML response: " + ex.Message + ". Raw content: "
+                + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
+                request.RequestUri?.ToString(), capturedRequestContent);
+            }
+        }
+        else
+        {
+            try
+            {
+                // M3-#23：object? 直接透传给序列化器（由 SystemTextJsonContentSerializer 自行分派
+                // JsonSerializerOptions / JsonTypeInfo<T>），删除 as 窄化 —— 否则 JsonTypeInfo 快路径不可达
+                result = _contentSerializer.Deserialize<TResult>(rawContent, jsonSerializerOptions);
+            }
+            catch (JsonException ex)
+            {
+                throw CreateApiException(response.StatusCode,
+                "Failed to deserialize JSON response: " + ex.Message + ". Raw content: "
+                + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
+                request.RequestUri?.ToString(), capturedRequestContent);
+            }
+        }
 
- return result;
- }
+        return result;
+    }
 
-/// <inheritdoc/>
-// 同 SendAndDeserializeAsync：XML 路径在 AOT 下不可达，压制 IL2026 是安全的。
- [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
- Justification = "XML 响应反序列化在 AOT 下不可达（AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫）。")]
- [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
- Justification = "同上：XmlSerializer 反序列化在 Native AOT 下不可达。")]
- public async Task<Response<TInner>> SendAsResponseAsync<TInner>(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ResponseDescriptor descriptor,
- object? jsonSerializerOptions,
- CancellationToken cancellationToken = default)
- {
- var encryptableClient = httpClient as IEncryptableHttpClient;
+    /// <inheritdoc/>
+    // 同 SendAndDeserializeAsync：XML 路径在 AOT 下不可达，压制 IL2026 是安全的。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+    Justification = "XML 响应反序列化在 AOT 下不可达（AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+    Justification = "同上：XmlSerializer 反序列化在 Native AOT 下不可达。")]
+    public async Task<Response<TInner>> SendAsResponseAsync<TInner>(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ResponseDescriptor descriptor,
+    object? jsonSerializerOptions,
+    CancellationToken cancellationToken = default)
+    {
+        var encryptableClient = httpClient as IEncryptableHttpClient;
 
- using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
- var statusCode = response.StatusCode;
- var responseHeaders = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        var statusCode = response.StatusCode;
+        var responseHeaders = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());
 
- var isSuccess = (int)statusCode >= 200 && (int)statusCode <= 299;
+        var isSuccess = (int)statusCode >= 200 && (int)statusCode <= 299;
 
-// 读取路径按状态码分流 —— 2xx 维持成功体守卫语义（SuccessResponseGuardStream），
-// 非 2xx 改走 ReadErrorContentLimitedAsync（受 MaxExceptionContentLength 三态约束）。
-// 原实现无条件 ReadContentAsync：在 maxSuccessResponseBytes=0（不限长）时错误体可被无限读取，
-// 且与 SendAndDeserializeAsync / SendAsync 的错误体限量口径不一致。
- var rawContent = isSuccess
- ? await ReadContentAsync(
- response, Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), cancellationToken)
- .ConfigureAwait(false)
- : await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+        // 读取路径按状态码分流 —— 2xx 维持成功体守卫语义（SuccessResponseGuardStream），
+        // 非 2xx 改走 ReadErrorContentLimitedAsync（受 MaxExceptionContentLength 三态约束）。
+        // 原实现无条件 ReadContentAsync：在 maxSuccessResponseBytes=0（不限长）时错误体可被无限读取，
+        // 且与 SendAndDeserializeAsync / SendAsync 的错误体限量口径不一致。
+        var rawContent = isSuccess
+        ? await ReadContentAsync(
+        response, Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), cancellationToken)
+        .ConfigureAwait(false)
+        : await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
 
- if (isSuccess)
- {
-// void 内部类型（Response<void> 实际不可声明，此分支为防御性代码）
- if (typeof(TInner) == typeof(void))
- return new Response<TInner>(statusCode, default, rawContent, responseHeaders);
+        if (isSuccess)
+        {
+            // void 内部类型（Response<void> 实际不可声明，此分支为防御性代码）
+            if (typeof(TInner) == typeof(void))
+                return new Response<TInner>(statusCode, default, rawContent, responseHeaders);
 
-// string 类型特殊处理
- if (typeof(TInner) == typeof(string))
- {
- var strContent = rawContent;
- if (descriptor.EnableDecrypt && encryptableClient != null)
- strContent = encryptableClient.DecryptContent(strContent);
- return new Response<TInner>(statusCode, (TInner)(object)strContent, rawContent, responseHeaders);
- }
+            // string 类型特殊处理
+            if (typeof(TInner) == typeof(string))
+            {
+                var strContent = rawContent;
+                if (descriptor.EnableDecrypt && encryptableClient != null)
+                    strContent = encryptableClient.DecryptContent(strContent);
+                return new Response<TInner>(statusCode, (TInner)(object)strContent, rawContent, responseHeaders);
+            }
 
-// 解密（在反序列化之前解密原始内容）
- if (descriptor.EnableDecrypt && encryptableClient != null)
- rawContent = encryptableClient.DecryptContent(rawContent);
+            // 解密（在反序列化之前解密原始内容）
+            if (descriptor.EnableDecrypt && encryptableClient != null)
+                rawContent = encryptableClient.DecryptContent(rawContent);
 
-// 反序列化
- TInner? content;
- try
- {
- var isXml = IsXmlContentType(descriptor.ResponseContentType);
- if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
- {
-// chunked 空响应体（读为空串）返回 default，与 JSON 路径语义一致
- if (string.IsNullOrEmpty(rawContent))
- {
- content = default;
- }
- else
- {
- using var reader = new StringReader(rawContent);
- content = xmlSerializer.Deserialize(reader) is TInner typed ? typed : default;
- }
- }
- else
- {
-// M3-#23：object? 直接透传（同上，保留 JsonTypeInfo<T> 快路径可达性）
- content = _contentSerializer.Deserialize<TInner>(rawContent, jsonSerializerOptions);
- }
- }
- catch (Exception ex) when (ex is JsonException
- or InvalidOperationException or System.Xml.XmlException)
- {
- var deserializerName = IsXmlContentType(descriptor.ResponseContentType)
- ? "XML" : "JSON";
- return new Response<TInner>(statusCode,
- $"Failed to deserialize {deserializerName} response: " + ex.Message + ". Raw content: "
- + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
- responseHeaders);
- }
+            // 反序列化
+            TInner? content;
+            try
+            {
+                var isXml = IsXmlContentType(descriptor.ResponseContentType);
+                if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
+                {
+                    // chunked 空响应体（读为空串）返回 default，与 JSON 路径语义一致
+                    if (string.IsNullOrEmpty(rawContent))
+                    {
+                        content = default;
+                    }
+                    else
+                    {
+                        using var reader = new StringReader(rawContent);
+                        content = xmlSerializer.Deserialize(reader) is TInner typed ? typed : default;
+                    }
+                }
+                else
+                {
+                    // M3-#23：object? 直接透传（同上，保留 JsonTypeInfo<T> 快路径可达性）
+                    content = _contentSerializer.Deserialize<TInner>(rawContent, jsonSerializerOptions);
+                }
+            }
+            catch (Exception ex) when (ex is JsonException
+            or InvalidOperationException or System.Xml.XmlException)
+            {
+                var deserializerName = IsXmlContentType(descriptor.ResponseContentType)
+                ? "XML" : "JSON";
+                return new Response<TInner>(statusCode,
+                $"Failed to deserialize {deserializerName} response: " + ex.Message + ". Raw content: "
+                + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
+                responseHeaders);
+            }
 
- return new Response<TInner>(statusCode, content, rawContent, responseHeaders);
- }
- else
- {
- return new Response<TInner>(statusCode, rawContent, responseHeaders);
- }
- }
+            return new Response<TInner>(statusCode, content, rawContent, responseHeaders);
+        }
+        else
+        {
+            return new Response<TInner>(statusCode, rawContent, responseHeaders);
+        }
+    }
 
-/// <inheritdoc/>
- public async Task SendAsync(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ResponseDescriptor descriptor,
- CancellationToken cancellationToken = default)
- {
-// Phase 2 (T2.3)：发送前捕获请求体（启用时）
- string? capturedRequestContent = _captureRequestContent
- ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
- : null;
+    /// <inheritdoc/>
+    public async Task SendAsync(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ResponseDescriptor descriptor,
+    CancellationToken cancellationToken = default)
+    {
+        // Phase 2 (T2.3)：发送前捕获请求体（启用时）
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
- ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
- using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
- if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
- {
- var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
-// M2-#18：日志路径统一脱敏
- _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
- (int)response.StatusCode,
- Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
- MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
- throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
- }
- }
+        if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
+        {
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏
+            _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+            (int)response.StatusCode,
+            Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
+            MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
+            throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
+        }
+    }
 
-/// <inheritdoc/>
-/// <remarks>
-/// 与 <see cref="SendAndDeserializeAsync{TResult}"/> 保持一致的错误处理语义：
-/// 使用 <see cref="IBaseHttpClient.SendRawAsync"/> 发送请求（绕过底层 EnsureSuccessStatusCode），
-/// 然后基于 <paramref name="descriptor"/> 决定是否对非 2xx 状态码抛出 <see cref="ApiException"/>。
-/// 当 <paramref name="descriptor"/> 为 null 时，默认检查状态码（等价于 AllowAnyStatusCode=false）。
-/// </remarks>
- public async Task<byte[]?> DownloadAsync(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ResponseDescriptor? descriptor = null,
- CancellationToken cancellationToken = default)
- {
-// Phase 2 (T2.3)：发送前捕获请求体（启用时）
- string? capturedRequestContent = _captureRequestContent
- ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
- : null;
+    /// <inheritdoc/>
+    /// <remarks>
+    /// 与 <see cref="SendAndDeserializeAsync{TResult}"/> 保持一致的错误处理语义：
+    /// 使用 <see cref="IBaseHttpClient.SendRawAsync"/> 发送请求（绕过底层 EnsureSuccessStatusCode），
+    /// 然后基于 <paramref name="descriptor"/> 决定是否对非 2xx 状态码抛出 <see cref="ApiException"/>。
+    /// 当 <paramref name="descriptor"/> 为 null 时，默认检查状态码（等价于 AllowAnyStatusCode=false）。
+    /// </remarks>
+    public async Task<byte[]?> DownloadAsync(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ResponseDescriptor? descriptor = null,
+    CancellationToken cancellationToken = default)
+    {
+        // Phase 2 (T2.3)：发送前捕获请求体（启用时）
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
- ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
- using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
-// 错误处理：descriptor 为 null 时默认检查状态码，与普通方法语义一致
- var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
- if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
- {
- var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
-// M2-#18：日志路径统一脱敏
- _logger.LogError("HTTP 下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
- (int)response.StatusCode,
- Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
- MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
- throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
- }
+        // 错误处理：descriptor 为 null 时默认检查状态码，与普通方法语义一致
+        var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
+        if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
+        {
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏
+            _logger.LogError("HTTP 下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+            (int)response.StatusCode,
+            Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
+            MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
+            throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
+        }
 
-// 下载阶段可观测性：测量响应体读取耗时与字节数（HTTP 请求层已由 SendRawAsync 采集）
- var clientName = MudHttpObservability.GetClientName(request);
- MudHttpObservability.RecordDownloadStarted(request, clientName);
- var sw = ValueStopwatch.StartNew();
+        // 下载阶段可观测性：测量响应体读取耗时与字节数（HTTP 请求层已由 SendRawAsync 采集）
+        var clientName = MudHttpObservability.GetClientName(request);
+        MudHttpObservability.RecordDownloadStarted(request, clientName);
+        var sw = ValueStopwatch.StartNew();
 
- try
- {
-// 成功响应体守卫 —— Content-Length 预判 + 读取阶段守卫流（与 ReadContentAsync /
-// EnhancedHttpClient.DownloadFileAsync 语义一致），超限抛 ApiRequestException 防 OOM
- if (_maxSuccessResponseBytes > 0)
- {
- var contentLength = response.Content.Headers.ContentLength;
- if (contentLength > _maxSuccessResponseBytes)
- {
- throw new ApiRequestException(
- $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
- requestUri: Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()));
- }
+        try
+        {
+            // 成功响应体守卫 —— Content-Length 预判 + 读取阶段守卫流（与 ReadContentAsync /
+            // EnhancedHttpClient.DownloadFileAsync 语义一致），超限抛 ApiRequestException 防 OOM
+            if (_maxSuccessResponseBytes > 0)
+            {
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength > _maxSuccessResponseBytes)
+                {
+                    throw new ApiRequestException(
+                    $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
+                    requestUri: Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()));
+                }
 
 #if NET6_0_OR_GREATER
- var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #else
  var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
- using var guardedContent = new StreamContent(
- new Helpers.SuccessResponseGuardStream(contentStream, _maxSuccessResponseBytes,
- Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())));
- if (response.Content.Headers.ContentType != null)
- guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
+                using var guardedContent = new StreamContent(
+                new Helpers.SuccessResponseGuardStream(contentStream, _maxSuccessResponseBytes,
+                Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())));
+                if (response.Content.Headers.ContentType != null)
+                    guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
 #if NET6_0_OR_GREATER
- var bytes = await guardedContent.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+                var bytes = await guardedContent.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 #else
  var bytes = await guardedContent.ReadAsByteArrayAsync().ConfigureAwait(false);
 #endif
- var elapsed = sw.GetElapsedTime().TotalMilliseconds;
- MudHttpObservability.RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsed);
- return bytes;
- }
+                var elapsed = sw.GetElapsedTime().TotalMilliseconds;
+                MudHttpObservability.RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsed);
+                return bytes;
+            }
 
 #if NET6_0_OR_GREATER
- var unguardedBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            var unguardedBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 #else
  var unguardedBytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 #endif
- var elapsedMs2 = sw.GetElapsedTime().TotalMilliseconds;
- MudHttpObservability.RecordDownloadCompleted(request, clientName, unguardedBytes?.Length ?? 0, elapsedMs2);
- return unguardedBytes;
- }
- catch (Exception ex)
- {
- var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
- MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex, cancellationToken);
- throw;
- }
- }
+            var elapsedMs2 = sw.GetElapsedTime().TotalMilliseconds;
+            MudHttpObservability.RecordDownloadCompleted(request, clientName, unguardedBytes?.Length ?? 0, elapsedMs2);
+            return unguardedBytes;
+        }
+        catch (Exception ex)
+        {
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex, cancellationToken);
+            throw;
+        }
+    }
 
-/// <inheritdoc/>
- public Task DownloadLargeAsync(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- string filePath,
- bool overwrite = true,
- int bufferSize = 81920,
- ResponseDescriptor? descriptor = null,
- IProgress<long>? progress = null,
- CancellationToken cancellationToken = default)
- => DownloadLargeCoreAsync(request, httpClient, filePath, overwrite, bufferSize, descriptor, progress, cancellationToken);
+    /// <inheritdoc/>
+    public Task DownloadLargeAsync(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    string filePath,
+    bool overwrite = true,
+    int bufferSize = 81920,
+    ResponseDescriptor? descriptor = null,
+    IProgress<long>? progress = null,
+    CancellationToken cancellationToken = default)
+    => DownloadLargeCoreAsync(request, httpClient, filePath, overwrite, bufferSize, descriptor, progress, cancellationToken);
 
-/// <inheritdoc/>
-/// <remarks>
- /// F-1（M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
-/// <c>[Cache]</c> 与文件下载组合），故此处仅应用弹性策略（Retry/CircuitBreaker/Timeout），
-/// 编排口径与 <see cref="ExecuteAsync(HttpRequestMessage, IBaseHttpClient, ExecutionDescriptor, CancellationToken)"/> 保持一致。
-/// </remarks>
- public async Task DownloadLargeAsync(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- string filePath,
- bool overwrite,
- int bufferSize,
- ExecutionDescriptor executionDescriptor,
- IProgress<long>? progress = null,
- CancellationToken cancellationToken = default)
- {
- var effectiveResolver = ResolveEffectiveResilienceResolver();
- if (executionDescriptor.Resilience != null && effectiveResolver != null)
- {
-// 设置 SkipResilience 标记，避免全局 ResilientHttpClient 双重包装弹性策略
- SetSkipResilienceFlag(request);
- StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
- var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
- executionDescriptor.Resilience, request);
+    /// <inheritdoc/>
+    /// <remarks>
+    /// F-1（M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
+    /// <c>[Cache]</c> 与文件下载组合），故此处仅应用弹性策略（Retry/CircuitBreaker/Timeout），
+    /// 编排口径与 <see cref="ExecuteAsync(HttpRequestMessage, IBaseHttpClient, ExecutionDescriptor, CancellationToken)"/> 保持一致。
+    /// </remarks>
+    public async Task DownloadLargeAsync(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    string filePath,
+    bool overwrite,
+    int bufferSize,
+    ExecutionDescriptor executionDescriptor,
+    IProgress<long>? progress = null,
+    CancellationToken cancellationToken = default)
+    {
+        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        if (executionDescriptor.Resilience != null && effectiveResolver != null)
+        {
+            // 设置 SkipResilience 标记，避免全局 ResilientHttpClient 双重包装弹性策略
+            SetSkipResilienceFlag(request);
+            StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
+            var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
+            executionDescriptor.Resilience, request);
 
- if (policyWrapper != null)
- {
- Func<HttpRequestMessage, CancellationToken, Task<object>> coreExecute = async (req, ct) =>
- {
- await DownloadLargeCoreAsync(req, httpClient, filePath, overwrite, bufferSize,
- executionDescriptor.Response, progress, ct).ConfigureAwait(false);
- return null!;
- };
+            if (policyWrapper != null)
+            {
+                Func<HttpRequestMessage, CancellationToken, Task<object>> coreExecute = async (req, ct) =>
+                {
+                    await DownloadLargeCoreAsync(req, httpClient, filePath, overwrite, bufferSize,
+     executionDescriptor.Response, progress, ct).ConfigureAwait(false);
+                    return null!;
+                };
 
- await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);
- return;
- }
- }
+                await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
 
- await DownloadLargeCoreAsync(request, httpClient, filePath, overwrite, bufferSize,
- executionDescriptor.Response, progress, cancellationToken).ConfigureAwait(false);
- }
+        await DownloadLargeCoreAsync(request, httpClient, filePath, overwrite, bufferSize,
+        executionDescriptor.Response, progress, cancellationToken).ConfigureAwait(false);
+    }
 
-/// <summary>下载缓冲区默认值（与 <c>DownloadLargeAsync</c> 的默认形参一致）。</summary>
- private const int DefaultDownloadBufferSize = 81920;
+    /// <summary>下载缓冲区默认值（与 <c>DownloadLargeAsync</c> 的默认形参一致）。</summary>
+    private const int DefaultDownloadBufferSize = 81920;
 
-/// <summary>
-/// 下载缓冲区上界（4 MiB）。
-/// 与生成器侧 <c>HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize</c> **必须一致**，
-/// 由 <c>DownloadBufferSizeContractTests</c>（Client.Tests）守护。
-/// </summary>
- private const int MaxDownloadBufferSize = 4 * 1024 * 1024;
+    /// <summary>
+    /// 下载缓冲区上界（4 MiB）。
+    /// 与生成器侧 <c>HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize</c> **必须一致**，
+    /// 由 <c>DownloadBufferSizeContractTests</c>（Client.Tests）守护。
+    /// </summary>
+    private const int MaxDownloadBufferSize = 4 * 1024 * 1024;
 
-/// <summary>
-/// 大文件下载核心实现（发送 + 状态校验 + 流式写盘）。
-/// 被非编排版（接口成员）与 编排版（<see cref="ExecutionDescriptor"/>）共用。
-/// </summary>
- private async Task DownloadLargeCoreAsync(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- string filePath,
- bool overwrite,
- int bufferSize,
- ResponseDescriptor? descriptor,
- IProgress<long>? progress,
- CancellationToken cancellationToken)
- {
-// bufferSize 来自 [FilePath(BufferSize = …)]，生成器侧已夹取到上界并报
-// HTTPCLIENT036；此处对**任何调用方**（含绕过生成器手写调用本 API 的场景）再夹取一次，
-// 避免 new byte[bufferSize] / new FileStream(…, bufferSize, …) 直接 OOM 或抛
-// ArgumentOutOfRangeException。<= 0 归一回默认值（保持既有语义）。
- bufferSize = bufferSize <= 0 ? DefaultDownloadBufferSize : Math.Min(bufferSize, MaxDownloadBufferSize);
+    /// <summary>
+    /// 大文件下载核心实现（发送 + 状态校验 + 流式写盘）。
+    /// 被非编排版（接口成员）与 编排版（<see cref="ExecutionDescriptor"/>）共用。
+    /// </summary>
+    private async Task DownloadLargeCoreAsync(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    string filePath,
+    bool overwrite,
+    int bufferSize,
+    ResponseDescriptor? descriptor,
+    IProgress<long>? progress,
+    CancellationToken cancellationToken)
+    {
+        // bufferSize 来自 [FilePath(BufferSize = …)]，生成器侧已夹取到上界并报
+        // HTTPCLIENT036；此处对**任何调用方**（含绕过生成器手写调用本 API 的场景）再夹取一次，
+        // 避免 new byte[bufferSize] / new FileStream(…, bufferSize, …) 直接 OOM 或抛
+        // ArgumentOutOfRangeException。<= 0 归一回默认值（保持既有语义）。
+        bufferSize = bufferSize <= 0 ? DefaultDownloadBufferSize : Math.Min(bufferSize, MaxDownloadBufferSize);
 
-// Phase 2 (T2.3)：发送前捕获请求体（启用时）
- string? capturedRequestContent = _captureRequestContent
- ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
- : null;
+        // Phase 2 (T2.3)：发送前捕获请求体（启用时）
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
- ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
-// 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
- using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        // 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
- var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
- if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
- {
- var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
-// M2-#18：日志路径统一脱敏
- _logger.LogError("HTTP 大文件下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
- (int)response.StatusCode,
- Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
- MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
- throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
- }
+        var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
+        if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
+        {
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏
+            _logger.LogError("HTTP 大文件下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+            (int)response.StatusCode,
+            Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
+            MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
+            throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
+        }
 
-// 下载阶段可观测性：测量响应体下载与文件写入耗时和字节数（HTTP 请求层已由 SendRawAsync 采集）
- var clientName = MudHttpObservability.GetClientName(request);
- MudHttpObservability.RecordDownloadStarted(request, clientName);
- var sw = ValueStopwatch.StartNew();
+        // 下载阶段可观测性：测量响应体下载与文件写入耗时和字节数（HTTP 请求层已由 SendRawAsync 采集）
+        var clientName = MudHttpObservability.GetClientName(request);
+        MudHttpObservability.RecordDownloadStarted(request, clientName);
+        var sw = ValueStopwatch.StartNew();
 
-// Overwrite 语义与特性声明对齐（同 EnhancedHttpClient 口径）——
-// overwrite=true → 允许覆盖（FileMode.Create 截断）；
-// overwrite=false → 目标已存在时抛 IOException，原文件字节保持不变。
-// 半写防护——先写同目录临时文件，复制完成并关闭流后原子落盘：
-// 下载失败/取消仅可能残留 tmp（由 catch 尽力清理），最终路径永不出现半写文件。
- var tmpPath = filePath + ".mudtmp";
- var tmpMode = FileMode.Create; // tmp 为本组件自有残留文件，可安全复用/回收
+        // Overwrite 语义与特性声明对齐（同 EnhancedHttpClient 口径）——
+        // overwrite=true → 允许覆盖（FileMode.Create 截断）；
+        // overwrite=false → 目标已存在时抛 IOException，原文件字节保持不变。
+        // 半写防护——先写同目录临时文件，复制完成并关闭流后原子落盘：
+        // 下载失败/取消仅可能残留 tmp（由 catch 尽力清理），最终路径永不出现半写文件。
+        var tmpPath = filePath + ".mudtmp";
+        var tmpMode = FileMode.Create; // tmp 为本组件自有残留文件，可安全复用/回收
 
-// 源生成器已对 [FilePath(BufferSize)] 做上界夹取并报 HTTPCLIENT036，
-// 但手写调用方可能直接调用 DownloadLargeAsync 传入任意 bufferSize。
-// 该值最终用于 new byte[bufferSize]（进度路径）与 FileStream(…, bufferSize, …) /
-// CopyToAsync(stream, bufferSize)，超大值会立即 OOM 或抛 ArgumentOutOfRangeException。
-// 语义与生成器侧一致：<= 0 归一为默认 81920，> 4 MiB 夹取到上界（零成本防御）。
- const int MaxSupportedBufferSize = 4 * 1024 * 1024;
- const int DefaultBufferSize = 81920;
- var effectiveBufferSize = bufferSize <= 0
- ? DefaultBufferSize
- : Math.Min(bufferSize, MaxSupportedBufferSize);
+        // 源生成器已对 [FilePath(BufferSize)] 做上界夹取并报 HTTPCLIENT036，
+        // 但手写调用方可能直接调用 DownloadLargeAsync 传入任意 bufferSize。
+        // 该值最终用于 new byte[bufferSize]（进度路径）与 FileStream(…, bufferSize, …) /
+        // CopyToAsync(stream, bufferSize)，超大值会立即 OOM 或抛 ArgumentOutOfRangeException。
+        // 语义与生成器侧一致：<= 0 归一为默认 81920，> 4 MiB 夹取到上界（零成本防御）。
+        const int MaxSupportedBufferSize = 4 * 1024 * 1024;
+        const int DefaultBufferSize = 81920;
+        var effectiveBufferSize = bufferSize <= 0
+        ? DefaultBufferSize
+        : Math.Min(bufferSize, MaxSupportedBufferSize);
 
- try
- {
- var dir = Path.GetDirectoryName(filePath);
- if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
- Directory.CreateDirectory(dir);
+        try
+        {
+            var dir = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
 
-// overwrite=false 时先快速失败（避免下载完成后才拒绝）；最终正确性由落盘阶段再次保证。
- if (!overwrite && File.Exists(filePath))
- throw new IOException($"文件已存在: {filePath}");
+            // overwrite=false 时先快速失败（避免下载完成后才拒绝）；最终正确性由落盘阶段再次保证。
+            if (!overwrite && File.Exists(filePath))
+                throw new IOException($"文件已存在: {filePath}");
 
- long bytesWritten;
+            long bytesWritten;
 
 #if NET6_0_OR_GREATER
- await using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, effectiveBufferSize, useAsync: true))
- {
- await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, effectiveBufferSize, useAsync: true))
+            {
+                await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
-// 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
- if (progress == null)
- {
- await contentStream.CopyToAsync(fileStream, effectiveBufferSize, cancellationToken).ConfigureAwait(false);
- }
- else
- {
- await CopyToWithProgressAsync(contentStream, fileStream, effectiveBufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
- }
- bytesWritten = fileStream.Position;
- }
-// 流已关闭（Windows 下 File.Move 才可移动）；overwrite 语义由 Move 的 overwrite 参数强制
- File.Move(tmpPath, filePath, overwrite);
+                // 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
+                if (progress == null)
+                {
+                    await contentStream.CopyToAsync(fileStream, effectiveBufferSize, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await CopyToWithProgressAsync(contentStream, fileStream, effectiveBufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
+                }
+                bytesWritten = fileStream.Position;
+            }
+            // 流已关闭（Windows 下 File.Move 才可移动）；overwrite 语义由 Move 的 overwrite 参数强制
+            File.Move(tmpPath, filePath, overwrite);
 #else
  using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, effectiveBufferSize))
  {
@@ -660,474 +660,474 @@ public class DefaultHttpRequestExecutor(
  File.Move(tmpPath, filePath);
 #endif
 
- var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-// 以已写入字节数（而非 FileInfo.Length）报告，避免缓冲区未刷新导致读数为 0
- MudHttpObservability.RecordDownloadCompleted(request, clientName, bytesWritten, elapsedMs);
- }
- catch (Exception ex)
- {
-// 尽力清理临时文件；删除失败仅记录到调试输出，不掩盖原始异常。
- try
- {
- if (File.Exists(tmpPath))
- File.Delete(tmpPath);
- }
- catch
- {
- System.Diagnostics.Debug.WriteLine($"[Mud.HttpUtils] 下载失败后清理临时文件失败: {tmpPath}");
- }
- var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
- MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex, cancellationToken);
- throw;
- }
- }
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            // 以已写入字节数（而非 FileInfo.Length）报告，避免缓冲区未刷新导致读数为 0
+            MudHttpObservability.RecordDownloadCompleted(request, clientName, bytesWritten, elapsedMs);
+        }
+        catch (Exception ex)
+        {
+            // 尽力清理临时文件；删除失败仅记录到调试输出，不掩盖原始异常。
+            try
+            {
+                if (File.Exists(tmpPath))
+                    File.Delete(tmpPath);
+            }
+            catch
+            {
+                System.Diagnostics.Debug.WriteLine($"[Mud.HttpUtils] 下载失败后清理临时文件失败: {tmpPath}");
+            }
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex, cancellationToken);
+            throw;
+        }
+    }
 
-/// <summary>
-/// 将源流复制到目标流，并按 100ms 节流上报进度（与 <see cref="EnhancedHttpClient"/> 下载口径一致）。
-/// </summary>
- private static Task CopyToWithProgressAsync(
- Stream source,
- Stream destination,
- int bufferSize,
- IProgress<long> progress,
- long totalBytesWritten,
- CancellationToken cancellationToken)
- => ThrottledStreamCopier.CopyWithThrottledProgressAsync(
- source, destination, bufferSize, progress, totalBytesWritten, cancellationToken);
+    /// <summary>
+    /// 将源流复制到目标流，并按 100ms 节流上报进度（与 <see cref="EnhancedHttpClient"/> 下载口径一致）。
+    /// </summary>
+    private static Task CopyToWithProgressAsync(
+    Stream source,
+    Stream destination,
+    int bufferSize,
+    IProgress<long> progress,
+    long totalBytesWritten,
+    CancellationToken cancellationToken)
+    => ThrottledStreamCopier.CopyWithThrottledProgressAsync(
+    source, destination, bufferSize, progress, totalBytesWritten, cancellationToken);
 
-/// <summary>
-/// ns2.0 快速路径的分块拷贝——Read/Write 均携带 CT，逐块前置取消检查，
-/// 使取消时延上限为一个缓冲区周期（与 NET6+ <see cref="Stream.CopyToAsync(Stream, int, CancellationToken)"/> 语义对齐）。
-/// </summary>
-/// <remarks>
-/// 全 TFM 编译（不加 <c>#if</c>）：ns2.0 与 NET6+ 的数组版 <see cref="Stream.ReadAsync(byte[], int, int, CancellationToken)"/> /
-/// <c>WriteAsync</c> 语义一致（真实 ns2.0 HttpContent 流即实现数组版重载），NET6+ 编译下 Client.Tests
-/// 可直接单测本实现，ns2.0 分支接线同一源码——避免 ns2.0 <c>#if</c> 分支成为无测试可执行的行为盲区
-/// （与 MultiTfmCompilationGuardTests 的守卫动机一致）。internal 供 Client.Tests 经 InternalsVisibleTo 直测。
-/// 缓冲区一次分配，受 <c>MaxSupportedBufferSize = 4 MiB</c> 夹取上界约束（默认 80 KiB），无 LOH 风险。
-/// </remarks>
- internal static async Task<long> CopyToWithCancellationAsync(
- Stream source,
- Stream destination,
- int bufferSize,
- CancellationToken cancellationToken)
- {
- var buffer = new byte[bufferSize];
- long total = 0;
- while (true)
- {
- cancellationToken.ThrowIfCancellationRequested();
- var read = await source.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
- if (read == 0)
- break;
- await destination.WriteAsync(buffer, 0, read, cancellationToken).ConfigureAwait(false);
- total += read;
- }
- return total;
- }
+    /// <summary>
+    /// ns2.0 快速路径的分块拷贝——Read/Write 均携带 CT，逐块前置取消检查，
+    /// 使取消时延上限为一个缓冲区周期（与 NET6+ <see cref="Stream.CopyToAsync(Stream, int, CancellationToken)"/> 语义对齐）。
+    /// </summary>
+    /// <remarks>
+    /// 全 TFM 编译（不加 <c>#if</c>）：ns2.0 与 NET6+ 的数组版 <see cref="Stream.ReadAsync(byte[], int, int, CancellationToken)"/> /
+    /// <c>WriteAsync</c> 语义一致（真实 ns2.0 HttpContent 流即实现数组版重载），NET6+ 编译下 Client.Tests
+    /// 可直接单测本实现，ns2.0 分支接线同一源码——避免 ns2.0 <c>#if</c> 分支成为无测试可执行的行为盲区
+    /// （与 MultiTfmCompilationGuardTests 的守卫动机一致）。internal 供 Client.Tests 经 InternalsVisibleTo 直测。
+    /// 缓冲区一次分配，受 <c>MaxSupportedBufferSize = 4 MiB</c> 夹取上界约束（默认 80 KiB），无 LOH 风险。
+    /// </remarks>
+    internal static async Task<long> CopyToWithCancellationAsync(
+    Stream source,
+    Stream destination,
+    int bufferSize,
+    CancellationToken cancellationToken)
+    {
+        var buffer = new byte[bufferSize];
+        long total = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var read = await source.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                break;
+            await destination.WriteAsync(buffer, 0, read, cancellationToken).ConfigureAwait(false);
+            total += read;
+        }
+        return total;
+    }
 
-/// <inheritdoc/>
-/// <remarks>
-/// M3-#22：流式路径同样应用请求配置（<see cref="ApplyRequestConfig"/>，幂等覆盖写），
-/// 与 <see cref="SendAndDeserializeAsync{TResult}"/> / DownloadAsync 语义一致；
-/// 请求体捕获（需要 await）改为在<b>枚举首次推进时</b>执行 —— IAsyncEnumerable 工厂方法无法 await。
-/// </remarks>
- public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- object? jsonSerializerOptions,
- CancellationToken cancellationToken = default)
- {
- ApplyRequestConfig(request);
- return EnumerateWithCaptureAsync(
- request,
- ct => httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, ct),
- cancellationToken);
- }
+    /// <inheritdoc/>
+    /// <remarks>
+    /// M3-#22：流式路径同样应用请求配置（<see cref="ApplyRequestConfig"/>，幂等覆盖写），
+    /// 与 <see cref="SendAndDeserializeAsync{TResult}"/> / DownloadAsync 语义一致；
+    /// 请求体捕获（需要 await）改为在<b>枚举首次推进时</b>执行 —— IAsyncEnumerable 工厂方法无法 await。
+    /// </remarks>
+    public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    object? jsonSerializerOptions,
+    CancellationToken cancellationToken = default)
+    {
+        ApplyRequestConfig(request);
+        return EnumerateWithCaptureAsync(
+        request,
+        ct => httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, ct),
+        cancellationToken);
+    }
 
 #if NET8_0_OR_GREATER
-/// <inheritdoc/>
-/// <remarks>M3-#22：与 <see cref="SendAsAsyncEnumerable{TElement}(HttpRequestMessage, IBaseHttpClient, object?, CancellationToken)"/> 同语义（JsonTypeInfo 快路径）。</remarks>
- public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement> jsonTypeInfo,
- CancellationToken cancellationToken = default)
- {
- ApplyRequestConfig(request);
- return EnumerateWithCaptureAsync(
- request,
- ct => httpClient.SendAsAsyncEnumerable<TElement>(request, jsonTypeInfo, ct),
- cancellationToken);
- }
+    /// <inheritdoc/>
+    /// <remarks>M3-#22：与 <see cref="SendAsAsyncEnumerable{TElement}(HttpRequestMessage, IBaseHttpClient, object?, CancellationToken)"/> 同语义（JsonTypeInfo 快路径）。</remarks>
+    public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement> jsonTypeInfo,
+    CancellationToken cancellationToken = default)
+    {
+        ApplyRequestConfig(request);
+        return EnumerateWithCaptureAsync(
+        request,
+        ct => httpClient.SendAsAsyncEnumerable<TElement>(request, jsonTypeInfo, ct),
+        cancellationToken);
+    }
 #endif
 
-/// <summary>
-/// M3-#22：流式枚举统一实现 —— 首次推进时捕获请求体（<see cref="CaptureRequestContentAsync"/>），
-/// 随后转发给内部客户端的流式枚举（<paramref name="streamFactory"/> 已绑定具体的重载与请求）。
-/// </summary>
- private async IAsyncEnumerable<TElement> EnumerateWithCaptureAsync<TElement>(
- HttpRequestMessage request,
- Func<CancellationToken, IAsyncEnumerable<TElement>> streamFactory,
- [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
- {
- if (_captureRequestContent)
- await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false);
+    /// <summary>
+    /// M3-#22：流式枚举统一实现 —— 首次推进时捕获请求体（<see cref="CaptureRequestContentAsync"/>），
+    /// 随后转发给内部客户端的流式枚举（<paramref name="streamFactory"/> 已绑定具体的重载与请求）。
+    /// </summary>
+    private async IAsyncEnumerable<TElement> EnumerateWithCaptureAsync<TElement>(
+    HttpRequestMessage request,
+    Func<CancellationToken, IAsyncEnumerable<TElement>> streamFactory,
+    [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (_captureRequestContent)
+            await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false);
 
- await foreach (var item in streamFactory(cancellationToken).ConfigureAwait(false))
- yield return item;
- }
+        await foreach (var item in streamFactory(cancellationToken).ConfigureAwait(false))
+            yield return item;
+    }
 
-/// <inheritdoc/>
- public async Task<TResult?> ExecuteAsync<TResult>(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ExecutionDescriptor descriptor,
- object? jsonSerializerOptions,
- CancellationToken cancellationToken = default)
- {
-// byte[] 下载类型特殊处理：使用 DownloadAsync 而非 JSON 反序列化，支持 Cache/Resilience 编排
- if (typeof(TResult) == typeof(byte[]))
- {
- Func<HttpRequestMessage, CancellationToken, Task<byte[]?>> downloadExecute = (req, ct) =>
- DownloadAsync(req, httpClient, descriptor.Response, ct);
+    /// <inheritdoc/>
+    public async Task<TResult?> ExecuteAsync<TResult>(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ExecutionDescriptor descriptor,
+    object? jsonSerializerOptions,
+    CancellationToken cancellationToken = default)
+    {
+        // byte[] 下载类型特殊处理：使用 DownloadAsync 而非 JSON 反序列化，支持 Cache/Resilience 编排
+        if (typeof(TResult) == typeof(byte[]))
+        {
+            Func<HttpRequestMessage, CancellationToken, Task<byte[]?>> downloadExecute = (req, ct) =>
+            DownloadAsync(req, httpClient, descriptor.Response, ct);
 
- var result = await ExecuteWithOrchestrationAsync<byte[]?>(
- request, descriptor, cancellationToken, downloadExecute).ConfigureAwait(false);
- return (TResult?)(object?)result;
- }
+            var result = await ExecuteWithOrchestrationAsync<byte[]?>(
+            request, descriptor, cancellationToken, downloadExecute).ConfigureAwait(false);
+            return (TResult?)(object?)result;
+        }
 
-// 构建核心执行函数（接收 request 参数，由弹性策略包装器传入克隆或原始请求）
-// httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
- Func<HttpRequestMessage, CancellationToken, Task<TResult?>> coreExecute = (req, ct) =>
- SendAndDeserializeAsync<TResult>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
+        // 构建核心执行函数（接收 request 参数，由弹性策略包装器传入克隆或原始请求）
+        // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
+        Func<HttpRequestMessage, CancellationToken, Task<TResult?>> coreExecute = (req, ct) =>
+        SendAndDeserializeAsync<TResult>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
 
- return await ExecuteWithOrchestrationAsync(
- request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
- }
+        return await ExecuteWithOrchestrationAsync(
+        request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
+    }
 
-/// <inheritdoc/>
- public async Task<Response<TInner>?> ExecuteAsResponseAsync<TInner>(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ExecutionDescriptor descriptor,
- object? jsonSerializerOptions,
- CancellationToken cancellationToken = default)
- {
-// httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
- Func<HttpRequestMessage, CancellationToken, Task<Response<TInner>>> coreExecute = (req, ct) =>
- SendAsResponseAsync<TInner>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
+    /// <inheritdoc/>
+    public async Task<Response<TInner>?> ExecuteAsResponseAsync<TInner>(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ExecutionDescriptor descriptor,
+    object? jsonSerializerOptions,
+    CancellationToken cancellationToken = default)
+    {
+        // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
+        Func<HttpRequestMessage, CancellationToken, Task<Response<TInner>>> coreExecute = (req, ct) =>
+        SendAsResponseAsync<TInner>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
 
- return await ExecuteWithOrchestrationAsync(
- request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
- }
+        return await ExecuteWithOrchestrationAsync(
+        request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
+    }
 
-/// <inheritdoc/>
- public async Task ExecuteAsync(
- HttpRequestMessage request,
- IBaseHttpClient httpClient,
- ExecutionDescriptor descriptor,
- CancellationToken cancellationToken = default)
- {
-// void 返回类型：仅应用弹性策略（不缓存无返回值的结果）
-// httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
- var effectiveResolver = ResolveEffectiveResilienceResolver();
- if (descriptor.Resilience != null && effectiveResolver != null)
- {
- SetSkipResilienceFlag(request);
- StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
- var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
- descriptor.Resilience, request);
+    /// <inheritdoc/>
+    public async Task ExecuteAsync(
+    HttpRequestMessage request,
+    IBaseHttpClient httpClient,
+    ExecutionDescriptor descriptor,
+    CancellationToken cancellationToken = default)
+    {
+        // void 返回类型：仅应用弹性策略（不缓存无返回值的结果）
+        // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
+        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        if (descriptor.Resilience != null && effectiveResolver != null)
+        {
+            SetSkipResilienceFlag(request);
+            StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
+            var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
+            descriptor.Resilience, request);
 
- if (policyWrapper != null)
- {
- Func<HttpRequestMessage, CancellationToken, Task<object>> coreExecute = async (req, ct) =>
- {
- await SendAsync(req, httpClient, descriptor.Response, ct).ConfigureAwait(false);
- return null!;
- };
+            if (policyWrapper != null)
+            {
+                Func<HttpRequestMessage, CancellationToken, Task<object>> coreExecute = async (req, ct) =>
+                {
+                    await SendAsync(req, httpClient, descriptor.Response, ct).ConfigureAwait(false);
+                    return null!;
+                };
 
- await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);
- return;
- }
- }
+                await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
 
- await SendAsync(request, httpClient, descriptor.Response, cancellationToken).ConfigureAwait(false);
- }
+        await SendAsync(request, httpClient, descriptor.Response, cancellationToken).ConfigureAwait(false);
+    }
 
-/// <summary>
-/// 统一的执行编排逻辑：根据 descriptor 应用弹性策略和缓存包装。
-/// </summary>
-/// <remarks>
-/// 弹性管线语义说明（双层结构，通过 SkipResilience 标记保证弹性策略只应用一次）：
-/// <para>
-/// 1. <b>ResilientHttpClient（全局装饰器）</b>——作为最外层装饰器应用全局默认弹性策略；
-/// 发送前检查 SkipResilience 标记，若已设置则跳过全局弹性包装，直接转发至内层客户端。
-/// </para>
-/// <para>
-/// 2. <b>DefaultHttpRequestExecutor（按应用，即本方法所在层）</b>——按应用解析弹性策略（优先 <c>IAppResiliencePolicyResolver</c>，回退全局 <c>IResiliencePolicyResolver</c>）。
-/// 在应用弹性包装前，通过 <see cref="SetSkipResilienceFlag"/> 设置 SkipResilience 标记
-/// （常量 <c>__Mud_HttpUtils_SkipResilience</c>，见 <see cref="HttpExecutionConstants.SkipResiliencePropertyKey"/>），
-/// 使外层 ResilientHttpClient 跳过重复包装，避免双重重试。
-/// </para>
-/// <para>
-/// 3. <b>EnhancedHttpClient.SendCoreAsync</b>——实际 HTTP 调用层，由弹性包装器在每次重试时调用。
-/// </para>
-/// <para>
-/// 缓存层位于弹性策略之外：缓存命中时不触发弹性策略，缓存未命中时由弹性策略保护实际请求。
-/// </para>
-/// <para>
-/// <b>无状态设计</b>：<paramref name="coreExecute"/> 通过闭包捕获 <see cref="IBaseHttpClient"/> 实例，
-/// 确保整个弹性策略重试链使用同一个 HttpClient 实例，避免并发请求间的 TOCTOU 竞态。
-/// </para>
-/// </remarks>
- private async Task<TResult?> ExecuteWithOrchestrationAsync<TResult>(
- HttpRequestMessage request,
- ExecutionDescriptor descriptor,
- CancellationToken cancellationToken,
- Func<HttpRequestMessage, CancellationToken, Task<TResult>> coreExecute)
- {
-// 弹性策略包装（在缓存之前包装，使缓存命中时不触发弹性策略，缓存未命中时弹性策略保护实际请求）
- var effectiveResolver = ResolveEffectiveResilienceResolver();
- if (descriptor.Resilience != null && effectiveResolver != null)
- {
-// 设置 SkipResilience 标记，避免全局弹性策略双重包装
- SetSkipResilienceFlag(request);
- StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
+    /// <summary>
+    /// 统一的执行编排逻辑：根据 descriptor 应用弹性策略和缓存包装。
+    /// </summary>
+    /// <remarks>
+    /// 弹性管线语义说明（双层结构，通过 SkipResilience 标记保证弹性策略只应用一次）：
+    /// <para>
+    /// 1. <b>ResilientHttpClient（全局装饰器）</b>——作为最外层装饰器应用全局默认弹性策略；
+    /// 发送前检查 SkipResilience 标记，若已设置则跳过全局弹性包装，直接转发至内层客户端。
+    /// </para>
+    /// <para>
+    /// 2. <b>DefaultHttpRequestExecutor（按应用，即本方法所在层）</b>——按应用解析弹性策略（优先 <c>IAppResiliencePolicyResolver</c>，回退全局 <c>IResiliencePolicyResolver</c>）。
+    /// 在应用弹性包装前，通过 <see cref="SetSkipResilienceFlag"/> 设置 SkipResilience 标记
+    /// （常量 <c>__Mud_HttpUtils_SkipResilience</c>，见 <see cref="HttpExecutionConstants.SkipResiliencePropertyKey"/>），
+    /// 使外层 ResilientHttpClient 跳过重复包装，避免双重重试。
+    /// </para>
+    /// <para>
+    /// 3. <b>EnhancedHttpClient.SendCoreAsync</b>——实际 HTTP 调用层，由弹性包装器在每次重试时调用。
+    /// </para>
+    /// <para>
+    /// 缓存层位于弹性策略之外：缓存命中时不触发弹性策略，缓存未命中时由弹性策略保护实际请求。
+    /// </para>
+    /// <para>
+    /// <b>无状态设计</b>：<paramref name="coreExecute"/> 通过闭包捕获 <see cref="IBaseHttpClient"/> 实例，
+    /// 确保整个弹性策略重试链使用同一个 HttpClient 实例，避免并发请求间的 TOCTOU 竞态。
+    /// </para>
+    /// </remarks>
+    private async Task<TResult?> ExecuteWithOrchestrationAsync<TResult>(
+    HttpRequestMessage request,
+    ExecutionDescriptor descriptor,
+    CancellationToken cancellationToken,
+    Func<HttpRequestMessage, CancellationToken, Task<TResult>> coreExecute)
+    {
+        // 弹性策略包装（在缓存之前包装，使缓存命中时不触发弹性策略，缓存未命中时弹性策略保护实际请求）
+        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        if (descriptor.Resilience != null && effectiveResolver != null)
+        {
+            // 设置 SkipResilience 标记，避免全局弹性策略双重包装
+            SetSkipResilienceFlag(request);
+            StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
 
- var policyWrapper = effectiveResolver.ResolvePolicyWrapper<TResult>(
- descriptor.Resilience, request);
+            var policyWrapper = effectiveResolver.ResolvePolicyWrapper<TResult>(
+            descriptor.Resilience, request);
 
- if (policyWrapper != null)
- {
-// 弹性策略包装器内部在每次重试时克隆 request 并传给 coreExecute
- Task<TResult> ResilienceWrapped(CancellationToken ct) =>
- policyWrapper(coreExecute, ct);
+            if (policyWrapper != null)
+            {
+                // 弹性策略包装器内部在每次重试时克隆 request 并传给 coreExecute
+                Task<TResult> ResilienceWrapped(CancellationToken ct) =>
+                policyWrapper(coreExecute, ct);
 
-// 如果同时有缓存，缓存包裹弹性策略包装后的执行
- if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
- {
- var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
-// 透传滑动过期语义
- // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
- var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
- return await _cacheProvider.GetOrFetchAsync(
- scopedKey,
- () => ResilienceWrapped(cancellationToken),
- expiration,
- descriptor.Cache.UseSlidingExpiration,
- cancellationToken).ConfigureAwait(false);
- }
+                // 如果同时有缓存，缓存包裹弹性策略包装后的执行
+                if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
+                {
+                    var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
+                    // 透传滑动过期语义
+                    // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
+                    var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
+                    return await _cacheProvider.GetOrFetchAsync(
+                    scopedKey,
+                    () => ResilienceWrapped(cancellationToken),
+                    expiration,
+                    descriptor.Cache.UseSlidingExpiration,
+                    cancellationToken).ConfigureAwait(false);
+                }
 
- return await ResilienceWrapped(cancellationToken).ConfigureAwait(false);
- }
- }
+                return await ResilienceWrapped(cancellationToken).ConfigureAwait(false);
+            }
+        }
 
-// 仅缓存包装（无弹性策略，直接使用原始 request）
- if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
- {
- var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
-// 透传滑动过期语义
- // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
- var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
- return await _cacheProvider.GetOrFetchAsync(
- scopedKey,
- () => coreExecute(request, cancellationToken),
- expiration,
- descriptor.Cache.UseSlidingExpiration,
- cancellationToken).ConfigureAwait(false);
- }
+        // 仅缓存包装（无弹性策略，直接使用原始 request）
+        if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
+        {
+            var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
+            // 透传滑动过期语义
+            // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
+            var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
+            return await _cacheProvider.GetOrFetchAsync(
+            scopedKey,
+            () => coreExecute(request, cancellationToken),
+            expiration,
+            descriptor.Cache.UseSlidingExpiration,
+            cancellationToken).ConfigureAwait(false);
+        }
 
-// 直接执行
- return await coreExecute(request, cancellationToken).ConfigureAwait(false);
- }
+        // 直接执行
+        return await coreExecute(request, cancellationToken).ConfigureAwait(false);
+    }
 
-/// <summary>
-/// 在请求上设置 SkipResilience 标记，避免全局弹性策略双重包装。
-/// </summary>
- private static void SetSkipResilienceFlag(HttpRequestMessage request)
- {
+    /// <summary>
+    /// 在请求上设置 SkipResilience 标记，避免全局弹性策略双重包装。
+    /// </summary>
+    private static void SetSkipResilienceFlag(HttpRequestMessage request)
+    {
 #if NETSTANDARD2_0
  request.Properties[HttpExecutionConstants.SkipResiliencePropertyKey] = true;
 #else
- request.Options.TryAdd(HttpExecutionConstants.SkipResiliencePropertyKey, true);
+        request.Options.TryAdd(HttpExecutionConstants.SkipResiliencePropertyKey, true);
 #endif
- }
+    }
 
-/// <summary>
-/// P2-4：把当前应用上下文的 AppKey 写入请求选项（<see cref="HttpExecutionConstants.AppKeyPropertyKey"/>），
-/// 供弹性策略作用域解析器追加进作用域键——多应用共用同名客户端与同一 host 时
-/// 熔断/超时计数不跨应用共享（与 层B 缓存键的应用维度同口径）。
-/// 键解析口径与 <see cref="ResolveEffectiveResilienceResolver"/> 一致（显式上下文 → 默认应用）；
-/// 均不可得时不写入（作用域键保持历史格式，无应用消费方零漂移）。
-/// </summary>
- private void StampResilienceAppKey(HttpRequestMessage request)
- {
- var appKey = _appContextHolder?.Current?.AppKey;
- if (string.IsNullOrEmpty(appKey) && _appManager != null)
- {
- try
- {
- appKey = _appManager.GetDefaultApp().AppKey;
- }
- catch
- {
-// 默认应用未设置时不阻断请求，作用域键保持无应用维度
- }
- }
+    /// <summary>
+    /// P2-4：把当前应用上下文的 AppKey 写入请求选项（<see cref="HttpExecutionConstants.AppKeyPropertyKey"/>），
+    /// 供弹性策略作用域解析器追加进作用域键——多应用共用同名客户端与同一 host 时
+    /// 熔断/超时计数不跨应用共享（与 层B 缓存键的应用维度同口径）。
+    /// 键解析口径与 <see cref="ResolveEffectiveResilienceResolver"/> 一致（显式上下文 → 默认应用）；
+    /// 均不可得时不写入（作用域键保持历史格式，无应用消费方零漂移）。
+    /// </summary>
+    private void StampResilienceAppKey(HttpRequestMessage request)
+    {
+        var appKey = _appContextHolder?.Current?.AppKey;
+        if (string.IsNullOrEmpty(appKey) && _appManager != null)
+        {
+            try
+            {
+                appKey = _appManager.GetDefaultApp().AppKey;
+            }
+            catch
+            {
+                // 默认应用未设置时不阻断请求，作用域键保持无应用维度
+            }
+        }
 
- if (string.IsNullOrEmpty(appKey))
- return;
+        if (string.IsNullOrEmpty(appKey))
+            return;
 
 #if NETSTANDARD2_0
  request.Properties[HttpExecutionConstants.AppKeyPropertyKey] = appKey!;
 #else
- request.Options.Set(new HttpRequestOptionsKey<string>(HttpExecutionConstants.AppKeyPropertyKey), appKey!);
+        request.Options.Set(new HttpRequestOptionsKey<string>(HttpExecutionConstants.AppKeyPropertyKey), appKey!);
 #endif
- }
+    }
 
-/// <summary>
-/// 读取成功响应体字符串。启用 守卫（<c>maxSuccessResponseBytes &gt; 0</c>）时，
-/// 按 Content-Length 预判 + 守卫流读取阶段校验，超限抛 <see cref="ApiRequestException"/>。
-/// </summary>
- private async Task<string> ReadContentAsync(
- HttpResponseMessage response, string? requestUri, CancellationToken cancellationToken)
- {
- if (_maxSuccessResponseBytes > 0)
- {
- var contentLength = response.Content.Headers.ContentLength;
- if (contentLength > _maxSuccessResponseBytes)
- {
- throw new ApiRequestException(
- $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
- requestUri: requestUri);
- }
+    /// <summary>
+    /// 读取成功响应体字符串。启用 守卫（<c>maxSuccessResponseBytes &gt; 0</c>）时，
+    /// 按 Content-Length 预判 + 守卫流读取阶段校验，超限抛 <see cref="ApiRequestException"/>。
+    /// </summary>
+    private async Task<string> ReadContentAsync(
+    HttpResponseMessage response, string? requestUri, CancellationToken cancellationToken)
+    {
+        if (_maxSuccessResponseBytes > 0)
+        {
+            var contentLength = response.Content.Headers.ContentLength;
+            if (contentLength > _maxSuccessResponseBytes)
+            {
+                throw new ApiRequestException(
+                $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
+                requestUri: requestUri);
+            }
 
 #if NET6_0_OR_GREATER
- var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #else
  var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
- using var guardedContent = new StreamContent(
- new Helpers.SuccessResponseGuardStream(stream, _maxSuccessResponseBytes, requestUri));
- if (response.Content.Headers.ContentType != null)
- guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
+            using var guardedContent = new StreamContent(
+            new Helpers.SuccessResponseGuardStream(stream, _maxSuccessResponseBytes, requestUri));
+            if (response.Content.Headers.ContentType != null)
+                guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
 #if NET6_0_OR_GREATER
- return await guardedContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            return await guardedContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
  return await guardedContent.ReadAsStringAsync().ConfigureAwait(false);
 #endif
- }
+        }
 
 #if NET6_0_OR_GREATER
- return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
  return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
- }
+    }
 
-/// <summary>
-/// 按上限读取错误响应体（Phase 2 T2.2 / M1-#1）：在 <b>读取阶段</b> 限制字符数，
-/// 无论响应是否携带 Content-Length（chunked 场景）均不会超读，防 OOM。
-/// </summary>
- private async Task<string> ReadErrorContentLimitedAsync(
- HttpResponseMessage response, CancellationToken cancellationToken)
- {
- var (content, _) = await LimitedContentReader
- .ReadLimitedStringAsync(response.Content, _maxExceptionContentLength, cancellationToken)
- .ConfigureAwait(false);
- return content;
- }
+    /// <summary>
+    /// 按上限读取错误响应体（Phase 2 T2.2 / M1-#1）：在 <b>读取阶段</b> 限制字符数，
+    /// 无论响应是否携带 Content-Length（chunked 场景）均不会超读，防 OOM。
+    /// </summary>
+    private async Task<string> ReadErrorContentLimitedAsync(
+    HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var (content, _) = await LimitedContentReader
+        .ReadLimitedStringAsync(response.Content, _maxExceptionContentLength, cancellationToken)
+        .ConfigureAwait(false);
+        return content;
+    }
 
-/// <summary>
-/// Phase 2 (T2.3)：捕获请求体字符串（发送前调用）。
-/// 读取失败不影响请求发送，返回 null。捕获长度受 MaxExceptionContentLength 约束（#16）。
-/// 非可重放内容（<see cref="IRequestContentReplayHint.IsReplayable"/> == false）自动跳过捕获。
-/// 取消令牌透传（原 <see cref="CancellationToken.None"/> 改为外层 token）。
-/// </summary>
- private async Task<string?> CaptureRequestContentAsync(
- HttpRequestMessage? request, CancellationToken cancellationToken)
- {
- if (request?.Content == null) return null;
+    /// <summary>
+    /// Phase 2 (T2.3)：捕获请求体字符串（发送前调用）。
+    /// 读取失败不影响请求发送，返回 null。捕获长度受 MaxExceptionContentLength 约束（#16）。
+    /// 非可重放内容（<see cref="IRequestContentReplayHint.IsReplayable"/> == false）自动跳过捕获。
+    /// 取消令牌透传（原 <see cref="CancellationToken.None"/> 改为外层 token）。
+    /// </summary>
+    private async Task<string?> CaptureRequestContentAsync(
+    HttpRequestMessage? request, CancellationToken cancellationToken)
+    {
+        if (request?.Content == null) return null;
 
-// 不可重放内容跳过捕获 —— 读取会耗尽一次性源流，随后发送将得到空/截断请求体
- if (!RequestContentCaptureUtils.CanCapture(request.Content, _logger))
- return null;
+        // 不可重放内容跳过捕获 —— 读取会耗尽一次性源流，随后发送将得到空/截断请求体
+        if (!RequestContentCaptureUtils.CanCapture(request.Content, _logger))
+            return null;
 
- try
- {
- var (content, _) = await LimitedContentReader
- .ReadLimitedStringAsync(request.Content, _maxExceptionContentLength, cancellationToken)
- .ConfigureAwait(false);
- return content;
- }
- catch
- {
-// 读取失败不影响请求发送
- return null;
- }
- }
+        try
+        {
+            var (content, _) = await LimitedContentReader
+            .ReadLimitedStringAsync(request.Content, _maxExceptionContentLength, cancellationToken)
+            .ConfigureAwait(false);
+            return content;
+        }
+        catch
+        {
+            // 读取失败不影响请求发送
+            return null;
+        }
+    }
 
-/// <summary>
-/// Phase 3 (T3.4/T3.5)：将 HttpVersion、HttpVersionPolicy 和 HttpRequestMessageOptions 应用到请求消息。
-/// 在请求发送前调用，确保生成代码路径也能消费这些配置。
-/// </summary>
- private void ApplyRequestConfig(HttpRequestMessage request)
- {
+    /// <summary>
+    /// Phase 3 (T3.4/T3.5)：将 HttpVersion、HttpVersionPolicy 和 HttpRequestMessageOptions 应用到请求消息。
+    /// 在请求发送前调用，确保生成代码路径也能消费这些配置。
+    /// </summary>
+    private void ApplyRequestConfig(HttpRequestMessage request)
+    {
 #if NET6_0_OR_GREATER
- if (_httpVersion != null)
- request.Version = _httpVersion;
- if (_httpVersionPolicy != null)
- request.VersionPolicy = _httpVersionPolicy.Value;
+        if (_httpVersion != null)
+            request.Version = _httpVersion;
+        if (_httpVersionPolicy != null)
+            request.VersionPolicy = _httpVersionPolicy.Value;
 #endif
- if (_httpRequestMessageOptions != null)
- {
- foreach (var kvp in _httpRequestMessageOptions)
- {
+        if (_httpRequestMessageOptions != null)
+        {
+            foreach (var kvp in _httpRequestMessageOptions)
+            {
 #if NETSTANDARD2_0
  request.Properties[kvp.Key] = kvp.Value;
 #else
- request.Options.TryAdd(kvp.Key, kvp.Value);
+                request.Options.TryAdd(kvp.Key, kvp.Value);
 #endif
- }
- }
- }
+            }
+        }
+    }
 
-/// <summary>
-/// Phase 2 (T2.1/T2.2/T2.3)：创建 ApiException 并应用 ExceptionRedactor、RequestContent 捕获。
-/// </summary>
-/// <param name="statusCode">HTTP 状态码。</param>
-/// <param name="errorContent">错误响应内容（由 <see cref="ReadErrorContentLimitedAsync"/> 限量读取，截断时含 <c>...[已截断]</c> 标记）。</param>
-/// <param name="requestUri">请求 URI。</param>
-/// <param name="capturedRequestContent">捕获的请求体（可为 null，长度同样受限）。</param>
-/// <returns>已应用擦除的 ApiException。</returns>
- private ApiException CreateApiException(
- System.Net.HttpStatusCode statusCode,
- string? errorContent,
- string? requestUri,
- string? capturedRequestContent = null)
- {
-// 异常对象中的 RequestUri 与 ApiRequestException 口径统一，剥离 userinfo 并掩码敏感 query 值。
- var ex = new ApiException(statusCode, errorContent ?? string.Empty, Helpers.SensitiveUrlRedactor.Redact(requestUri));
+    /// <summary>
+    /// Phase 2 (T2.1/T2.2/T2.3)：创建 ApiException 并应用 ExceptionRedactor、RequestContent 捕获。
+    /// </summary>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="errorContent">错误响应内容（由 <see cref="ReadErrorContentLimitedAsync"/> 限量读取，截断时含 <c>...[已截断]</c> 标记）。</param>
+    /// <param name="requestUri">请求 URI。</param>
+    /// <param name="capturedRequestContent">捕获的请求体（可为 null，长度同样受限）。</param>
+    /// <returns>已应用擦除的 ApiException。</returns>
+    private ApiException CreateApiException(
+    System.Net.HttpStatusCode statusCode,
+    string? errorContent,
+    string? requestUri,
+    string? capturedRequestContent = null)
+    {
+        // 异常对象中的 RequestUri 与 ApiRequestException 口径统一，剥离 userinfo 并掩码敏感 query 值。
+        var ex = new ApiException(statusCode, errorContent ?? string.Empty, Helpers.SensitiveUrlRedactor.Redact(requestUri));
 
-// Phase 2 (T2.3)：设置捕获的请求体
- if (capturedRequestContent != null)
- ex.RequestContent = capturedRequestContent;
+        // Phase 2 (T2.3)：设置捕获的请求体
+        if (capturedRequestContent != null)
+            ex.RequestContent = capturedRequestContent;
 
-// Phase 2 (T2.1)：在抛出前调用 ExceptionRedactor 擦除敏感数据
- _exceptionRedactor?.Redact(ex);
+        // Phase 2 (T2.1)：在抛出前调用 ExceptionRedactor 擦除敏感数据
+        _exceptionRedactor?.Redact(ex);
 
-// M3-#20：统一写入结构化状态码，供 ns2.0 的重试判定（ShouldRetry → Data["HttpStatusCode"]）使用，
-// 与 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 路径保持同一数据源约定
- ex.Data["HttpStatusCode"] = (int)statusCode;
+        // M3-#20：统一写入结构化状态码，供 ns2.0 的重试判定（ShouldRetry → Data["HttpStatusCode"]）使用，
+        // 与 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 路径保持同一数据源约定
+        ex.Data["HttpStatusCode"] = (int)statusCode;
 
- return ex;
- }
+        return ex;
+    }
 
- private static bool IsXmlContentType(string? contentType)
- {
- if (string.IsNullOrEmpty(contentType))
- return false;
- return contentType!.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
- }
+    private static bool IsXmlContentType(string? contentType)
+    {
+        if (string.IsNullOrEmpty(contentType))
+            return false;
+        return contentType!.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
 }

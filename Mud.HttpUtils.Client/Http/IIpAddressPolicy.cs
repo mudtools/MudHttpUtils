@@ -18,10 +18,10 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public interface IIpAddressPolicy
 {
-/// <summary>
-/// 判定目标 IP 是否允许建连。
-/// </summary>
-/// <param name="address">实际建连的目标 IP（已解析）。</param>
-/// <returns>true 允许连接；false 拒绝连接（<c>SsrfSafeSocketsHttpHandler</c> 将抛出异常）。</returns>
- bool IsAllowed(IPAddress address);
+    /// <summary>
+    /// 判定目标 IP 是否允许建连。
+    /// </summary>
+    /// <param name="address">实际建连的目标 IP（已解析）。</param>
+    /// <returns>true 允许连接；false 拒绝连接（<c>SsrfSafeSocketsHttpHandler</c> 将抛出异常）。</returns>
+    bool IsAllowed(IPAddress address);
 }

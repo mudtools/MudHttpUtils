@@ -16,31 +16,31 @@ namespace Mud.HttpUtils.Observability;
 /// </remarks>
 public class TokenRefreshHealthCheckOptionsValidator : IValidateOptions<TokenRefreshHealthCheckOptions>
 {
-/// <inheritdoc />
- public ValidateOptionsResult Validate(string? name, TokenRefreshHealthCheckOptions options)
- {
- if (options == null)
- return ValidateOptionsResult.Success;
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, TokenRefreshHealthCheckOptions options)
+    {
+        if (options == null)
+            return ValidateOptionsResult.Success;
 
- var failures = new List<string>();
+        var failures = new List<string>();
 
- if (options.WindowSeconds <= 0)
- failures.Add("TokenRefreshHealthCheckOptions: WindowSeconds 必须为正数。");
+        if (options.WindowSeconds <= 0)
+            failures.Add("TokenRefreshHealthCheckOptions: WindowSeconds 必须为正数。");
 
- if (options.DegradedThreshold < 0 || options.DegradedThreshold > 1)
- failures.Add("TokenRefreshHealthCheckOptions: DegradedThreshold 必须在 0~1 范围内。");
+        if (options.DegradedThreshold < 0 || options.DegradedThreshold > 1)
+            failures.Add("TokenRefreshHealthCheckOptions: DegradedThreshold 必须在 0~1 范围内。");
 
- if (options.CriticalThreshold < 0 || options.CriticalThreshold > 1)
- failures.Add("TokenRefreshHealthCheckOptions: CriticalThreshold 必须在 0~1 范围内。");
+        if (options.CriticalThreshold < 0 || options.CriticalThreshold > 1)
+            failures.Add("TokenRefreshHealthCheckOptions: CriticalThreshold 必须在 0~1 范围内。");
 
- if (options.CriticalThreshold < options.DegradedThreshold)
- failures.Add("TokenRefreshHealthCheckOptions: CriticalThreshold 必须 >= DegradedThreshold。");
+        if (options.CriticalThreshold < options.DegradedThreshold)
+            failures.Add("TokenRefreshHealthCheckOptions: CriticalThreshold 必须 >= DegradedThreshold。");
 
- if (options.MinSampleSize < 0)
- failures.Add("TokenRefreshHealthCheckOptions: MinSampleSize 不能为负数。");
+        if (options.MinSampleSize < 0)
+            failures.Add("TokenRefreshHealthCheckOptions: MinSampleSize 不能为负数。");
 
- return failures.Count > 0
- ? ValidateOptionsResult.Fail(failures)
- : ValidateOptionsResult.Success;
- }
+        return failures.Count > 0
+        ? ValidateOptionsResult.Fail(failures)
+        : ValidateOptionsResult.Success;
+    }
 }

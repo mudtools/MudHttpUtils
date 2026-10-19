@@ -573,6 +573,77 @@ public class ConfigurationBindingTests
     }
 
     [Fact]
+    public void AddMudHttpTokenRecoveryFromConfiguration_HotReload_UpdatesOptionsMonitor()
+    {
+        // Arrange — 可热更新的内存配置
+        var updatableProvider = new UpdatableMemoryProvider(new Dictionary<string, string?>
+        {
+            ["MudHttpTokenRecovery:Enabled"] = "true",
+            ["MudHttpTokenRecovery:RecoveryMaxRetries"] = "1",
+            ["MudHttpTokenRecovery:TokenScheme"] = "Bearer",
+        });
+        var config = new ConfigurationBuilder()
+            .Add(updatableProvider)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddMudHttpTokenRecoveryFromConfiguration(config);
+        using var provider = services.BuildServiceProvider();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<TokenRecoveryOptions>>();
+
+        // 初始值
+        monitor.CurrentValue.RecoveryMaxRetries.Should().Be(1);
+        monitor.CurrentValue.TokenScheme.Should().Be("Bearer");
+
+        // Act — 改配置节并触发重载
+        updatableProvider.Set("MudHttpTokenRecovery:RecoveryMaxRetries", "4");
+        updatableProvider.Set("MudHttpTokenRecovery:TokenScheme", "Basic");
+        ((IConfigurationRoot)config).Reload();
+
+        // Assert — 变更令牌源驱动委托重跑（DTO 投影路径的热更新闭环：
+        // Configure(Action) 自身不带 reload token，缺失该注册时此处将停留旧值）
+        monitor.CurrentValue.RecoveryMaxRetries.Should().Be(4);
+        monitor.CurrentValue.TokenScheme.Should().Be("Basic");
+    }
+
+    [Fact]
+    public void AddMudHttpTokenRecovery_DelegateOverload_ConfiguresOptions()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMudHttpTokenRecovery(o =>
+        {
+            o.RecoveryMaxRetries = 2;
+            o.TokenScheme = "Basic";
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value;
+
+        options.RecoveryMaxRetries.Should().Be(2);
+        options.TokenScheme.Should().Be("Basic");
+    }
+
+    [Fact]
+    public void AddMudHttpTokenRecoveryFromConfiguration_InvalidValue_ThrowsFromSetterValidation()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpTokenRecovery:RecoveryMaxRetries"] = "-1",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddMudHttpTokenRecoveryFromConfiguration(config);
+
+        using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value;
+
+        act.Should().Throw<ArgumentOutOfRangeException>("非法值仍经 setter 校验抛错（DTO 投影不改变绑定语义）");
+    }
+
+    [Fact]
     public void AddMudHttpUserTokenCacheFromConfiguration_BindsUserTokenCacheOptions()
     {
         // Arrange

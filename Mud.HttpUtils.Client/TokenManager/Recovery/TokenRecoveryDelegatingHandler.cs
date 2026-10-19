@@ -57,112 +57,112 @@ namespace Mud.HttpUtils;
 /// </example>
 public class TokenRecoveryDelegatingHandler : DelegatingHandler
 {
- private readonly TokenRecoveryExecutor _recoveryExecutor;
+    private readonly TokenRecoveryExecutor _recoveryExecutor;
 
-/// <summary>
-/// 初始化令牌恢复委托处理器。
-/// </summary>
-/// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
-/// <param name="options">令牌恢复配置选项（可选）。</param>
-/// <param name="logger">日志记录器（可选）。</param>
-/// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
-/// <remarks>
-/// internal —— 与 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, IOptionsMonitor{TokenRecoveryOptions}, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>
-/// 元数相同且均可被容器满足，容器默认构造选择会抛 <c>"The following constructors are ambiguous"</c>。
-/// 注意 <c>ActivatorUtilitiesConstructorAttribute</c> 对容器无效，故必须收敛公共构造。
-/// 这与文档推荐的 <c>AddHttpMessageHandler&lt;TokenRecoveryDelegatingHandler&gt;()</c> 用法直接相关：
-/// 该扩展经 <c>b.Services.GetRequiredService&lt;THandler&gt;()</c> 解析处理器（容器路径，非 ActivatorUtilities）。
-/// </remarks>
- internal TokenRecoveryDelegatingHandler(
- ITokenManager tokenManager,
- TokenRecoveryOptions? options = null,
- ILogger<TokenRecoveryDelegatingHandler>? logger = null,
- IAppContextHolder? appContextHolder = null,
- MudMultiTenantOptions? multiTenantOptions = null)
- {
- _recoveryExecutor = new TokenRecoveryExecutor(
- tokenManager, options: options, logger: logger, appContextHolder: appContextHolder, multiTenantOptions: multiTenantOptions);
- }
+    /// <summary>
+    /// 初始化令牌恢复委托处理器。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="options">令牌恢复配置选项（可选）。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
+    /// <remarks>
+    /// internal —— 与 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, IOptionsMonitor{TokenRecoveryOptions}, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>
+    /// 元数相同且均可被容器满足，容器默认构造选择会抛 <c>"The following constructors are ambiguous"</c>。
+    /// 注意 <c>ActivatorUtilitiesConstructorAttribute</c> 对容器无效，故必须收敛公共构造。
+    /// 这与文档推荐的 <c>AddHttpMessageHandler&lt;TokenRecoveryDelegatingHandler&gt;()</c> 用法直接相关：
+    /// 该扩展经 <c>b.Services.GetRequiredService&lt;THandler&gt;()</c> 解析处理器（容器路径，非 ActivatorUtilities）。
+    /// </remarks>
+    internal TokenRecoveryDelegatingHandler(
+    ITokenManager tokenManager,
+    TokenRecoveryOptions? options = null,
+    ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+    IAppContextHolder? appContextHolder = null,
+    MudMultiTenantOptions? multiTenantOptions = null)
+    {
+        _recoveryExecutor = new TokenRecoveryExecutor(
+        tokenManager, options: options, logger: logger, appContextHolder: appContextHolder, multiTenantOptions: multiTenantOptions);
+    }
 
-/// <summary>
-/// 初始化令牌恢复委托处理器（支持用户级令牌恢复）。
-/// </summary>
-/// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
-/// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
-/// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
-/// <param name="options">令牌恢复配置选项（可选）。</param>
-/// <param name="logger">日志记录器（可选）。</param>
-// 令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
-/// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
-/// <remarks>internal，理由见 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, TokenRecoveryOptions?, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>；
-/// 外部请改用带 <see cref="IOptionsMonitor{T}"/> 的重载（支持热更新）。</remarks>
- internal TokenRecoveryDelegatingHandler(
- ITokenManager tokenManager,
- IUserTokenManager? userTokenManager,
- ICurrentUserContext? currentUserContext = null,
- TokenRecoveryOptions? options = null,
- ILogger<TokenRecoveryDelegatingHandler>? logger = null,
- ITokenManagerRegistry? managerRegistry = null,
- IAppContextHolder? appContextHolder = null,
- MudMultiTenantOptions? multiTenantOptions = null)
- {
- _recoveryExecutor = new TokenRecoveryExecutor(
- tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry, appContextHolder, multiTenantOptions);
- }
+    /// <summary>
+    /// 初始化令牌恢复委托处理器（支持用户级令牌恢复）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
+    /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
+    /// <param name="options">令牌恢复配置选项（可选）。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// 令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+    /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
+    /// <remarks>internal，理由见 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, TokenRecoveryOptions?, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>；
+    /// 外部请改用带 <see cref="IOptionsMonitor{T}"/> 的重载（支持热更新）。</remarks>
+    internal TokenRecoveryDelegatingHandler(
+    ITokenManager tokenManager,
+    IUserTokenManager? userTokenManager,
+    ICurrentUserContext? currentUserContext = null,
+    TokenRecoveryOptions? options = null,
+    ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+    ITokenManagerRegistry? managerRegistry = null,
+    IAppContextHolder? appContextHolder = null,
+    MudMultiTenantOptions? multiTenantOptions = null)
+    {
+        _recoveryExecutor = new TokenRecoveryExecutor(
+        tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry, appContextHolder, multiTenantOptions);
+    }
 
-/// <summary>
-/// 初始化令牌恢复委托处理器，支持配置热更新（IOptionsMonitor）。
-/// </summary>
-/// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
-/// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
-/// <param name="logger">日志记录器（可选）。</param>
-/// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
- public TokenRecoveryDelegatingHandler(
- ITokenManager tokenManager,
- IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
- ILogger<TokenRecoveryDelegatingHandler>? logger = null,
- IAppContextHolder? appContextHolder = null,
- MudMultiTenantOptions? multiTenantOptions = null)
- {
- _recoveryExecutor = new TokenRecoveryExecutor(
- tokenManager, optionsMonitor, logger, appContextHolder, multiTenantOptions);
- }
+    /// <summary>
+    /// 初始化令牌恢复委托处理器，支持配置热更新（IOptionsMonitor）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
+    public TokenRecoveryDelegatingHandler(
+    ITokenManager tokenManager,
+    IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
+    ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+    IAppContextHolder? appContextHolder = null,
+    MudMultiTenantOptions? multiTenantOptions = null)
+    {
+        _recoveryExecutor = new TokenRecoveryExecutor(
+        tokenManager, optionsMonitor, logger, appContextHolder, multiTenantOptions);
+    }
 
-/// <summary>
-/// 初始化令牌恢复委托处理器（支持用户级令牌恢复 + 配置热更新）。
-/// DI 激活唯一构造入口——<see cref="ActivatorUtilitiesConstructorAttribute"/> 标注确保
-/// <c>ActivatorUtilities</c> 确定性地选择此 ctor（最完整且全部可选依赖带默认值）。
-/// </summary>
-/// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
-/// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
-/// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
-/// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
-/// <param name="logger">日志记录器（可选）。</param>
-// 令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
-/// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
- [ActivatorUtilitiesConstructor]
- public TokenRecoveryDelegatingHandler(
- ITokenManager tokenManager,
- IUserTokenManager? userTokenManager,
- ICurrentUserContext? currentUserContext,
- IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
- ILogger<TokenRecoveryDelegatingHandler>? logger = null,
- ITokenManagerRegistry? managerRegistry = null,
- IAppContextHolder? appContextHolder = null,
- MudMultiTenantOptions? multiTenantOptions = null)
- {
- _recoveryExecutor = new TokenRecoveryExecutor(
- tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry, appContextHolder, multiTenantOptions);
- }
+    /// <summary>
+    /// 初始化令牌恢复委托处理器（支持用户级令牌恢复 + 配置热更新）。
+    /// DI 激活唯一构造入口——<see cref="ActivatorUtilitiesConstructorAttribute"/> 标注确保
+    /// <c>ActivatorUtilities</c> 确定性地选择此 ctor（最完整且全部可选依赖带默认值）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
+    /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
+    /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// 令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+    /// <param name="appContextHolder">应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
+    [ActivatorUtilitiesConstructor]
+    public TokenRecoveryDelegatingHandler(
+    ITokenManager tokenManager,
+    IUserTokenManager? userTokenManager,
+    ICurrentUserContext? currentUserContext,
+    IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
+    ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+    ITokenManagerRegistry? managerRegistry = null,
+    IAppContextHolder? appContextHolder = null,
+    MudMultiTenantOptions? multiTenantOptions = null)
+    {
+        _recoveryExecutor = new TokenRecoveryExecutor(
+        tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry, appContextHolder, multiTenantOptions);
+    }
 
-/// <inheritdoc />
- protected override Task<HttpResponseMessage> SendAsync(
- HttpRequestMessage request,
- CancellationToken cancellationToken)
- {
- return _recoveryExecutor.ExecuteAsync(
- request,
- (req, ct) => base.SendAsync(req, ct),
- cancellationToken);
- }
+    /// <inheritdoc />
+    protected override Task<HttpResponseMessage> SendAsync(
+    HttpRequestMessage request,
+    CancellationToken cancellationToken)
+    {
+        return _recoveryExecutor.ExecuteAsync(
+        request,
+        (req, ct) => base.SendAsync(req, ct),
+        cancellationToken);
+    }
 }

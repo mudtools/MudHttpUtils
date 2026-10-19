@@ -20,6 +20,7 @@ Mud.HttpUtils.TokenStoreBackedTokenCache<T>.IsInnerStoreEncrypted.get -> bool
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Keys.get -> System.Collections.Generic.IEnumerable<string!>!
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.PendingCompensationCount.get -> int
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.PendingWriteThroughCount.get -> int
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.ReadThroughFailures.get -> long
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.RetryFailedWritesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Set(string! key, T? value) -> void
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Set(string! key, T? value, System.TimeSpan? absoluteExpirationRelativeToNow, System.TimeSpan? slidingExpiration, System.Action<string!>? postEvictionCallback = null) -> void
@@ -43,6 +44,13 @@ Mud.HttpUtils.EnhancedHttpClientOptions.Clone() -> Mud.HttpUtils.EnhancedHttpCli
 Mud.HttpUtils.EnhancedHttpClientOptions.JsonEncoder.get -> System.Text.Encodings.Web.JavaScriptEncoder?
 Mud.HttpUtils.EnhancedHttpClientOptions.JsonEncoder.set -> void
 static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClientInfrastructure(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Mud.HttpUtils.MudHttpClientApplicationOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpTokenRecovery(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.TokenRecoveryOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+Mud.HttpUtils.AppHttpClientFactory<TAppContext>
+Mud.HttpUtils.AppHttpClientFactory<TAppContext>.AppHttpClientFactory(Mud.HttpUtils.IEnhancedHttpClientFactory! clientFactory, System.IServiceProvider! serviceProvider, string! clientNamePrefix = "app") -> void
+Mud.HttpUtils.AppHttpClientFactory<TAppContext>.GetClient(TAppContext appContext) -> Mud.HttpUtils.IEnhancedHttpClient!
+Mud.HttpUtils.AppHttpClientFactory<TAppContext>.Invalidate(string! appKey) -> void
+Mud.HttpUtils.AppHttpClientFactoryRegistrationExtensions
+static Mud.HttpUtils.AppHttpClientFactoryRegistrationExtensions.AddAppHttpClientFactory<TAppContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientNamePrefix = "app") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Mud.HttpUtils.HttpContentSerializerFactory.CreateDefault(System.Text.Json.JsonSerializerOptions? injected, object? explicitResolver, System.Text.Encodings.Web.JavaScriptEncoder? encoder) -> Mud.HttpUtils.IHttpContentSerializer!
 Mud.HttpUtils.TokenRecoveryRegistrationExtensions
 static Mud.HttpUtils.TokenRecoveryRegistrationExtensions.AddTokenRecoveryClient(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, bool disableUserTokenInference = false, Mud.HttpUtils.EnhancedHttpClientOptions? options = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

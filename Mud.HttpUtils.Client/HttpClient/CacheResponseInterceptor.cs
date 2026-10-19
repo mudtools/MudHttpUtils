@@ -35,138 +35,138 @@ public class CacheResponseInterceptor(
  ILogger<CacheResponseInterceptor> logger,
  ISensitiveDataMasker? sensitiveDataMasker = null) : ICacheResponseInterceptor
 {
- private readonly IHttpResponseCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
- private readonly ILogger<CacheResponseInterceptor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
- private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
+    private readonly IHttpResponseCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly ILogger<CacheResponseInterceptor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
 
-/// <summary>
-/// G29：遥测输出专用的脱敏缓存键（缓存查找仍用原始 key）。
-/// </summary>
- private string SafeKey(string key)
- => MessageSanitizer.SanitizeWith(_sensitiveDataMasker, key, 200);
+    /// <summary>
+    /// G29：遥测输出专用的脱敏缓存键（缓存查找仍用原始 key）。
+    /// </summary>
+    private string SafeKey(string key)
+    => MessageSanitizer.SanitizeWith(_sensitiveDataMasker, key, 200);
 
-/// <inheritdoc/>
- public int Order => 100;
+    /// <inheritdoc/>
+    public int Order => 100;
 
-/// <inheritdoc/>
- Task IHttpResponseInterceptor.OnResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
- {
- return Task.CompletedTask;
- }
+    /// <inheritdoc/>
+    Task IHttpResponseInterceptor.OnResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-/// <inheritdoc/>
- public bool TryGet<T>(string key, out T? value)
- {
-// 复用当前 Activity 引用：在同一次 TryGet 调用中 Activity.Current 不会变，
-// 一次读取即可同时用于读取 client_name 维度和写入 cache.hit tag，避免重复读取与 IsMudActivity 检查
- var currentActivity = Activity.Current;
- var isMudActivity = currentActivity != null && MudHttpActivitySource.IsMudActivity(currentActivity);
+    /// <inheritdoc/>
+    public bool TryGet<T>(string key, out T? value)
+    {
+        // 复用当前 Activity 引用：在同一次 TryGet 调用中 Activity.Current 不会变，
+        // 一次读取即可同时用于读取 client_name 维度和写入 cache.hit tag，避免重复读取与 IsMudActivity 检查
+        var currentActivity = Activity.Current;
+        var isMudActivity = currentActivity != null && MudHttpActivitySource.IsMudActivity(currentActivity);
 
-// 从当前 Mud Activity 读取 client_name，补全 CacheCounter 的 client_name 维度
- var clientName = "(default)";
- if (isMudActivity)
- {
- if (currentActivity!.GetTagItem(MudHttpActivitySource.Tags.MudClientName) is string cn && !string.IsNullOrEmpty(cn))
- clientName = cn;
- }
+        // 从当前 Mud Activity 读取 client_name，补全 CacheCounter 的 client_name 维度
+        var clientName = "(default)";
+        if (isMudActivity)
+        {
+            if (currentActivity!.GetTagItem(MudHttpActivitySource.Tags.MudClientName) is string cn && !string.IsNullOrEmpty(cn))
+                clientName = cn;
+        }
 
- if (_cache.TryGet(key, out value))
- {
- MudHttpClientLog.CacheHit(_logger, SafeKey(key));
-// M1-#6：cache_key 含完整 URL/参数（高基数），不得作为指标 tag（会打爆时序后端）；
-// 高基数信息保留在下方 Activity 事件中；经白名单过滤
- MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
- new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "hit") }));
+        if (_cache.TryGet(key, out value))
+        {
+            MudHttpClientLog.CacheHit(_logger, SafeKey(key));
+            // M1-#6：cache_key 含完整 URL/参数（高基数），不得作为指标 tag（会打爆时序后端）；
+            // 高基数信息保留在下方 Activity 事件中；经白名单过滤
+            MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
+            new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "hit") }));
 
-// 将缓存命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
- if (isMudActivity)
- currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, true);
+            // 将缓存命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
+            if (isMudActivity)
+                currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, true);
 
-// G28/G29：门控前移 + 惰性工厂 + 遥测键脱敏
- if (MudHttpActivitySource.EventsEnabled)
- {
- MudHttpActivitySource.AddActivityEvent(
- MudHttpDiagnosticNames.CacheHit,
- () => new CacheDiagnosticPayload(SafeKey(key), hit: true),
- MudHttpDiagnosticNames.CacheHit,
- () => new[]
- {
+            // G28/G29：门控前移 + 惰性工厂 + 遥测键脱敏
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.CacheHit,
+                () => new CacheDiagnosticPayload(SafeKey(key), hit: true),
+                MudHttpDiagnosticNames.CacheHit,
+                () => new[]
+                {
  new KeyValuePair<string, object?>("cache_key", SafeKey(key)),
  new KeyValuePair<string, object?>("hit", true),
- });
- }
- return true;
- }
+                });
+            }
+            return true;
+        }
 
- value = default;
-// 经指标 tag 白名单过滤
- MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
- new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "miss") }));
+        value = default;
+        // 经指标 tag 白名单过滤
+        MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
+        new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "miss") }));
 
-// 将缓存未命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
- if (isMudActivity)
- currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, false);
+        // 将缓存未命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
+        if (isMudActivity)
+            currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, false);
 
-// G28/G29：门控前移 + 惰性工厂 + 遥测键脱敏
- if (MudHttpActivitySource.EventsEnabled)
- {
- MudHttpActivitySource.AddActivityEvent(
- MudHttpDiagnosticNames.CacheMiss,
- () => new CacheDiagnosticPayload(SafeKey(key), hit: false),
- MudHttpDiagnosticNames.CacheMiss,
- () => new[]
- {
+        // G28/G29：门控前移 + 惰性工厂 + 遥测键脱敏
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.CacheMiss,
+            () => new CacheDiagnosticPayload(SafeKey(key), hit: false),
+            MudHttpDiagnosticNames.CacheMiss,
+            () => new[]
+            {
  new KeyValuePair<string, object?>("cache_key", SafeKey(key)),
  new KeyValuePair<string, object?>("hit", false),
- });
- }
- return false;
- }
+            });
+        }
+        return false;
+    }
 
-/// <inheritdoc/>
- public void Set<T>(string key, T? value, TimeSpan absoluteExpirationRelativeToNow)
- {
- Set(key, value, absoluteExpirationRelativeToNow, useSlidingExpiration: false);
- }
+    /// <inheritdoc/>
+    public void Set<T>(string key, T? value, TimeSpan absoluteExpirationRelativeToNow)
+    {
+        Set(key, value, absoluteExpirationRelativeToNow, useSlidingExpiration: false);
+    }
 
-/// <inheritdoc/>
- public void Set<T>(string key, T? value, TimeSpan expirationRelativeToNow, bool useSlidingExpiration)
- {
- if (value == null)
- return;
+    /// <inheritdoc/>
+    public void Set<T>(string key, T? value, TimeSpan expirationRelativeToNow, bool useSlidingExpiration)
+    {
+        if (value == null)
+            return;
 
- _cache.Set(key, value, expirationRelativeToNow, useSlidingExpiration);
-// G29：日志输出用脱敏键（缓存存储仍用原始 key）
- MudHttpClientLog.CacheSet(_logger, SafeKey(key), expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
- }
+        _cache.Set(key, value, expirationRelativeToNow, useSlidingExpiration);
+        // G29：日志输出用脱敏键（缓存存储仍用原始 key）
+        MudHttpClientLog.CacheSet(_logger, SafeKey(key), expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
+    }
 
-/// <inheritdoc/>
- public void Remove(string key)
- {
- _cache.Remove(key);
-// G29：日志输出用脱敏键（缓存移除仍用原始 key）
- MudHttpClientLog.CacheRemoved(_logger, SafeKey(key));
- }
+    /// <inheritdoc/>
+    public void Remove(string key)
+    {
+        _cache.Remove(key);
+        // G29：日志输出用脱敏键（缓存移除仍用原始 key）
+        MudHttpClientLog.CacheRemoved(_logger, SafeKey(key));
+    }
 
-/// <inheritdoc/>
- public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)
- => await GetOrFetchAsync(key, fetchFunc, expiration, useSlidingExpiration: false, cancellationToken).ConfigureAwait(false);
+    /// <inheritdoc/>
+    public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)
+    => await GetOrFetchAsync(key, fetchFunc, expiration, useSlidingExpiration: false, cancellationToken).ConfigureAwait(false);
 
-/// <inheritdoc/>
- public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default)
- {
- return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, useSlidingExpiration, cancellationToken).ConfigureAwait(false);
- }
+    /// <inheritdoc/>
+    public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default)
+    {
+        return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, useSlidingExpiration, cancellationToken).ConfigureAwait(false);
+    }
 
-/// <inheritdoc/>
- public Task RemoveAsync(string key)
- {
- return _cache.RemoveAsync(key);
- }
+    /// <inheritdoc/>
+    public Task RemoveAsync(string key)
+    {
+        return _cache.RemoveAsync(key);
+    }
 
-/// <inheritdoc/>
- public Task ClearAsync()
- {
- return _cache.ClearAsync();
- }
+    /// <inheritdoc/>
+    public Task ClearAsync()
+    {
+        return _cache.ClearAsync();
+    }
 }

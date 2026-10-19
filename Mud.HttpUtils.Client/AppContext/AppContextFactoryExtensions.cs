@@ -33,41 +33,41 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public static class AppContextFactoryExtensions
 {
-/// <summary>
-/// 创建 per-app DI scope（<see cref="IServiceScopeFactory.CreateScope"/> 语义）。
-/// </summary>
-/// <param name="services">服务提供者（通常为 <c>RegisterLazy</c> 工厂收到的根容器）。</param>
-/// <returns>新建的 DI scope；调用方负责 <see cref="IDisposable.Dispose"/>。</returns>
-/// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null。</exception>
- public static IServiceScope CreateAppScope(this IServiceProvider services)
- {
- if (services == null)
- throw new ArgumentNullException(nameof(services));
+    /// <summary>
+    /// 创建 per-app DI scope（<see cref="IServiceScopeFactory.CreateScope"/> 语义）。
+    /// </summary>
+    /// <param name="services">服务提供者（通常为 <c>RegisterLazy</c> 工厂收到的根容器）。</param>
+    /// <returns>新建的 DI scope；调用方负责 <see cref="IDisposable.Dispose"/>。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null。</exception>
+    public static IServiceScope CreateAppScope(this IServiceProvider services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
 
- return services.CreateScope();
- }
+        return services.CreateScope();
+    }
 
-/// <summary>
-/// 解析<b>命名 HttpClient</b>（经 <see cref="IHttpClientResolver"/>），未注册命名客户端时抛出（fail-closed）。
-/// </summary>
-/// <param name="services">服务提供者。</param>
-/// <param name="clientName">命名客户端名称（与 <c>AddMudHttpClient</c> / 生成器注册的名称一致）。</param>
-/// <returns>命名客户端实例。</returns>
-/// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="clientName"/> 为 null。</exception>
-/// <exception cref="InvalidOperationException"><see cref="IHttpClientResolver"/> 未注册或该名称未注册。</exception>
-/// <remarks>
-/// 委托 <see cref="IHttpClientResolver.GetClient"/>（未命中抛出）；需要"未命中降级"语义请直接用
-/// <c>TryGetClient</c>。生成的切换器/上下文构造通常收 <see cref="IEnhancedHttpClient"/>，
-/// 本辅助即为其"按名取件"的注入入口。
-/// </remarks>
- public static IEnhancedHttpClient GetRequiredNamedClient(this IServiceProvider services, string clientName)
- {
- if (services == null)
- throw new ArgumentNullException(nameof(services));
- if (clientName == null)
- throw new ArgumentNullException(nameof(clientName));
+    /// <summary>
+    /// 解析<b>命名 HttpClient</b>（经 <see cref="IHttpClientResolver"/>），未注册命名客户端时抛出（fail-closed）。
+    /// </summary>
+    /// <param name="services">服务提供者。</param>
+    /// <param name="clientName">命名客户端名称（与 <c>AddMudHttpClient</c> / 生成器注册的名称一致）。</param>
+    /// <returns>命名客户端实例。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="clientName"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException"><see cref="IHttpClientResolver"/> 未注册或该名称未注册。</exception>
+    /// <remarks>
+    /// 委托 <see cref="IHttpClientResolver.GetClient"/>（未命中抛出）；需要"未命中降级"语义请直接用
+    /// <c>TryGetClient</c>。生成的切换器/上下文构造通常收 <see cref="IEnhancedHttpClient"/>，
+    /// 本辅助即为其"按名取件"的注入入口。
+    /// </remarks>
+    public static IEnhancedHttpClient GetRequiredNamedClient(this IServiceProvider services, string clientName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (clientName == null)
+            throw new ArgumentNullException(nameof(clientName));
 
- var resolver = services.GetRequiredService<IHttpClientResolver>();
- return resolver.GetClient(clientName);
- }
+        var resolver = services.GetRequiredService<IHttpClientResolver>();
+        return resolver.GetClient(clientName);
+    }
 }

@@ -138,7 +138,7 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 | :--- | :--- | :---: | :--- | :--- |
 | `MudHttpClients:Clients:<name>.AllowCustomBaseUrls` | `MudHttpClientApplicationOptions` | ✅ | 下一次创建/解析客户端 | `CreateEnhancedClient` 每次读取 `IOptionsMonitor.CurrentValue` |
 | `MudHttpClients:AllowedDomains` | `MudHttpClientApplicationOptions` → `UrlValidator` | ✅ | `OnChange` 立即重放 | 只替换「配置桶」，**不清除**运行期 `UrlValidator.AddAllowedDomain` 新增的域名（CFG-34）；**G6**：注册期种子化已改为**并集**（多入口不互相清空），语义矩阵见「白名单入口语义矩阵」 |
-| `MudHttpClients:Clients:<name>.BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` | 注册期快照 | ❌ | 需重启 | 注册期由 `section.Bind` 生成局部快照并被 `ConfigureHttpClient` 委托闭包捕获；`IOptionsMonitor` 会更新，但已注册的 `HttpClient` 配置不会（CFG-36）。**G5**：配置变更会触发**逐客户端** `IEnhancedHttpClientFactory.Invalidate(name)`（原先为 `InvalidateAll()`），但**失效缓存不会使这三项生效** —— 需要重建命名客户端 |
+| `MudHttpClients:Clients:<name>.BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` | 注册期快照 | ❌ | 需重建 | ⚠️ **失效缓存无效（显式告警）**：注册期由 `section.Bind` 生成局部快照并被 `ConfigureHttpClient` 委托闭包捕获；`IOptionsMonitor` 会更新，但已注册的 `HttpClient` 配置不会（CFG-36）。**G5**：配置变更会触发**逐客户端** `IEnhancedHttpClientFactory.Invalidate(name)`（原先为 `InvalidateAll()`），但**失效缓存不会使这三项生效**。**两种生效方式（二选一）**：① 重建命名客户端（新容器 / 重新注册）；② 经 `WithBaseAddress` 派生新客户端。配置变更涉及这三项时，库会记一条 Info 日志（EventId 199 `ClientConfigRebuildRequired`）逐客户端列出受影响项与生效方式 |
 | `EnhancedHttpClientOptions.*`（编程式） | `IOptions<EnhancedHttpClientOptions>` | ❌ | 需重启 | 客户端创建时克隆单例值 |
 | `TokenRefreshBackground:*` | `TokenRefreshBackgroundOptions` | ✅ (TMX-10) | 下一轮刷新周期 | `TokenRefreshHostedService` 改用 `IOptionsMonitor<T>`，每轮循环读取 `CurrentValue`。ns2.0 Timer 版（`TokenRefreshBackgroundService`）仍为快照，不支持热更新 |
 | `MudHttpOpenTelemetry:*` | 局部实例绑定 | ❌ | 需重启 | OTel SDK 的 `TracerProvider`/`MeterProvider` 构建后不可变；该重载亦不把选项注册进 DI 选项管道 |
@@ -1086,6 +1086,21 @@ services.AddMudHttpClientsFromConfiguration(Configuration);
 
 > **TimeoutSeconds 说明**：`MudHttpClientOptions.TimeoutSeconds` 控制 HttpClient 全局超时（包含所有重试的总时间），与 `TimeoutOptions.TimeoutSeconds`（Polly 单次请求超时）不同。两者可同时配置，详见 [Resilience 文档 - 超时配置](../Mud.HttpUtils.Resilience/README.md#timeoutoptions)。
 
+### 注册入口决策树
+
+15+ 注册入口按五个维度各指向**唯一主入口**；未列出的入口均为「专家路径」（特定子场景，用前请读对应章节）：
+
+| 维度 | 主入口 | 说明 |
+| :--- | :--- | :--- |
+| **单应用（零配置）** | 生成器发射的 `AddWebApiHttpClient()` | 每个 `[HttpClientApi]` 接口经 `AddMudHttpClient` 注册，基础设施（Tracing / 异常擦除 / 响应缓存 / 执行器 / 序列化器）随之以 `TryAdd` 落地，单应用场景开箱即用 |
+| **单应用（编程式）** | `AddMudHttpClient(clientName, …)` | 显式装配单个命名客户端；需要 BaseAddress / 加密 / 默认实例语义时用其重载 |
+| **多应用 / 多租户** | `AddAppHttpClientFactory<TAppContext>(prefix)` | 按 appKey 动态创建 + 缓存 + 失效增强客户端；注册了 `TokenRecoveryExecutor` 时自动挂接令牌恢复（收敛各下游自建 per-app 工厂） |
+| **配置驱动** | `AddMudHttpClientsFromConfiguration(Configuration)` | 从 `MudHttpClients` 节批量注册命名客户端、域名白名单与响应缓存；支持配置热更新（固化项除外，见「配置热更新能力矩阵」） |
+| **Native AOT** | 委托式入口：`AddMudHttpClients(Action<…>)` / `AddMudHttpTokenRecovery(Action<…>)` / `AddMudHttpOAuth2(Action<…>)` / `AddMudHttpClientJsonContext(context)` / `AddMudHttpClientJsonContexts(contexts…)` | 不经 `IConfiguration` 反射绑定；配置绑定类入口（`*FromConfiguration`）内部已收敛为纯 DTO 投影 + 库内抑制，调用方无 `Requires*` 标注 |
+| **弹性（Resilience）** | Resilience 包的 `AddMudHttpResilience…` 系列 | 与上述入口正交：注册 `IResiliencePolicyResolver` 后各客户端自动取用；详见 [Resilience 文档](../Mud.HttpUtils.Resilience/README.md) |
+
+> 专家路径示例：`AddMudHttpClientInfrastructure(options)`（仅要基础设施不要客户端）、`AddMudHttpClientSsrfProtection`（显式连接期 SSRF 接线）、`AddTokenRecoveryHandler` / `AddTokenRecoveryClient`（Handler 形态恢复，多应用场景请改用 EnhancedClient 形态）。
+
 ### 注册安全认证服务
 
 ```csharp
@@ -1130,6 +1145,9 @@ services.AddSensitiveDataMasker<DefaultSensitiveDataMasker>(); // 反射读取 [
 | `AddMudHttpTokenRecoveryFromConfiguration(IConfiguration, ...)` | 从 `MudHttpTokenRecovery` 配置节绑定令牌恢复选项 |
 | `AddMudHttpUserTokenCacheFromConfiguration(IConfiguration, ...)` | 从 `MudHttpUserTokenCache` 配置节绑定用户令牌缓存选项 |
 | `AddMudHttpClientsFromConfiguration(IConfiguration, ...)` | 从 `MudHttpClients` 配置节批量注册命名客户端与域名白名单 |
+| `AddMudHttpTokenRecovery(Action<TokenRecoveryOptions>)` | 委托式令牌恢复注册（AOT 安全入口；`*FromConfiguration` 内部即经它收敛为纯 DTO 投影） |
+| `AddAppHttpClientFactory<TAppContext>(prefix = "app")` | 注册多应用 HTTP 客户端工厂（`IAppHttpClientFactory<TAppContext>`，TryAdd 语义） |
+| `AddMudHttpClientJsonContexts(params JsonSerializerContext[])` | 多 JSON 上下文合并（按传入顺序 Combine，**后者优先**；net8+） |
 | `AddMudHttpClients(Action<MudHttpClientApplicationOptions>)` | 委托式多客户端注册（Native AOT 推荐入口；首值即终值，不支持配置热更新） |
 | `AddMudHttpOAuth2(Action<OAuth2Options>?)` | 委托式 OAuth2 注册（Native AOT 推荐入口，不经 `IConfiguration` 反射绑定） |
 | `AddTokenManagerRegistry(Func<string, ITokenManager?>)` | 注册 `ITokenManagerRegistry` 委托实现，为 401 恢复提供按键路由（SR-M6） |

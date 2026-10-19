@@ -283,7 +283,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
         id: "HTTPCLIENT013",
         title: "路径参数不匹配",
-        messageFormat: "接口 {0} 的方法 {1} 的 URL 模板 '{2}' 中的路径参数与方法的 [Path] 参数不匹配。{3}",
+        messageFormat: "接口 {0} 的方法 {1} 的 URL 模板 '{2}' 中的路径参数与方法的 [Path] 参数不匹配。{3}。可将占位符与参数名解耦：使用 [Path(Name = \"官方占位符名\")] 显式指定占位符名（无需为对齐官方契约而改参数名）。",
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -293,7 +293,7 @@ internal static class Diagnostics
         title: "HttpClient 类型未找到",
         // F-07：双错可诊断性——014 不阻断生成（可抑制策略），类型缺失必然在后续产生指向生成文件的
         // CS0246。追加引导语句把两个错误显式关联，避免用户把它们当独立问题分别排查。
-        messageFormat: "接口 {0} 指定的 HttpClient 类型 '{1}' 在当前编译中未找到。请确认类型名称是否正确，或确保已通过 AddMudHttpClient 注册了对应的命名客户端。实现类生成将继续进行，随后可能出现指向生成文件的 CS0246（类型 '{1}' 未找到），两者为同一根因，无需分别排查。",
+        messageFormat: "接口 {0} 指定的 HttpClient 类型 '{1}' 在当前编译中未找到。请确认类型名称是否正确，或确保已通过 AddMudHttpClient 注册了对应的命名客户端。实现类生成将继续进行，随后可能出现指向生成文件的 CS0246（类型 '{1}' 未找到），两者为同一根因，无需分别排查。自定义 HttpClient 类型名必须为全限定名（nameof 只产出短名，不满足 metadata name 精确匹配）。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -325,7 +325,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor TokenManagerKeyInferredFromDefault = new(
         id: "HTTPCLIENT018",
         title: "TokenManagerKey 使用默认推断值",
-        messageFormat: "接口 {0} 未显式指定 TokenManagerKey 或 TokenType，生成器将使用默认值 '{1}'。在多接口共享同一 TokenManager 的场景下，可能导致令牌管理器注册冲突。如需隔离不同接口的令牌，请通过 [Token] 特性显式指定 TokenManagerKey 或 TokenType。",
+        messageFormat: "接口 {0} 未显式指定 TokenManagerKey 或 TokenType，将使用默认值 '{1}'。在多接口共享同一 TokenManager 的场景下，可能导致令牌管理器注册冲突。如需隔离不同接口的令牌，请通过 [Token] 特性显式指定 TokenManagerKey 或 TokenType；如默认值即为预期，可用 [Token(Justification = \"理由\")] 或目录级 .editorconfig 键 mud_suppress_token_manager_key_inference = true 显式豁免。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

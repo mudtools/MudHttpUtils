@@ -30,91 +30,91 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class TokenRecoveryEnhancedClient : HttpClientFactoryEnhancedClient
 {
- private readonly TokenRecoveryExecutor _recoveryExecutor;
+    private readonly TokenRecoveryExecutor _recoveryExecutor;
 
-/// <summary>
-/// 初始化支持令牌恢复的 EnhancedHttpClient 实例。
-/// </summary>
-/// <param name="factory">IHttpClientFactory 实例</param>
-/// <param name="clientName">Named HttpClient 名称</param>
-/// <param name="recoveryExecutor">令牌恢复执行器</param>
-/// <param name="encryptionProvider">加密提供器（可选）</param>
-/// <param name="options">配置选项（可选）</param>
-/// <exception cref="ArgumentNullException">factory、clientName 或 recoveryExecutor 为 null</exception>
- public TokenRecoveryEnhancedClient(
- IHttpClientFactory factory,
- string clientName,
- TokenRecoveryExecutor recoveryExecutor,
- IEncryptionProvider? encryptionProvider = null,
- EnhancedHttpClientOptions? options = null)
- : base(factory, clientName, encryptionProvider, options)
- {
- _recoveryExecutor = recoveryExecutor
- ?? throw new ArgumentNullException(nameof(recoveryExecutor));
- }
+    /// <summary>
+    /// 初始化支持令牌恢复的 EnhancedHttpClient 实例。
+    /// </summary>
+    /// <param name="factory">IHttpClientFactory 实例</param>
+    /// <param name="clientName">Named HttpClient 名称</param>
+    /// <param name="recoveryExecutor">令牌恢复执行器</param>
+    /// <param name="encryptionProvider">加密提供器（可选）</param>
+    /// <param name="options">配置选项（可选）</param>
+    /// <exception cref="ArgumentNullException">factory、clientName 或 recoveryExecutor 为 null</exception>
+    public TokenRecoveryEnhancedClient(
+    IHttpClientFactory factory,
+    string clientName,
+    TokenRecoveryExecutor recoveryExecutor,
+    IEncryptionProvider? encryptionProvider = null,
+    EnhancedHttpClientOptions? options = null)
+    : base(factory, clientName, encryptionProvider, options)
+    {
+        _recoveryExecutor = recoveryExecutor
+        ?? throw new ArgumentNullException(nameof(recoveryExecutor));
+    }
 
-/// <inheritdoc />
- protected override Task<HttpResponseMessage> SendCoreAsync(
- HttpRequestMessage request,
- HttpCompletionOption completionOption,
- CancellationToken cancellationToken)
- {
-// 委托给 TokenRecoveryExecutor，传入 base.SendCoreAsync 作为实际发送函数
- return _recoveryExecutor.ExecuteAsync(
- request,
- (req, ct) => base.SendCoreAsync(req, completionOption, ct),
- cancellationToken);
- }
+    /// <inheritdoc />
+    protected override Task<HttpResponseMessage> SendCoreAsync(
+    HttpRequestMessage request,
+    HttpCompletionOption completionOption,
+    CancellationToken cancellationToken)
+    {
+        // 委托给 TokenRecoveryExecutor，传入 base.SendCoreAsync 作为实际发送函数
+        return _recoveryExecutor.ExecuteAsync(
+        request,
+        (req, ct) => base.SendCoreAsync(req, completionOption, ct),
+        cancellationToken);
+    }
 
-/// <summary>
-/// [修复] 供 <see cref="CreateWithBaseAddress"/> 构造同类型克隆使用的内部构造。
-/// </summary>
-/// <remarks>
-/// 刻意声明为 <c>internal</c> 而非 <c>public</c>：本类可被 DI 解析，新增 public 构造重载会引入
-/// 构造歧义（见 CHANGELOG 的 正是为消除
-/// "The following constructors are ambiguous" 而把非主构造降级为 internal）。
-/// </remarks>
-/// <param name="factory">IHttpClientFactory 实例</param>
-/// <param name="clientName">Named HttpClient 名称</param>
-/// <param name="recoveryExecutor">令牌恢复执行器</param>
-/// <param name="encryptionProvider">加密提供器（可选）</param>
-/// <param name="options">配置选项</param>
-/// <param name="overrideBaseAddress">覆盖的基地址</param>
-/// <param name="jsonOptions">JSON 序列化选项（可选）</param>
-/// <param name="contentSerializer">HTTP 内容序列化器（可选）</param>
- internal TokenRecoveryEnhancedClient(
- IHttpClientFactory factory,
- string clientName,
- TokenRecoveryExecutor recoveryExecutor,
- IEncryptionProvider? encryptionProvider,
- EnhancedHttpClientOptions options,
- Uri overrideBaseAddress,
- IOptions<JsonSerializerOptions>? jsonOptions,
- IHttpContentSerializer? contentSerializer)
- : base(factory, clientName, encryptionProvider, options, overrideBaseAddress, jsonOptions, contentSerializer)
- {
- _recoveryExecutor = recoveryExecutor
- ?? throw new ArgumentNullException(nameof(recoveryExecutor));
- }
+    /// <summary>
+    /// [修复] 供 <see cref="CreateWithBaseAddress"/> 构造同类型克隆使用的内部构造。
+    /// </summary>
+    /// <remarks>
+    /// 刻意声明为 <c>internal</c> 而非 <c>public</c>：本类可被 DI 解析，新增 public 构造重载会引入
+    /// 构造歧义（见 CHANGELOG 的 正是为消除
+    /// "The following constructors are ambiguous" 而把非主构造降级为 internal）。
+    /// </remarks>
+    /// <param name="factory">IHttpClientFactory 实例</param>
+    /// <param name="clientName">Named HttpClient 名称</param>
+    /// <param name="recoveryExecutor">令牌恢复执行器</param>
+    /// <param name="encryptionProvider">加密提供器（可选）</param>
+    /// <param name="options">配置选项</param>
+    /// <param name="overrideBaseAddress">覆盖的基地址</param>
+    /// <param name="jsonOptions">JSON 序列化选项（可选）</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）</param>
+    internal TokenRecoveryEnhancedClient(
+    IHttpClientFactory factory,
+    string clientName,
+    TokenRecoveryExecutor recoveryExecutor,
+    IEncryptionProvider? encryptionProvider,
+    EnhancedHttpClientOptions options,
+    Uri overrideBaseAddress,
+    IOptions<JsonSerializerOptions>? jsonOptions,
+    IHttpContentSerializer? contentSerializer)
+    : base(factory, clientName, encryptionProvider, options, overrideBaseAddress, jsonOptions, contentSerializer)
+    {
+        _recoveryExecutor = recoveryExecutor
+        ?? throw new ArgumentNullException(nameof(recoveryExecutor));
+    }
 
-/// <summary>
-/// 以新的基地址构造同类型克隆，保留 401 令牌恢复能力。
-/// </summary>
-/// <remarks>
-/// [修复] 若不重写，<c>WithBaseAddress</c> 会走到基类实现并返回普通
-/// <see cref="HttpClientFactoryEnhancedClient"/>，使令牌恢复能力被静默丢弃。
-/// </remarks>
-/// <param name="baseAddress">新的基地址。</param>
-/// <returns>仍具备令牌恢复能力、且指向新基地址的新实例。</returns>
- internal override HttpClientFactoryEnhancedClient CreateWithBaseAddress(Uri baseAddress)
- => new TokenRecoveryEnhancedClient(
- Factory,
- ClientName!,
- _recoveryExecutor,
- EncryptionProvider,
- ClientOptions,
- baseAddress,
- JsonOptions,
-// 基类 ContentSerializer 永不返回 null（未注入时回退默认实现），故直接传递即可。
- ContentSerializer);
+    /// <summary>
+    /// 以新的基地址构造同类型克隆，保留 401 令牌恢复能力。
+    /// </summary>
+    /// <remarks>
+    /// [修复] 若不重写，<c>WithBaseAddress</c> 会走到基类实现并返回普通
+    /// <see cref="HttpClientFactoryEnhancedClient"/>，使令牌恢复能力被静默丢弃。
+    /// </remarks>
+    /// <param name="baseAddress">新的基地址。</param>
+    /// <returns>仍具备令牌恢复能力、且指向新基地址的新实例。</returns>
+    internal override HttpClientFactoryEnhancedClient CreateWithBaseAddress(Uri baseAddress)
+    => new TokenRecoveryEnhancedClient(
+    Factory,
+    ClientName!,
+    _recoveryExecutor,
+    EncryptionProvider,
+    ClientOptions,
+    baseAddress,
+    JsonOptions,
+    // 基类 ContentSerializer 永不返回 null（未注入时回退默认实现），故直接传递即可。
+    ContentSerializer);
 }

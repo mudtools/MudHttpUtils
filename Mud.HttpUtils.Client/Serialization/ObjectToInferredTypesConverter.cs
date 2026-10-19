@@ -24,62 +24,62 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class ObjectToInferredTypesConverter : JsonConverter<object?>
 {
-/// <inheritdoc/>
- public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
- {
- return reader.TokenType switch
- {
- JsonTokenType.True => true,
- JsonTokenType.False => false,
- JsonTokenType.Number => reader.GetDecimal(),
- JsonTokenType.String => reader.GetString(),
- JsonTokenType.Null => null,
- _ => JsonDocument.ParseValue(ref reader).RootElement.Clone()
- };
- }
+    /// <inheritdoc/>
+    public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.True => true,
+            JsonTokenType.False => false,
+            JsonTokenType.Number => reader.GetDecimal(),
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Null => null,
+            _ => JsonDocument.ParseValue(ref reader).RootElement.Clone()
+        };
+    }
 
-/// <inheritdoc/>
-/// <remarks>
-/// 与 <see cref="Read"/> 的产出集合严格对称（<c>bool</c>/<c>decimal</c>/<c>string</c>/<c>null</c>/<c>JsonElement</c>），
-/// 完全使用 <see cref="Utf8JsonWriter"/> 原生 API 写入，无需任何反射或动态代码（Native AOT 安全）。
-/// 额外覆盖 <c>double</c>/<c>int</c>/<c>long</c>（消费方手工塞入 <c>Dictionary&lt;string, object&gt;</c> 时的防御性分支）。
-/// </remarks>
- public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
- {
- switch (value)
- {
- case null:
- writer.WriteNullValue();
- break;
- case bool b:
- writer.WriteBooleanValue(b);
- break;
- case string s:
- writer.WriteStringValue(s);
- break;
- case decimal d:
- writer.WriteNumberValue(d);
- break;
- case double dbl:
- writer.WriteNumberValue(dbl);
- break;
- case float f:
- writer.WriteNumberValue(f);
- break;
- case int i:
- writer.WriteNumberValue(i);
- break;
- case long l:
- writer.WriteNumberValue(l);
- break;
- case JsonElement je:
- je.WriteTo(writer);
- break;
- default:
-// [S-1] 不引入反射（AOT 安全）；未知类型退化为类型占位而非 ToString 全文，
-// 防止对象内部状态经 ProblemDetails.Extensions 旁路输出（可能绕过脱敏管线）。
- writer.WriteStringValue($"[unserializable:{value.GetType().Name}]");
- break;
- }
- }
+    /// <inheritdoc/>
+    /// <remarks>
+    /// 与 <see cref="Read"/> 的产出集合严格对称（<c>bool</c>/<c>decimal</c>/<c>string</c>/<c>null</c>/<c>JsonElement</c>），
+    /// 完全使用 <see cref="Utf8JsonWriter"/> 原生 API 写入，无需任何反射或动态代码（Native AOT 安全）。
+    /// 额外覆盖 <c>double</c>/<c>int</c>/<c>long</c>（消费方手工塞入 <c>Dictionary&lt;string, object&gt;</c> 时的防御性分支）。
+    /// </remarks>
+    public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                break;
+            case bool b:
+                writer.WriteBooleanValue(b);
+                break;
+            case string s:
+                writer.WriteStringValue(s);
+                break;
+            case decimal d:
+                writer.WriteNumberValue(d);
+                break;
+            case double dbl:
+                writer.WriteNumberValue(dbl);
+                break;
+            case float f:
+                writer.WriteNumberValue(f);
+                break;
+            case int i:
+                writer.WriteNumberValue(i);
+                break;
+            case long l:
+                writer.WriteNumberValue(l);
+                break;
+            case JsonElement je:
+                je.WriteTo(writer);
+                break;
+            default:
+                // [S-1] 不引入反射（AOT 安全）；未知类型退化为类型占位而非 ToString 全文，
+                // 防止对象内部状态经 ProblemDetails.Extensions 旁路输出（可能绕过脱敏管线）。
+                writer.WriteStringValue($"[unserializable:{value.GetType().Name}]");
+                break;
+        }
+    }
 }

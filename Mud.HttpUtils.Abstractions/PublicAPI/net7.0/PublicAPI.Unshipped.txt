@@ -240,3 +240,10 @@ static Mud.HttpUtils.VersionedTokenStoreCodec.IsVersionedEnvelope(string? encode
 static Mud.HttpUtils.VersionedTokenStoreCodec.TryDecodeEnvelope(string? encoded, out Mud.HttpUtils.TokenStoreEnvelopeState state, out string? token, out long expiresInSeconds) -> bool
 Mud.HttpUtils.VersionedTokenStoreCodec.Encode(string? token, long expiresInSeconds) -> string?
 Mud.HttpUtils.VersionedTokenStoreCodec.Decode(string? encoded) -> (string? Token, long ExpiresInSeconds)?
+Mud.HttpUtils.IAppHttpClientFactory<TAppContext>
+Mud.HttpUtils.IAppHttpClientFactory<TAppContext>.GetClient(TAppContext appContext) -> Mud.HttpUtils.IEnhancedHttpClient!
+Mud.HttpUtils.IAppHttpClientFactory<TAppContext>.Invalidate(string! appKey) -> void
+Mud.HttpUtils.HttpClientResolverExtensions
+static Mud.HttpUtils.HttpClientResolverExtensions.GetOrCreateClient(this Mud.HttpUtils.IHttpClientResolver! resolver, string! clientName, System.Func<Mud.HttpUtils.IEnhancedHttpClient!>! factory) -> Mud.HttpUtils.IEnhancedHttpClient!
+Mud.HttpUtils.IAsyncHttpContentSerializer
+Mud.HttpUtils.IAsyncHttpContentSerializer.ToHttpContentAsync<T>(T item, object? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Net.Http.HttpContent?>

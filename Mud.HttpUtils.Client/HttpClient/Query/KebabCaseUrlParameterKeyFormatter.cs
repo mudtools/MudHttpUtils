@@ -12,17 +12,17 @@ namespace Mud.HttpUtils;
 /// </summary>
 public class KebabCaseUrlParameterKeyFormatter : IUrlParameterKeyFormatter
 {
-/// <inheritdoc/>
- public string Format(string key)
- {
- if (string.IsNullOrEmpty(key)) return key;
- var sb = new System.Text.StringBuilder(key.Length * 2);
- for (var i = 0; i < key.Length; i++)
- {
- if (i > 0 && char.IsUpper(key[i]))
- sb.Append('-');
- sb.Append(char.ToLowerInvariant(key[i]));
- }
- return sb.ToString();
- }
+    /// <inheritdoc/>
+    public string Format(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return key;
+        var sb = new System.Text.StringBuilder(key.Length * 2);
+        for (var i = 0; i < key.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(key[i]))
+                sb.Append('-');
+            sb.Append(char.ToLowerInvariant(key[i]));
+        }
+        return sb.ToString();
+    }
 }

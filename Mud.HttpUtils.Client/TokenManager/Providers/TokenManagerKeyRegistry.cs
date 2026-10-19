@@ -40,79 +40,79 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class TokenManagerKeyRegistry : ITokenManagerRegistry
 {
- private readonly ConcurrentDictionary<string, ITokenManager> _map = new(StringComparer.Ordinal);
- private readonly ConcurrentDictionary<string, byte> _duplicateKeys = new(StringComparer.Ordinal);
- private readonly Action<string>? _duplicateKeyDiagnostics;
- private readonly bool _throwOnDuplicateKey;
+    private readonly ConcurrentDictionary<string, ITokenManager> _map = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _duplicateKeys = new(StringComparer.Ordinal);
+    private readonly Action<string>? _duplicateKeyDiagnostics;
+    private readonly bool _throwOnDuplicateKey;
 
-/// <summary>
-/// 初始化令牌管理器键注册表。
-/// </summary>
-/// <param name="throwOnDuplicateKey">
-/// 重复键是否直接抛出（默认 <c>true</c>，fail-fast）。
-/// 传 <c>false</c> 时改为「记录 + 诊断 + 后键覆盖」，由启动期校验决定最终严重级别
-/// （<c>MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys</c>：默认 Error 抛出，逃生开关 Warning）。
-/// </param>
-/// <param name="duplicateKeyDiagnostics">
-/// 重复键的注册期诊断回调（可选，接收完整诊断消息）。为 null 且 <paramref name="throwOnDuplicateKey"/> 为 false 时仅记录不输出。
-/// </param>
- public TokenManagerKeyRegistry(
- bool throwOnDuplicateKey = true,
- Action<string>? duplicateKeyDiagnostics = null)
- {
- _throwOnDuplicateKey = throwOnDuplicateKey;
- _duplicateKeyDiagnostics = duplicateKeyDiagnostics;
- }
+    /// <summary>
+    /// 初始化令牌管理器键注册表。
+    /// </summary>
+    /// <param name="throwOnDuplicateKey">
+    /// 重复键是否直接抛出（默认 <c>true</c>，fail-fast）。
+    /// 传 <c>false</c> 时改为「记录 + 诊断 + 后键覆盖」，由启动期校验决定最终严重级别
+    /// （<c>MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys</c>：默认 Error 抛出，逃生开关 Warning）。
+    /// </param>
+    /// <param name="duplicateKeyDiagnostics">
+    /// 重复键的注册期诊断回调（可选，接收完整诊断消息）。为 null 且 <paramref name="throwOnDuplicateKey"/> 为 false 时仅记录不输出。
+    /// </param>
+    public TokenManagerKeyRegistry(
+    bool throwOnDuplicateKey = true,
+    Action<string>? duplicateKeyDiagnostics = null)
+    {
+        _throwOnDuplicateKey = throwOnDuplicateKey;
+        _duplicateKeyDiagnostics = duplicateKeyDiagnostics;
+    }
 
-/// <summary>
-/// 已检出的重复键列表（序数比较；同一键多次冲突只记录一次）。
-/// 供启动期校验升级为 Error（默认）或降级为 Warning（逃生开关）。
-/// </summary>
- public IReadOnlyCollection<string> DuplicateKeys => _duplicateKeys.Keys.ToArray();
+    /// <summary>
+    /// 已检出的重复键列表（序数比较；同一键多次冲突只记录一次）。
+    /// 供启动期校验升级为 Error（默认）或降级为 Warning（逃生开关）。
+    /// </summary>
+    public IReadOnlyCollection<string> DuplicateKeys => _duplicateKeys.Keys.ToArray();
 
-/// <summary>
-/// 注册令牌管理器。键比较为序数（大小写敏感）。
-/// </summary>
-/// <param name="tokenManagerKey">令牌管理器键（非空）。</param>
-/// <param name="manager">令牌管理器实例。</param>
-/// <exception cref="ArgumentException"><paramref name="tokenManagerKey"/> 为 null 或空白。</exception>
-/// <exception cref="ArgumentNullException"><paramref name="manager"/> 为 null。</exception>
-/// <exception cref="InvalidOperationException">
-/// 重复键且 <c>throwOnDuplicateKey = true</c>（默认）时抛出。
-/// </exception>
- public void Register(string tokenManagerKey, ITokenManager manager)
- {
- if (string.IsNullOrWhiteSpace(tokenManagerKey))
- throw new ArgumentException("令牌管理器键不能为空。", nameof(tokenManagerKey));
- if (manager is null)
- throw new ArgumentNullException(nameof(manager));
+    /// <summary>
+    /// 注册令牌管理器。键比较为序数（大小写敏感）。
+    /// </summary>
+    /// <param name="tokenManagerKey">令牌管理器键（非空）。</param>
+    /// <param name="manager">令牌管理器实例。</param>
+    /// <exception cref="ArgumentException"><paramref name="tokenManagerKey"/> 为 null 或空白。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="manager"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">
+    /// 重复键且 <c>throwOnDuplicateKey = true</c>（默认）时抛出。
+    /// </exception>
+    public void Register(string tokenManagerKey, ITokenManager manager)
+    {
+        if (string.IsNullOrWhiteSpace(tokenManagerKey))
+            throw new ArgumentException("令牌管理器键不能为空。", nameof(tokenManagerKey));
+        if (manager is null)
+            throw new ArgumentNullException(nameof(manager));
 
-// 后键覆盖语义：AddOrUpdate 一步完成"冲突检出 + 覆盖"。
- _map.AddOrUpdate(
- tokenManagerKey,
- _ => manager,
- (key, existing) =>
- {
-// 同一键多次冲突只记录一次（TryAdd 幂等）。
- _duplicateKeys.TryAdd(key, 0);
+        // 后键覆盖语义：AddOrUpdate 一步完成"冲突检出 + 覆盖"。
+        _map.AddOrUpdate(
+        tokenManagerKey,
+        _ => manager,
+        (key, existing) =>
+        {
+            // 同一键多次冲突只记录一次（TryAdd 幂等）。
+            _duplicateKeys.TryAdd(key, 0);
 
- var message =
- $"令牌管理器键 '{AppKeyValidator.ToSafeText(key)}' 重复注册（序数比较）：" +
- $"原管理器 {existing.GetType().Name} → 新管理器 {manager.GetType().Name}。" +
- "重复键会让 Resolve 命中错误的管理器（errcode 令牌自愈静默失效），请改用不同键或移除重复注册。";
+            var message =
+     $"令牌管理器键 '{AppKeyValidator.ToSafeText(key)}' 重复注册（序数比较）：" +
+     $"原管理器 {existing.GetType().Name} → 新管理器 {manager.GetType().Name}。" +
+     "重复键会让 Resolve 命中错误的管理器（errcode 令牌自愈静默失效），请改用不同键或移除重复注册。";
 
- _duplicateKeyDiagnostics?.Invoke(message);
+            _duplicateKeyDiagnostics?.Invoke(message);
 
- if (_throwOnDuplicateKey)
- throw new InvalidOperationException(message);
+            if (_throwOnDuplicateKey)
+                throw new InvalidOperationException(message);
 
- return manager; // 后键覆盖
- });
- }
+            return manager; // 后键覆盖
+        });
+    }
 
-/// <inheritdoc />
- public ITokenManager? Resolve(string tokenManagerKey)
- => !string.IsNullOrEmpty(tokenManagerKey) && _map.TryGetValue(tokenManagerKey!, out var manager)
- ? manager
- : null;
+    /// <inheritdoc />
+    public ITokenManager? Resolve(string tokenManagerKey)
+    => !string.IsNullOrEmpty(tokenManagerKey) && _map.TryGetValue(tokenManagerKey!, out var manager)
+    ? manager
+    : null;
 }

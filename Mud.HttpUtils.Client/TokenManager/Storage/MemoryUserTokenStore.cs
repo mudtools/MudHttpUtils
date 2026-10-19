@@ -43,312 +43,312 @@ namespace Mud.HttpUtils;
 /// </example>
 public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExchange
 {
-// userId 外层比较器改 Ordinal：
-// 原实现 OrdinalIgnoreCase 令 "User1"/"user1"/大小写不同的邮箱型 ID 共享同一令牌桶（跨用户读取令牌），
-// 且与 KeyedLockTable（Ordinal）、MemoryCacheTokenCache._keys（默认 Ordinal）两套身份判定分裂。
-// userId 的大小写归一化责任在调用方入口，存储与缓存层一律 Ordinal。
-// 内层（tokenType）保留 OrdinalIgnoreCase：tokenType 语义不区分大小写，与 MemoryTokenStore 一致。
- private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.Ordinal);
+    // userId 外层比较器改 Ordinal：
+    // 原实现 OrdinalIgnoreCase 令 "User1"/"user1"/大小写不同的邮箱型 ID 共享同一令牌桶（跨用户读取令牌），
+    // 且与 KeyedLockTable（Ordinal）、MemoryCacheTokenCache._keys（默认 Ordinal）两套身份判定分裂。
+    // userId 的大小写归一化责任在调用方入口，存储与缓存层一律 Ordinal。
+    // 内层（tokenType）保留 OrdinalIgnoreCase：tokenType 语义不区分大小写，与 MemoryTokenStore 一致。
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.Ordinal);
 
-// 用户桶数上限。超过该值后，下一次写入会顺带触发一次全量空壳桶清扫。
-// 取 1 万：单个空 ConcurrentDictionary 壳约百字节级，1 万个壳的内存占用仍在可接受范围，
-// 而全量扫描（1 万次 IsEmpty 判定，无分配）在命中阈值时的一次性成本可忽略。
- internal const int UserBucketSweepThreshold = 10000;
+    // 用户桶数上限。超过该值后，下一次写入会顺带触发一次全量空壳桶清扫。
+    // 取 1 万：单个空 ConcurrentDictionary 壳约百字节级，1 万个壳的内存占用仍在可接受范围，
+    // 而全量扫描（1 万次 IsEmpty 判定，无分配）在命中阈值时的一次性成本可忽略。
+    internal const int UserBucketSweepThreshold = 10000;
 
-// 全量清扫门控（0=空闲，1=进行中）：并发写入者同时越阈值时只放行一次扫描，避免惊群。
- private int _bucketSweepInProgress;
+    // 全量清扫门控（0=空闲，1=进行中）：并发写入者同时越阈值时只放行一次扫描，避免惊群。
+    private int _bucketSweepInProgress;
 
-/// <summary>
-/// M6-HC-28：测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
-/// </summary>
- internal int UserBucketCount => _userStore.Count;
+    /// <summary>
+    /// M6-HC-28：测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
+    /// </summary>
+    internal int UserBucketCount => _userStore.Count;
 
-/// <summary>
-/// 惰性空壳桶清扫 —— 仅在桶数超过 <see cref="UserBucketSweepThreshold"/> 时触发全量扫描，
-/// 移除并发 <see cref="RemoveAsync"/> 与过期移除后残留的空内层字典（这些正是桶数无界增长的唯一来源）。
-/// </summary>
-/// <remarks>
-/// 弱一致：并发写入者可能刚向某个空桶填充条目——<c>IsEmpty</c> 为真才移除，误删由下次 Set 恢复（同  口径）。
-/// 未采用后台心跳清扫：令牌存储是纯内存实现，引入 <c>TokenRefreshBackgroundService</c> 依赖会污染
-/// <see cref="ITokenStore"/> 的构造契约（其可在无后台服务的宿主中单独注册）。
-/// </remarks>
- private void SweepEmptyBucketsIfNeeded()
- {
- if (_userStore.Count <= UserBucketSweepThreshold) return;
- if (Interlocked.Exchange(ref _bucketSweepInProgress, 1) == 1) return;
+    /// <summary>
+    /// 惰性空壳桶清扫 —— 仅在桶数超过 <see cref="UserBucketSweepThreshold"/> 时触发全量扫描，
+    /// 移除并发 <see cref="RemoveAsync"/> 与过期移除后残留的空内层字典（这些正是桶数无界增长的唯一来源）。
+    /// </summary>
+    /// <remarks>
+    /// 弱一致：并发写入者可能刚向某个空桶填充条目——<c>IsEmpty</c> 为真才移除，误删由下次 Set 恢复（同  口径）。
+    /// 未采用后台心跳清扫：令牌存储是纯内存实现，引入 <c>TokenRefreshBackgroundService</c> 依赖会污染
+    /// <see cref="ITokenStore"/> 的构造契约（其可在无后台服务的宿主中单独注册）。
+    /// </remarks>
+    private void SweepEmptyBucketsIfNeeded()
+    {
+        if (_userStore.Count <= UserBucketSweepThreshold) return;
+        if (Interlocked.Exchange(ref _bucketSweepInProgress, 1) == 1) return;
 
- try
- {
- foreach (var pair in _userStore)
- {
- if (pair.Value.IsEmpty)
- _userStore.TryRemove(pair.Key, out _);
- }
- }
- finally
- {
- Interlocked.Exchange(ref _bucketSweepInProgress, 0);
- }
- }
+        try
+        {
+            foreach (var pair in _userStore)
+            {
+                if (pair.Value.IsEmpty)
+                    _userStore.TryRemove(pair.Key, out _);
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _bucketSweepInProgress, 0);
+        }
+    }
 
- Task<string?> ITokenStore.GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken)
- {
- throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
- }
+    Task<string?> ITokenStore.GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
 
- Task ITokenStore.SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken)
- {
- throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
- }
+    Task ITokenStore.SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
 
- Task<string?> ITokenStore.GetRefreshTokenAsync(string tokenType, CancellationToken cancellationToken)
- {
- throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
- }
+    Task<string?> ITokenStore.GetRefreshTokenAsync(string tokenType, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
 
- Task ITokenStore.SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken cancellationToken)
- {
- throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
- }
+    Task ITokenStore.SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
 
- Task ITokenStore.RemoveAsync(string tokenType, CancellationToken cancellationToken)
- {
- throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
- }
+    Task ITokenStore.RemoveAsync(string tokenType, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
 
- Task<IEnumerable<string>> ITokenStore.GetTokenTypesAsync(CancellationToken cancellationToken)
- {
- var allTypes = _userStore.Values
- .SelectMany(dict => dict.Keys)
- .Distinct()
- .ToList();
- return Task.FromResult<IEnumerable<string>>(allTypes);
- }
+    Task<IEnumerable<string>> ITokenStore.GetTokenTypesAsync(CancellationToken cancellationToken)
+    {
+        var allTypes = _userStore.Values
+        .SelectMany(dict => dict.Keys)
+        .Distinct()
+        .ToList();
+        return Task.FromResult<IEnumerable<string>>(allTypes);
+    }
 
-/// <summary>
- /// U-7（用户维度扩展）：CAS 引用比较重试上限 —— 并发替换会令 TryUpdate 的引用比较失败，
-/// 重读重试以吸收短促竞争；超过上限即视为「不确定」，返回 false（不改写，宁可让调用方重试）。
-/// </summary>
- private const int CompareExchangeMaxAttempts = 8;
+    /// <summary>
+    /// U-7（用户维度扩展）：CAS 引用比较重试上限 —— 并发替换会令 TryUpdate 的引用比较失败，
+    /// 重读重试以吸收短促竞争；超过上限即视为「不确定」，返回 false（不改写，宁可让调用方重试）。
+    /// </summary>
+    private const int CompareExchangeMaxAttempts = 8;
 
-/// <summary>原子移除「键 + 期望条目」：值比较删除，防误删并发替换后的新条目。</summary>
- private bool TryRemoveEntry(
- ConcurrentDictionary<string, MemoryTokenStore.TokenEntry> userTokens, string tokenType,
- MemoryTokenStore.TokenEntry entry, string userId)
- {
+    /// <summary>原子移除「键 + 期望条目」：值比较删除，防误删并发替换后的新条目。</summary>
+    private bool TryRemoveEntry(
+    ConcurrentDictionary<string, MemoryTokenStore.TokenEntry> userTokens, string tokenType,
+    MemoryTokenStore.TokenEntry entry, string userId)
+    {
 #if NET5_0_OR_GREATER
- var removed = userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
+        var removed = userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
 #else
 // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除（弱一致：误删会被下次 Set 恢复，与既有实现同口径）
  var removed = userTokens.TryRemove(tokenType, out _);
 #endif
 
-// SR-L5 同口径：删除后空桶顺带清理，避免空内层字典壳滞留
- if (removed && userTokens.IsEmpty)
- _userStore.TryRemove(userId, out _);
+        // SR-L5 同口径：删除后空桶顺带清理，避免空内层字典壳滞留
+        if (removed && userTokens.IsEmpty)
+            _userStore.TryRemove(userId, out _);
 
- return removed;
- }
+        return removed;
+    }
 
-/// <inheritdoc />
-/// <remarks>
- /// U-7（用户维度扩展）：内存实现的 CAS 是<b>真原子</b> —— 比对用引用相等（<c>TryUpdate</c> 的值比较重载），
-/// 删除用值比较移除；并发替换导致的引用变更经有界重试吸收。
-/// 匹配口径为<b>存储中的原始令牌值</b>（与应用维度契约一致：不做过期判定，过期策略由读取路径负责）。
-/// </remarks>
- public Task<bool> CompareExchangeAccessTokenAsync(string userId, string tokenType, string expectedToken, string? newToken, long expiresInSeconds = 0, CancellationToken cancellationToken = default)
- {
- if (string.IsNullOrEmpty(expectedToken))
- throw new ArgumentException("期望的旧令牌值不得为空。", nameof(expectedToken));
+    /// <inheritdoc />
+    /// <remarks>
+    /// U-7（用户维度扩展）：内存实现的 CAS 是<b>真原子</b> —— 比对用引用相等（<c>TryUpdate</c> 的值比较重载），
+    /// 删除用值比较移除；并发替换导致的引用变更经有界重试吸收。
+    /// 匹配口径为<b>存储中的原始令牌值</b>（与应用维度契约一致：不做过期判定，过期策略由读取路径负责）。
+    /// </remarks>
+    public Task<bool> CompareExchangeAccessTokenAsync(string userId, string tokenType, string expectedToken, string? newToken, long expiresInSeconds = 0, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(expectedToken))
+            throw new ArgumentException("期望的旧令牌值不得为空。", nameof(expectedToken));
 
- if (!_userStore.TryGetValue(userId, out var userTokens))
- return Task.FromResult(false);
+        if (!_userStore.TryGetValue(userId, out var userTokens))
+            return Task.FromResult(false);
 
- for (var attempt = 0; attempt < CompareExchangeMaxAttempts; attempt++)
- {
- if (!userTokens.TryGetValue(tokenType, out var entry))
- return Task.FromResult(false);
- if (!string.Equals(entry.AccessToken, expectedToken, StringComparison.Ordinal))
- return Task.FromResult(false);
+        for (var attempt = 0; attempt < CompareExchangeMaxAttempts; attempt++)
+        {
+            if (!userTokens.TryGetValue(tokenType, out var entry))
+                return Task.FromResult(false);
+            if (!string.Equals(entry.AccessToken, expectedToken, StringComparison.Ordinal))
+                return Task.FromResult(false);
 
- if (string.IsNullOrEmpty(newToken))
- {
-// compare-and-delete：仅清空本维度（与应用维度契约「删对应键」对齐，不误伤另一维度）；
-// 双维度皆空则整条移除（等价于两键皆删）。
- var cleared = entry.WithoutAccessToken();
- return Task.FromResult(string.IsNullOrEmpty(cleared.RefreshToken)
- ? TryRemoveEntry(userTokens, tokenType, entry, userId)
- : userTokens.TryUpdate(tokenType, cleared, entry));
- }
+            if (string.IsNullOrEmpty(newToken))
+            {
+                // compare-and-delete：仅清空本维度（与应用维度契约「删对应键」对齐，不误伤另一维度）；
+                // 双维度皆空则整条移除（等价于两键皆删）。
+                var cleared = entry.WithoutAccessToken();
+                return Task.FromResult(string.IsNullOrEmpty(cleared.RefreshToken)
+                ? TryRemoveEntry(userTokens, tokenType, entry, userId)
+                : userTokens.TryUpdate(tokenType, cleared, entry));
+            }
 
-// ≤ 0 = 不设 TTL（宁缺勿滥）：以 MaxValue 表达「永不过期」
- var expiresAt = expiresInSeconds > 0
- ? DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
- : DateTimeOffset.MaxValue;
- if (userTokens.TryUpdate(tokenType, entry.WithAccessToken(newToken!, expiresAt), entry))
- return Task.FromResult(true);
-// 引用已被并发替换 → 重读重试
- }
+            // ≤ 0 = 不设 TTL（宁缺勿滥）：以 MaxValue 表达「永不过期」
+            var expiresAt = expiresInSeconds > 0
+            ? DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
+            : DateTimeOffset.MaxValue;
+            if (userTokens.TryUpdate(tokenType, entry.WithAccessToken(newToken!, expiresAt), entry))
+                return Task.FromResult(true);
+            // 引用已被并发替换 → 重读重试
+        }
 
- return Task.FromResult(false);
- }
+        return Task.FromResult(false);
+    }
 
-/// <inheritdoc />
-/// <remarks>用户维度扩展）：语义与访问令牌维度一致；刷新令牌无 TTL（<c>WithRefreshToken</c> 保留既有有效期字段）。</remarks>
- public Task<bool> CompareExchangeRefreshTokenAsync(string userId, string tokenType, string expectedToken, string? newToken, CancellationToken cancellationToken = default)
- {
- if (string.IsNullOrEmpty(expectedToken))
- throw new ArgumentException("期望的旧令牌值不得为空。", nameof(expectedToken));
+    /// <inheritdoc />
+    /// <remarks>用户维度扩展）：语义与访问令牌维度一致；刷新令牌无 TTL（<c>WithRefreshToken</c> 保留既有有效期字段）。</remarks>
+    public Task<bool> CompareExchangeRefreshTokenAsync(string userId, string tokenType, string expectedToken, string? newToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(expectedToken))
+            throw new ArgumentException("期望的旧令牌值不得为空。", nameof(expectedToken));
 
- if (!_userStore.TryGetValue(userId, out var userTokens))
- return Task.FromResult(false);
+        if (!_userStore.TryGetValue(userId, out var userTokens))
+            return Task.FromResult(false);
 
- for (var attempt = 0; attempt < CompareExchangeMaxAttempts; attempt++)
- {
- if (!userTokens.TryGetValue(tokenType, out var entry))
- return Task.FromResult(false);
- if (!string.Equals(entry.RefreshToken, expectedToken, StringComparison.Ordinal))
- return Task.FromResult(false);
+        for (var attempt = 0; attempt < CompareExchangeMaxAttempts; attempt++)
+        {
+            if (!userTokens.TryGetValue(tokenType, out var entry))
+                return Task.FromResult(false);
+            if (!string.Equals(entry.RefreshToken, expectedToken, StringComparison.Ordinal))
+                return Task.FromResult(false);
 
- if (string.IsNullOrEmpty(newToken))
- {
- var cleared = entry.WithoutRefreshToken();
- return Task.FromResult(string.IsNullOrEmpty(cleared.AccessToken)
- ? TryRemoveEntry(userTokens, tokenType, entry, userId)
- : userTokens.TryUpdate(tokenType, cleared, entry));
- }
+            if (string.IsNullOrEmpty(newToken))
+            {
+                var cleared = entry.WithoutRefreshToken();
+                return Task.FromResult(string.IsNullOrEmpty(cleared.AccessToken)
+                ? TryRemoveEntry(userTokens, tokenType, entry, userId)
+                : userTokens.TryUpdate(tokenType, cleared, entry));
+            }
 
- if (userTokens.TryUpdate(tokenType, entry.WithRefreshToken(newToken!), entry))
- return Task.FromResult(true);
- }
+            if (userTokens.TryUpdate(tokenType, entry.WithRefreshToken(newToken!), entry))
+                return Task.FromResult(true);
+        }
 
- return Task.FromResult(false);
- }
+        return Task.FromResult(false);
+    }
 
-/// <summary>
-/// 清空全部用户令牌缓存条目。
-/// </summary>
-/// <param name="cancellationToken">取消令牌（内存实现不检查取消，仅为契约对齐）。</param>
-/// <returns>表示清空操作完成的任务。</returns>
- public Task ClearAsync(CancellationToken cancellationToken = default)
- {
- _userStore.Clear();
- return Task.CompletedTask;
- }
+    /// <summary>
+    /// 清空全部用户令牌缓存条目。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌（内存实现不检查取消，仅为契约对齐）。</param>
+    /// <returns>表示清空操作完成的任务。</returns>
+    public Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        _userStore.Clear();
+        return Task.CompletedTask;
+    }
 
-/// <summary>
-/// 异步获取指定用户和令牌类型的访问令牌。
-/// </summary>
- public Task<string?> GetAccessTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
- {
- if (_userStore.TryGetValue(userId, out var userTokens) &&
- userTokens.TryGetValue(tokenType, out var entry))
- {
- if (entry.ExpiresAt > DateTimeOffset.UtcNow)
- return Task.FromResult<string?>(entry.AccessToken);
+    /// <summary>
+    /// 异步获取指定用户和令牌类型的访问令牌。
+    /// </summary>
+    public Task<string?> GetAccessTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
+    {
+        if (_userStore.TryGetValue(userId, out var userTokens) &&
+        userTokens.TryGetValue(tokenType, out var entry))
+        {
+            if (entry.ExpiresAt > DateTimeOffset.UtcNow)
+                return Task.FromResult<string?>(entry.AccessToken);
 
-// 过期条目条件移除（按引用比对），避免陈旧条目滞留内存直到 ClearUserAsync
+            // 过期条目条件移除（按引用比对），避免陈旧条目滞留内存直到 ClearUserAsync
 #if NET5_0_OR_GREATER
- userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
+            userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
 #else
 // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除（弱一致：误删会被下次 Set 恢复）
  userTokens.TryRemove(tokenType, out _);
 #endif
- }
+        }
 
- return Task.FromResult<string?>(null);
- }
+        return Task.FromResult<string?>(null);
+    }
 
-/// <summary>
-/// 异步保存指定用户和令牌类型的访问令牌。
-/// </summary>
- public Task SetAccessTokenAsync(string userId, string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
- {
- var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// 异步保存指定用户和令牌类型的访问令牌。
+    /// </summary>
+    public Task SetAccessTokenAsync(string userId, string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
+    {
+        var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
 
-// M2-#15：AddOrUpdate + 不可变条目派生 —— 与 MemoryTokenStore 同一模式，防并发丢更新
- userTokens.AddOrUpdate(tokenType,
- _ => new MemoryTokenStore.TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),
- (_, existing) => existing.WithAccessToken(accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)));
+        // M2-#15：AddOrUpdate + 不可变条目派生 —— 与 MemoryTokenStore 同一模式，防并发丢更新
+        userTokens.AddOrUpdate(tokenType,
+        _ => new MemoryTokenStore.TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),
+        (_, existing) => existing.WithAccessToken(accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)));
 
-// 写入路径顺带做惰性空壳桶清扫。必须放在本次 AddOrUpdate 之后 ——
-// 此时自身桶已非空，扫描不会回收自身刚创建的空桶（否则 AddOrUpdate 会写入已脱离 _userStore 的孤儿字典，
-// 令牌静默丢失）。桶数未超阈值时为一次 int 比较，不产生扫描。
- SweepEmptyBucketsIfNeeded();
+        // 写入路径顺带做惰性空壳桶清扫。必须放在本次 AddOrUpdate 之后 ——
+        // 此时自身桶已非空，扫描不会回收自身刚创建的空桶（否则 AddOrUpdate 会写入已脱离 _userStore 的孤儿字典，
+        // 令牌静默丢失）。桶数未超阈值时为一次 int 比较，不产生扫描。
+        SweepEmptyBucketsIfNeeded();
 
- return Task.CompletedTask;
- }
+        return Task.CompletedTask;
+    }
 
-/// <summary>
-/// 异步获取指定用户和令牌类型的刷新令牌。
-/// </summary>
- public Task<string?> GetRefreshTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
- {
- if (_userStore.TryGetValue(userId, out var userTokens) &&
- userTokens.TryGetValue(tokenType, out var entry))
- {
- return Task.FromResult(entry.RefreshToken);
- }
+    /// <summary>
+    /// 异步获取指定用户和令牌类型的刷新令牌。
+    /// </summary>
+    public Task<string?> GetRefreshTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
+    {
+        if (_userStore.TryGetValue(userId, out var userTokens) &&
+        userTokens.TryGetValue(tokenType, out var entry))
+        {
+            return Task.FromResult(entry.RefreshToken);
+        }
 
- return Task.FromResult<string?>(null);
- }
+        return Task.FromResult<string?>(null);
+    }
 
-/// <summary>
-/// 异步保存指定用户和令牌类型的刷新令牌。
-/// </summary>
- public Task SetRefreshTokenAsync(string userId, string tokenType, string refreshToken, CancellationToken cancellationToken = default)
- {
- var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// 异步保存指定用户和令牌类型的刷新令牌。
+    /// </summary>
+    public Task SetRefreshTokenAsync(string userId, string tokenType, string refreshToken, CancellationToken cancellationToken = default)
+    {
+        var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
 
-// M2-#15：不可变条目派生（保留 AccessToken/ExpiresAt）
- userTokens.AddOrUpdate(tokenType,
- _ => new MemoryTokenStore.TokenEntry(null, refreshToken, DateTimeOffset.MaxValue),
- (_, existing) => existing.WithRefreshToken(refreshToken));
+        // M2-#15：不可变条目派生（保留 AccessToken/ExpiresAt）
+        userTokens.AddOrUpdate(tokenType,
+        _ => new MemoryTokenStore.TokenEntry(null, refreshToken, DateTimeOffset.MaxValue),
+        (_, existing) => existing.WithRefreshToken(refreshToken));
 
-// 同 SetAccessTokenAsync，写入后顺带惰性清扫空壳桶
- SweepEmptyBucketsIfNeeded();
+        // 同 SetAccessTokenAsync，写入后顺带惰性清扫空壳桶
+        SweepEmptyBucketsIfNeeded();
 
- return Task.CompletedTask;
- }
+        return Task.CompletedTask;
+    }
 
-/// <summary>
-/// 异步移除指定用户和令牌类型的所有令牌数据。
-/// </summary>
- public Task RemoveAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
- {
- if (_userStore.TryGetValue(userId, out var userTokens))
- {
- userTokens.TryRemove(tokenType, out _);
+    /// <summary>
+    /// 异步移除指定用户和令牌类型的所有令牌数据。
+    /// </summary>
+    public Task RemoveAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
+    {
+        if (_userStore.TryGetValue(userId, out var userTokens))
+        {
+            userTokens.TryRemove(tokenType, out _);
 
-// SR-L5（P3.8，D14）空内层字典清扫：消除海量短命 userId 的空字典壳滞留。
-// 竞态弱一致可接受——误删（刚被并发 Set 重新填充即被移除）由下次 Set 恢复；
-// 外层 TryRemove(key) 重载在 ns2.0 一直可用（§0.3-V4），无条件编译。
- if (userTokens.IsEmpty)
- _userStore.TryRemove(userId, out _);
- }
+            // SR-L5（P3.8，D14）空内层字典清扫：消除海量短命 userId 的空字典壳滞留。
+            // 竞态弱一致可接受——误删（刚被并发 Set 重新填充即被移除）由下次 Set 恢复；
+            // 外层 TryRemove(key) 重载在 ns2.0 一直可用（§0.3-V4），无条件编译。
+            if (userTokens.IsEmpty)
+                _userStore.TryRemove(userId, out _);
+        }
 
- return Task.CompletedTask;
- }
+        return Task.CompletedTask;
+    }
 
-/// <summary>
-/// 异步获取指定用户的所有令牌类型标识符。
-/// </summary>
- public Task<IEnumerable<string>> GetTokenTypesAsync(string userId, CancellationToken cancellationToken = default)
- {
- if (_userStore.TryGetValue(userId, out var userTokens))
- {
- return Task.FromResult<IEnumerable<string>>([.. userTokens.Keys]);
- }
+    /// <summary>
+    /// 异步获取指定用户的所有令牌类型标识符。
+    /// </summary>
+    public Task<IEnumerable<string>> GetTokenTypesAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (_userStore.TryGetValue(userId, out var userTokens))
+        {
+            return Task.FromResult<IEnumerable<string>>([.. userTokens.Keys]);
+        }
 
- return Task.FromResult<IEnumerable<string>>([]);
- }
+        return Task.FromResult<IEnumerable<string>>([]);
+    }
 
-/// <summary>
-/// 异步移除指定用户的所有令牌数据。
-/// </summary>
- public Task ClearUserAsync(string userId, CancellationToken cancellationToken = default)
- {
- _userStore.TryRemove(userId, out _);
- return Task.CompletedTask;
- }
+    /// <summary>
+    /// 异步移除指定用户的所有令牌数据。
+    /// </summary>
+    public Task ClearUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        _userStore.TryRemove(userId, out _);
+        return Task.CompletedTask;
+    }
 }

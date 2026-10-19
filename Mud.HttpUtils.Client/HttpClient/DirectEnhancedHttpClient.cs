@@ -18,24 +18,24 @@ namespace Mud.HttpUtils;
 /// <seealso cref="IEncryptionProvider"/>
 internal sealed class DirectEnhancedHttpClient : EnhancedHttpClient
 {
- private readonly IEncryptionProvider? _encryptionProvider;
+    private readonly IEncryptionProvider? _encryptionProvider;
 
-/// <summary>
-/// 初始化 <see cref="DirectEnhancedHttpClient"/> 类的新实例。
-/// </summary>
-/// <param name="httpClient">HTTP客户端实例。</param>
-/// <param name="options">配置选项,可选。</param>
-/// <param name="encryptionProvider">加密提供器实例,可选。</param>
-/// <exception cref="ArgumentNullException"><paramref name="httpClient"/> 为 null。</exception>
- public DirectEnhancedHttpClient(
- HttpClient httpClient,
- EnhancedHttpClientOptions? options = null,
- IEncryptionProvider? encryptionProvider = null)
- : base(httpClient, options)
- {
- _encryptionProvider = encryptionProvider;
- }
+    /// <summary>
+    /// 初始化 <see cref="DirectEnhancedHttpClient"/> 类的新实例。
+    /// </summary>
+    /// <param name="httpClient">HTTP客户端实例。</param>
+    /// <param name="options">配置选项,可选。</param>
+    /// <param name="encryptionProvider">加密提供器实例,可选。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="httpClient"/> 为 null。</exception>
+    public DirectEnhancedHttpClient(
+    HttpClient httpClient,
+    EnhancedHttpClientOptions? options = null,
+    IEncryptionProvider? encryptionProvider = null)
+    : base(httpClient, options)
+    {
+        _encryptionProvider = encryptionProvider;
+    }
 
-/// <inheritdoc/>
- protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
+    /// <inheritdoc/>
+    protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 }
