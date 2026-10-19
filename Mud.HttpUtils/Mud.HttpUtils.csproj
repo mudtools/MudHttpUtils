@@ -5,7 +5,7 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
-		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 子模块；Resilience 弹性策略为可选包（F-9，需显式安装 Mud.HttpUtils.Resilience）；Native AOT 与裁剪兼容（System.Text.Json）。</Description>
+		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 子模块；Resilience 弹性策略为可选包（需显式安装 Mud.HttpUtils.Resilience）；Native AOT 与裁剪兼容（System.Text.Json）。</Description>
 		<PackageTags>HttpUtils;HttpClient;WebAPI;弹性策略;重试;熔断;超时;DI;元包;Mud HttpUtils;AOT;NativeAOT</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
@@ -15,8 +15,6 @@
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
 		<ProjectReference Include="..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
 		<ProjectReference Include="..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
-		<!-- F-9：Mud.HttpUtils.Resilience 不再作为元包硬依赖（Polly 体积/版本冲突隔离），
-		     弹性策略改为可选包 —— 需要重试/熔断/超时的宿主显式安装 Mud.HttpUtils.Resilience。 -->
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />

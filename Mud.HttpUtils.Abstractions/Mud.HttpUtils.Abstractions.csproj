@@ -1,9 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<!-- BC-29：必须包含 net7.0 资产。本包在 netstandard2.0/net6.0 资产中携带
-		     System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute polyfill（该 API 自 .NET 7 起 in-box）。
-		     缺少 net7.0 资产时，net7.0 下游会解析到 net6.0 资产，从而与其 BCL 中的同名类型冲突：
-		     error CS0433（下游只要在自身代码中标注 [RequiresDynamicCode] 即触发）。 -->
 		<TargetFrameworks>netstandard2.0;net6.0;net7.0;net8.0;net10.0</TargetFrameworks>
 		<PackageId>Mud.HttpUtils.Abstractions</PackageId>
 		<Description>Mud HttpUtils 抽象接口层，提供 HTTP 客户端、令牌管理、应用上下文的接口定义；纯接口、最小依赖，AOT/裁剪友好。</Description>
@@ -15,10 +11,6 @@
 	</PropertyGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
-		<!-- S2（治理方案）：IAsyncTokenCache<T> 契约使用 ValueTask —— ns2.0 无 in-box ValueTask，
-		     显式直参（不得依赖 M.E.* 的传递引用，防上游依赖图变化击穿公共 API） -->
-		<!-- F7：与 Client / Resilience 对齐为 4.6.3（此前为 4.5.4，属同 TFM 组内的补丁号漂移，
-		     由 Tools/check-package-version-consistency.ps1 检出）。 -->
 		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
 		<PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
 	</ItemGroup>
