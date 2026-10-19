@@ -580,7 +580,7 @@ internal static partial class MudHttpClientLog
 
     private static readonly Action<ILogger, string, Exception> s_tokenInvalidationDetectionFailed =
     LoggerMessage.Define<string>(LogLevel.Warning, new EventId(185, nameof(TokenInvalidationDetectionFailed)),
-    "令牌失效判定器（{DetectorType}）执行失败，本次响应按「未失效」处理（退化为仅 HTTP 401 判定）。");
+    "令牌失效判定器（{DetectorType}）执行失败，该判定器本次按「未失效」处理并继续后续判定器（不中断判定链，仍保留 HTTP 401 判定）。");
     public static void TokenInvalidationDetectionFailed(ILogger logger, string detectorType, Exception exception)
     => s_tokenInvalidationDetectionFailed(logger, detectorType, exception);
 

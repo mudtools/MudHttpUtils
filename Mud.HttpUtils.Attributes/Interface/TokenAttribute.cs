@@ -131,6 +131,15 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     /// <para>
     /// 理由文本应写明**为何必须**（如"企业微信官方契约：凭据强制置于 Query"），供审计与后续复查。
     /// </para>
+    /// <para>
+    /// <b>副作用边界（重要）</b>：本特性会同时绑定构造函数的默认值
+    /// （<c>tokenType = AccessToken</c>），使接口级令牌类型由"未指定"变为显式 <c>AccessToken</c>。
+    /// 因此它除了豁免"URL 承载令牌"类诊断与 <c>HTTPCLIENT018</c> 外，还会让生成器为该接口
+    /// <b>发射取令牌与参数注入代码</b>。对"本就不使用令牌"的端点（如无 <c>access_token</c>
+    /// 的回调/事件域），请改用声明式豁免（<c>dotnet_diagnostic.HTTPCLIENT018.severity = none</c>
+    /// 或目录级 <c>mud_suppress_token_manager_key_inference = true</c>），不要为本特性填写理由，
+    /// 否则会引入非预期的令牌注入面。
+    /// </para>
     /// </remarks>
     /// <example>
     /// [Token(TokenType = "TenantAccessToken", InjectionMode = TokenInjectionMode.Query,

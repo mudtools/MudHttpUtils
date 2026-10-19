@@ -37,12 +37,12 @@ public partial class TokenRecoveryExecutor
         if (detectors.Count == 0)
             return false;
 
-        try
-        {
-            ReadOnlyMemory<byte>? body = null;
-            var bodyCaptured = false;
+        ReadOnlyMemory<byte>? body = null;
+        var bodyCaptured = false;
 
-            foreach (var detector in detectors)
+        foreach (var detector in detectors)
+        {
+            try
             {
                 // 预过滤在读取响应体之前：无关请求零捕获开销（与既有单槽语义一致）。
                 if (!detector.ShouldInspect(request))
@@ -61,19 +61,20 @@ public partial class TokenRecoveryExecutor
                     return true;
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // 逐判定器故障隔离：单个判定器异常降级为「本次未失效」，继续后续判定器。
+                // 与库内组合器（CompositeTokenInvalidationDetector）的异常契约一致 ——
+                // 阻断「一个坏判定器使整条判定链静默失效」（多产品线共用追加集时的关键不变量）。
+                MudHttpClientLog.TokenInvalidationDetectionFailed(_logger, detector.GetType().Name, ex);
+            }
+        }
 
-            return false;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // B5：异常判定器标识为"首个参与判定的判定器类型"（链路故障归因，与既有日志字段兼容）。
-            MudHttpClientLog.TokenInvalidationDetectionFailed(_logger, detectors[0].GetType().Name, ex);
-            return false;
-        }
+        return false;
     }
 
     /// <summary>

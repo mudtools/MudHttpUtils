@@ -7,7 +7,10 @@
 ## 3.0.9（正确性与安全缺陷修复、诊断与配置面完善，2026-10-19，未发布）
 
 > **状态：下一版本（未发布）**。`Directory.Build.props` 的 `<Version>` 已递增至 `3.0.9`；
-> 发布时删除本节标题中的「未发布」标记，并按下方「裁决说明」执行基线登记。
+> **正式发布打包前**执行 `Tools/rebuild-publicapi.ps1`（见「裁决说明」），发布时删除本节标题中的「未发布」标记。
+> 本地验证包（`artifacts/3.0.9`）保持 PublicAPI Unshipped 不动，避免未发布版本提前登记基线。
+> 本版追加修复后已按同版本重打包纪律重建（清 3.0.9 全局缓存 → Release 打包，11 包 DLL 逐字节校验），
+> 两个下游仓已用该包重新还原并构建通过；下游若已消费过旧 3.0.9 缓存，需清缓存后重新还原。
 
 > 本版按《2026-10-19 架构评审 Bug 修复与功能完善方案》批次 A/B 实施：修复两处已实证缺陷、
 > 收敛配置绑定面的 AOT 标注、恢复一处被过度降级的提示可见性，并将 HTTPCLIENT018 迁至分析器
@@ -36,6 +39,7 @@
 - **HTTPCLIENT018 目录级豁免不可达**：生成器缓存输入不含 `.editorconfig` 目录键，目录粒度豁免静默失效。诊断迁至分析器后三通道（MSBuild 属性 / `.globalconfig` 键 / 目录级 `.editorconfig` 键）全部可达。
 - **存储未接入桥接提示过度降级**：EventId 191 由 Warning 降为 Information 后，「已注册 store 但被旁路」几乎不可见。恢复 Warning 并按成因参数化（显式覆盖 `ITokenCache<T>` vs 无缓存消费解析）。
 - **HTTPCLIENT013 / 014 消息引导补强**：013 追加 `[Path(Name = "官方占位符名")]` 解耦能力指引；014 追加「自定义 HttpClient 类型名必须为全限定名（`nameof` 只产出短名）」指引。
+- **令牌失效判定链的逐判定器异常隔离**：执行器对「单槽 ∪ 追加集」整条链只做一次 `try/catch`，任一判定器抛异常会中断同次判定的后续判定器（多产品线共用追加集时，一条线的判定器缺陷会吞掉其它线的判定机会）；库内组合器本就是逐判定器隔离。现改为循环内逐判定器 `try/catch`（取消异常仍原样上抛），故障日志归属改为实际抛错的判定器类型。
 
 ### 下游自建件替代映射（D-3）
 
@@ -43,26 +47,29 @@
 | --- | --- | --- |
 | 读路径故障降级（A-1） | MudFeishu `PurgeGateTokenStoreDecorator` 的读降级分支 | 移除装饰器后其读降级用例仍成立 |
 | `AddMudHttpTokenRecovery` / DTO 投影（B-2） | MudFeishu 自建 DTO 投影 + 逐字段 Apply + 手工变更监听 | 改用官方入口后编译单元无绑定源生成器诊断、热更新用例保持 |
-| 成员级 `[Token(Justification)]` 018 豁免（B-1 第一部分，**已生效无需等版本**） | MudWechat 8 处目录级 `.editorconfig` 屏蔽（至少 2 处先行） | 迁移后构建零警告 |
+| 成员级 `[Token(Justification)]` 018 豁免（B-1 第一部分，**已生效无需等版本**） | **仅「本就注入令牌」的接口可迁移**；无令牌端点不可用（该特性会把接口级 TokenType 置为 `AccessToken` 并新增取令牌/参数注入）——MudWechat 经探针实测否决，保留 severity 通道 | 迁移后构建零警告**且生成物无新增注入代码** |
 | `[Path(Name)]` 指引（B-4） | MudWechat 因 013 用 C# 参数名路由的规避注释 | 按新指引消除规避注释 |
 | `IAppHttpClientFactory`（C-1，随 3.2.0） | MudFeishu `IFeishuHttpClientFactory`、MudWechat 三个 per-product-line 工厂 | 各自守卫测试保持 |
 
 ### 裁决说明（PublicAPI 基线脱节，D-2）
 
-`TokenAttribute.Justification`、`TokenRecoveryConfiguration`、`TokenRecoveryOptionsExtensions.Apply`、`TokenRecoveryOptions.AdditionalTokenInvalidationDetectors` / `CompositeTokenInvalidationDetector` 五件自 3.0.4 起已随包发布（CHANGELOG 3.0.4「新增」在册），但一直登记于 `PublicAPI.Unshipped.txt` 未并入 Shipped，形成「声明已发布 / 基线未发布」脱节。**裁决**：上述 API 事实上已发布，脱节属发布流程遗漏——**本版（3.0.9）打包时由 `Tools/rebuild-publicapi.ps1` 将其并入 Shipped**；同时 CI 新增 `changelog-publicapi-consistency` 作业（`scripts/check-changelog-publicapi.ps1`），此后「新增」声明与基线不一致将直接失败（仅 Unshipped 时给发布提示）。
+`TokenAttribute.Justification`、`TokenRecoveryConfiguration`、`TokenRecoveryOptionsExtensions.Apply`、`TokenRecoveryOptions.AdditionalTokenInvalidationDetectors` / `CompositeTokenInvalidationDetector` 五件自 3.0.4 起已随包发布（CHANGELOG 3.0.4「新增」在册），但一直登记于 `PublicAPI.Unshipped.txt` 未并入 Shipped，形成「声明已发布 / 基线未发布」脱节。**裁决**：上述 API 事实上已发布，脱节属发布流程遗漏——**3.0.9 正式发布打包前由 `Tools/rebuild-publicapi.ps1` 将其并入 Shipped**（本地验证包不提前登记）；同时 CI 新增 `changelog-publicapi-consistency` 作业（`scripts/check-changelog-publicapi.ps1`），此后「新增」声明与基线不一致将直接失败（仅 Unshipped 时给发布提示）。
 
 ### 验证
 
 - **构建**：`dotnet build Mud.HttpUtils.slnx` 0 错误。
 - **测试**：本版新增用例覆盖每项验收标准——桥接器读降级（含取消传播与 Warning 断言）、SSRF 空白名单组合检测（正/反/自定义验证器三态）、令牌恢复绑定与热更新、非法值 setter 校验、存储未桥接两成因区分、013/014 消息 golden 断言、018 分析器豁免矩阵（含树粒度）、多上下文合并（覆盖 / 后者优先 / null 守卫）、多应用工厂三态与恢复挂接、异步内容构造调用次序、固化项热更新提示。
 - **AOT**：新增 API 无新增序列化 / 反射面；配置绑定类入口对调用方零 `Requires*` 标注。
+- **下游复验**：判定器隔离修复后同版本重打包；飞书 `Mud.Feishu.Abstractions`、微信 `Mud.Wechat.Abstractions` 以新包强制重编译 0 错误，微信判定器注册用例 7/7 通过（含"前序判定器抛异常、后续判定器仍命中"的逐判定器隔离断言）。
 
 ### 升级提示
 
 - **行为变更**：见「破坏性变更」表——令牌存储读异常不再传播（降级为未命中 + 计数 / 日志）。
 - **诊断屏蔽**：HTTPCLIENT018 迁至分析器，既有 `NoWarn` / `#pragma` 仍有效；需要目录级豁免的工程可改用 `.editorconfig` 键 `mud_suppress_token_manager_key_inference = true`。
+- **`[Token(Justification)]` 的适用边界（重要）**：该特性在豁免 018 的同时会把接口级 `TokenType` 从 null 置为 `AccessToken`，生成器随即发射取令牌与参数注入代码——**只适用于本就注入令牌的接口**。无令牌端点（如无 `access_token` 的回调/事件域）请继续使用 severity 或 `.editorconfig` 键，否则会引入非预期的注入面。
+- **判定器异常语义**：判定链改为逐判定器隔离（单个判定器抛异常只降级该判定器，不再中断整条链）；依赖"一个判定器异常即整链跳过"的宿主行为会变化。
 - **日志事件**：EventId 191 恢复 Warning（按成因区分）；新增 EventId 197 / 198 / 199。
-- **PublicAPI 基线**：本版发布时五件 3.0.4 期 API 并入 Shipped（见「裁决说明」），不影响编译，仅影响 RS0016 严格模式基线核对。
+- **PublicAPI 基线**：正式发布打包前将五件 3.0.4 期 API 并入 Shipped（见「裁决说明」），不影响编译，仅影响 RS0016 严格模式基线核对。
 
 ---
 

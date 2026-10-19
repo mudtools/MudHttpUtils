@@ -121,6 +121,21 @@ public class TokenRecoveryAdditionalDetectorTests
         sendCount.Should().Be(1, "判定器故障降级为未失效（检测故障不得放大为调用失败）");
     }
 
+    [Fact]
+    public async Task DetectorThrows_OtherDetectorsShouldStillEvaluate()
+    {
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 1, RefreshDedupWindowSeconds = 0 };
+        options.AdditionalTokenInvalidationDetectors.Add(
+            new FakeDetector("boom", toThrow: new InvalidOperationException("detector failure")));
+        options.AdditionalTokenInvalidationDetectors.Add(new FakeDetector("hit", hit: true));
+        var executor = new TokenRecoveryExecutor(CreateTokenManagerMock().Object, options);
+
+        var sendCount = await ExecuteReturningOkAsync(executor, CreateAuthRequest());
+
+        sendCount.Should().Be(2,
+            "前序判定器抛异常不得使后续判定器失效（逐判定器隔离，与组合器契约一致）");
+    }
+
     // ── ⑤ ShouldInspect=false ⇒ 不参与判定 ─────────────────────────────
 
     [Fact]
