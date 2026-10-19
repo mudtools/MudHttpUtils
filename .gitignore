@@ -95,6 +95,8 @@
 /Demos/AotPackageRefDemo/obj
 /Demos/PayloadDemo/bin
 /Demos/PayloadDemo/obj
+/Demos/PayloadDemoPublicDemo/bin
+/Demos/PayloadDemoPublicDemo/obj
 /Demos/Mud.Demo.Sdk/bin
 /Demos/Mud.Demo.Sdk/obj
 /Demos/Mud.Demo.Sdk/TestResults

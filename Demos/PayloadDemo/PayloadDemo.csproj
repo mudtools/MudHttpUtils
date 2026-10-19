@@ -26,4 +26,8 @@
 		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
 	</ItemGroup>
 
+	<!-- 载荷契约 / 转换器 / 注册表 / 报文样本 / 演示入口收敛在共享夹具工程，
+	     与 HttpClientApiDemo.Share 同构：本地源码路径由本工程承载。 -->
+	<Import Project="..\PayloadDemo.Share\PayloadDemo.Share.projitems" Label="Shared" />
+
 </Project>

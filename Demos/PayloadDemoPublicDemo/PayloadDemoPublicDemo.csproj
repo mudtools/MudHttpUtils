@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<OutputType>Exe</OutputType>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- 与本地路径的 PayloadDemo 一致：把生成的 *.PayloadFieldMap.g.cs 落盘到
+		     obj/<配置>/net10.0/generated/…，便于逐条对照「本地源码 vs 已发布包」两条路径的生成物。 -->
+		<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+		<!-- 本工程刻意消费"已发布"的 NuGet 包（见下方 PackageReference），用于验证消费方体验：
+		     其生成代码来自已发布版本的源生成器，本仓库无法修复，故退出 AOT 严格模式
+		     （严格模式用于锁死本仓库源码的 AOT 契约）。 -->
+		<MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode>
+		<!-- 同理：显式声明非 AOT 运行期模式，抑制 AOT007 降级提示。 -->
+		<MudAotRuntimeMode>jit</MudAotRuntimeMode>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 载荷字段映射运行期契约（PayloadNode / PayloadFieldMap<T> / IPayloadFieldMap<T> /
+		     IPayloadContractAccessor，命名空间 Mud.HttpUtils.Payloads）由 Mud.HttpUtils 元包
+		     经 Mud.HttpUtils.Abstractions 传递引入；特性（PayloadContractAttribute /
+		     PayloadFieldAttribute / PayloadFieldFormat）经 Mud.HttpUtils.Attributes 引入。 -->
+		<PackageReference Include="Mud.HttpUtils" Version="3.0.7" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- ⭐ 生成器必须由「声明载荷类的工程」显式引用。Mud.HttpUtils 元包只把生成器传给直接
+		     引用它的工程，而生成器包以 PrivateAssets="all" + OutputItemType="Analyzer" 引用，
+		     不会流向间接引用工程。缺失时的症状极具误导性：该工程根本不运行生成器 ⇒ 载荷类缺少
+		     PayloadFieldMap 成员 ⇒ csc 报 CS0117，且没有任何 PAYLOAD* 诊断。 -->
+		<PackageReference Include="Mud.HttpUtils.Generator" Version="3.0.7" PrivateAssets="all" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+	<!-- 载荷契约 / 转换器 / 注册表 / 报文样本 / 演示入口收敛在共享夹具工程，
+	     与 HttpClientApiDemo.Share 同构：已发布包路径由本工程承载。 -->
+	<Import Project="..\PayloadDemo.Share\PayloadDemo.Share.projitems" Label="Shared" />
+
+</Project>
