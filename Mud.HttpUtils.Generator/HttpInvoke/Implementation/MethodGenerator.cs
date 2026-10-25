@@ -225,6 +225,21 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodSymbol.Name));
         }
 
+        // P0-2：HttpClient 模式下无应用上下文来源，缓存键的应用维度退化为 "default"，
+        // 客户端维度仅在客户端实现 IHttpClientIdentity 时生效 ⇒ 多客户端/多应用共用进程时
+        // 以 Warning 显式提示隔离边界并给出三条可执行指引（HTTPCLIENT041）。
+        // 与运行期接缝互补：接缝负责「能区分时区分」，诊断负责「区分不了时可见」。
+        if (methodInfo.CacheEnabled && context.HasHttpClient)
+        {
+            var cacheModeSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.HttpClientModeCacheProcessScoped,
+                    cacheModeSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation(),
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name));
+        }
+
         // IAsyncEnumerable<T> 流式方法的生成调用恒传 null JsonTypeInfo
         // （源生成器不可见消费方 JsonSerializerContext，无法自动注入；见 MethodGenerator 流式发射点的 v4 Phase 1 注释）。
         // JIT 下无害；Native AOT/裁剪下元素类型未进 JsonSerializerContext 时会静默反序列化为 default
@@ -328,7 +343,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 防御性：对所有生成方法统一注入（#if NET6_0_OR_GREATER 仅 AOT/trimming TFM 生效，其余 TFM 无害）。
         WriteMethodLevelSuppressMessage(codeBuilder);
 
-        codeBuilder.AppendLine($"        public {virtualKeyword}{asyncKeyword}{returnType} {methodSymbol.Name}({ParameterSignatureBuilder.Build(methodSymbol)})");
+        codeBuilder.AppendLine($"        public {virtualKeyword}{asyncKeyword}{returnType} {IdentifierEscaper.Escape(methodSymbol.Name)}({ParameterSignatureBuilder.Build(methodSymbol)})");
         codeBuilder.AppendLine("        {");
 
         ParameterValidationHelper.GenerateParameterValidation(codeBuilder, methodInfo.Parameters);
@@ -408,7 +423,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
+                    // [P1-2 修复] 引用位转义：保留字令牌参数名（如 @token）裸名进表达式产出 CS1001。
+                    var escapedTokenParamRef = IdentifierEscaper.Escape(tokenParamName);
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({escapedTokenParamRef}) ? {escapedTokenParamRef} : await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
@@ -420,7 +437,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
+                    // [P1-2 修复] 引用位转义：保留字令牌参数名（如 @token）裸名进表达式产出 CS1001。
+                    var escapedTokenParamRef = IdentifierEscaper.Escape(tokenParamName);
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({escapedTokenParamRef}) ? {escapedTokenParamRef} : await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
@@ -523,9 +542,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         var returnType = (returnsByRefReadonly ? "ref readonly " : returnsByRef ? "ref " : string.Empty)
             + methodSymbol.ReturnType.ToDisplayString(typeFormat);
+        // [P1-2 修复] 方法类型参数名过 IdentifierEscaper：保留字类型参数（如 @class）裸名产出 CS1001。
         var typeParameters = methodSymbol.TypeParameters.Length == 0
             ? string.Empty
-            : $"<{string.Join(", ", methodSymbol.TypeParameters.Select(tp => tp.Name))}>";
+            : $"<{string.Join(", ", methodSymbol.TypeParameters.Select(tp => IdentifierEscaper.Escape(tp.Name)))}>";
         var modifiers = (isStatic ? "static " : string.Empty)
             + (needsUnsafe ? "unsafe " : string.Empty);
         // 消息携带诊断 ID（HTTPCLIENT024）：占位成员运行期才暴露，线上日志需能直接关联规则与文档
@@ -546,7 +566,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 修复对应诊断后重新生成；若确需自行实现，请标注 [IgnoreGenerator]。");
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        codeBuilder.AppendLine($"        public {modifiers}{returnType} {methodSymbol.Name}{typeParameters}({ParameterSignatureBuilder.Build(methodSymbol)})");
+        codeBuilder.AppendLine($"        public {modifiers}{returnType} {IdentifierEscaper.Escape(methodSymbol.Name)}{typeParameters}({ParameterSignatureBuilder.Build(methodSymbol)})");
 
         if (returnsByRef)
         {
@@ -633,7 +653,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var elementType = methodInfo.AsyncEnumerableElementType;
             var cancellationTokenParam = methodInfo.Parameters
                 .FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
-            var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
+            // [P1-2 修复] 引用位转义：保留字 CancellationToken 参数名（如 @ct）裸名进实参产出 CS1001。
+            var cancellationTokenName = cancellationTokenParam != null
+                ? IdentifierEscaper.Escape(cancellationTokenParam.Name)
+                : "default";
 
             // C# 的 foreach 表达式不支持 ConfigureAwait，故改用手动 IAsyncEnumerator 形态以
             // 应用 ConfigureAwait(false)（与库内 await 一致性约定）。
@@ -695,7 +718,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // 检测方法签名中的 IProgress<T> 参数，用于下载进度报告
             var progressParam = methodInfo.Parameters
                 .FirstOrDefault(p => TypeDetectionHelper.IsIProgressType(p.Type, out _));
-            var progressArg = progressParam != null ? progressParam.Name : "null";
+            // [P1-2 修复] 引用位转义：保留字参数名（如 @progress）裸名进命名实参产出 CS1001。
+            var progressArg = progressParam != null ? IdentifierEscaper.Escape(progressParam.Name) : "null";
 
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
             // F-1（M4）：方法级弹性编排 —— Retry/CircuitBreaker/Timeout 生效时路由到编排版
@@ -704,16 +728,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var hasFileDownloadResilience = methodInfo.RetryEnabled ||
                 methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
 
+            // [P1-2 修复] FilePath 参数引用位转义：保留字参数名（如 @file）裸名进实参产出 CS1001。
+            var escapedFilePathParamRef = IdentifierEscaper.Escape(filePathParam.Name);
+
             if (hasFileDownloadResilience)
             {
-                codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
+                codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {escapedFilePathParamRef}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
                 codeBuilder.Append("                ");
                 WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
                 codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
             }
             else
             {
-                codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
+                codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {escapedFilePathParamRef}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
                 codeBuilder.Append("                ");
                 WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
                 codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
@@ -1067,10 +1094,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // CacheKey 模板同样被发射进 $"...{}..." 插值字符串，单花括号会造成插值洞。
             // EscapeForInterpolation 将 { } 双写为 {{ }}，随后 {{i}} 与下方替换键 {{i}} 匹配；
             // 未匹配的 {name}/{垃圾花括号 保留为 {{...}}（运行期为 {name} 字面量）。
+            // [P1-2 修复] 插值洞表达式同样过 IdentifierEscaper：参数名为 C# 保留字时
+            // （如 @event）裸名进洞产出 CS1001，与声明位必须成对转义。
             var resolvedTemplate = RequestBuilder.EscapeForInterpolation(StringEscapeHelper.EscapeString(methodInfo.CacheKeyTemplate!));
             for (var i = 0; i < orderedParams.Count; i++)
             {
-                resolvedTemplate = resolvedTemplate.Replace($"{{{{{i}}}}}", $"{{{orderedParams[i].Name}}}");
+                resolvedTemplate = resolvedTemplate.Replace($"{{{{{i}}}}}", $"{{{IdentifierEscaper.Escape(orderedParams[i].Name)}}}");
             }
 
             return $"{varyPrefix}$\"{resolvedTemplate}\"";
@@ -1262,7 +1291,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             p => TypeDetectionHelper.IsCancellationToken(p.Type));
 
         if (cancellationTokenParam != null)
-            return $", cancellationToken: {cancellationTokenParam.Name}";
+            // [P1-2 修复] 引用位转义：保留字参数名（如 @token）裸名进命名实参产出 CS1001。
+            return $", cancellationToken: {IdentifierEscaper.Escape(cancellationTokenParam.Name)}";
 
         return ", cancellationToken: default";
     }
@@ -1670,7 +1700,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                         context.InterfaceDeclaration.Identifier.Text,
                         methodInfo.MethodName ?? "Unknown",
                         httpClientType));
-                // XML 不兼容是警告级别，不阻止生成
+                // XML 不兼容为 Info 级（生成路径经执行器序列化，不依赖客户端 XML 能力），不阻止生成
             }
             else if (!xmlTypeResolved)
             {

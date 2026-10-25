@@ -312,8 +312,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                     // XmlSerializer 构造函数在 .NET 7+ BCL 中标注 RUC/RDC；此处为按设计的非 AOT 运行时路径
                     // （XML 方法在 AOT 上下文由 AOT007 编译期阻断），用 #pragma 局部豁免 AOT 分析告警，
                     // 避免这些"已知且预期"的告警污染消费方的生成代码构建（严格模式下会变为错误）。
+                    // [P1-1 修复] typeof 实参与字段名同走 NormalizeXmlSerializerType：
+                    // xmlType 可能携带可空引用标注（Task<User?> → "Ns.User?"），
+                    // typeof 不允许承载该标注（CS8632/CS0182 类错误）。
                     codeBuilder.AppendLine("#pragma warning disable IL2026, IL3050");
-                    codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+                    codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({RequestBuilder.NormalizeXmlSerializerType(xmlType)}));");
                     codeBuilder.AppendLine("#pragma warning restore IL2026, IL3050");
                 }
             }
@@ -342,8 +345,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 continue;
 
             // GEN-05 修复：接口属性为只读时（仅 getter），生成的实现属性也不生成 setter，保持接口契约一致。
+            // [P1-2 修复] 属性名过 IdentifierEscaper：保留字属性名（如 @event）裸名进声明位产出 CS1001；
+            // 引用位（RequestBuilder 的属性访问发射）在同批修复中成对转义。
             var accessor = property.IsReadOnly ? "{ get; }" : "{ get; set; }";
-            var propLine = $"        public {property.Type} {property.Name} {accessor}";
+            var propLine = $"        public {property.Type} {IdentifierEscaper.Escape(property.Name)} {accessor}";
             if (!string.IsNullOrEmpty(property.DefaultValue))
             {
                 propLine += $" = {property.DefaultValue};";
@@ -475,13 +480,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         var needsCacheParam = _context.HasCache || (_context.HasInheritedFrom && _context.Configuration.BaseHasCache);
         var needsResilienceParam = _context.HasResilience || (_context.HasInheritedFrom && _context.Configuration.BaseHasResilience);
 
+        // [P0-1 修复] 可选形参在**所有**模式下始终存在（含继承模式）。
+        // 背景：注册工厂（HttpInvokeRegistrationGenerator.cs:641-651）对默认模式**无条件**发射
+        // cacheProvider: / resilienceResolver: 命名实参；继承模式下 neither required nor optional
+        // 的形参布局使默认模式 + 继承必然 CS1739（"最佳重载没有名为 cacheProvider 的参数"）。
+        // 基类不需要时仅持有不转发（base(...) 仍按 BaseHasCache/BaseHasResilience 门控），
+        // 宿主基类签名未知，透传反而有 CS1729 风险。
+        // 形参布局保持「必需 → 可选」顺序（CS1737）。
         if (needsCacheParam)
         {
             requiredParameters.Add("IHttpResponseCache cacheProvider");
         }
-        else if (!_context.HasInheritedFrom)
+        else
         {
-            // 所有非继承模式下始终接受可选的 cacheProvider，允许 DI 注入的全局缓存服务传递给执行器
             optionalParameters.Add("IHttpResponseCache? cacheProvider = null");
         }
 
@@ -489,9 +500,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             requiredParameters.Add("IResiliencePolicyResolver resilienceResolver");
         }
-        else if (!_context.HasInheritedFrom)
+        else
         {
-            // 所有非继承模式下始终接受可选的 resilienceResolver，允许 DI 注入的全局弹性策略服务传递给执行器
             optionalParameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
         }
 

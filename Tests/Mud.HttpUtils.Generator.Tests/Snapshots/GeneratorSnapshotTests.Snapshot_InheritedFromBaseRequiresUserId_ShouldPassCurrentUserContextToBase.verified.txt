@@ -365,7 +365,7 @@ namespace TestNamespace.Internal
 #if NET5_0_OR_GREATER
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public DerivedUserApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appManager, appContextHolder, tokenProvider, currentUserContext, executor, appAuthorizer: appAuthorizer, logger: logger, contentSerializer: contentSerializer)
+        public DerivedUserApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appManager, appContextHolder, tokenProvider, currentUserContext, executor, appAuthorizer: appAuthorizer, logger: logger, contentSerializer: contentSerializer)
         {
             _currentUserContext = currentUserContext ?? throw new ArgumentNullException(nameof(currentUserContext));
         }

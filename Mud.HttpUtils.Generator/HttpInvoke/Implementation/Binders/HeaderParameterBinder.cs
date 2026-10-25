@@ -54,35 +54,40 @@ internal class HeaderParameterBinder : IParameterBinder
         var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
         var isStringType = TypeDetectionHelper.IsStringType(parameter.Type);
 
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式 / nameof 产出 CS1001 /
+        // 绑定错误，与 ParameterSignatureBuilder 的声明位成对。局部名 __headerValue_{Name}
+        // 带前缀不构成关键字，保持原始拼接。
+        var escapedParameterRef = IdentifierEscaper.Escape(parameter.Name);
+
         if (isStringType)
         {
             // [GEN-18][§8.6] 运行期守卫：net4x/netstandard2.0 编译的 HttpClient 不校验头值 CR/LF，
             // 这里显式拒绝含 CR/LF 的头值以阻止头部注入（与 .NET Core/5+ 的 HttpRequestHeaders.Add 行为对齐）。
-            codeBuilder.AppendLine($"{indent}if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({parameter.Name}))");
-            codeBuilder.AppendLine($"{indent}    throw new global::System.ArgumentException(\"HTTP 头值包含非法字符（CR/LF）。\", nameof({parameter.Name}));");
+            codeBuilder.AppendLine($"{indent}if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({escapedParameterRef}))");
+            codeBuilder.AppendLine($"{indent}    throw new global::System.ArgumentException(\"HTTP 头值包含非法字符（CR/LF）。\", nameof({escapedParameterRef}));");
             if (parameter.IsValidated)
             {
                 if (shouldReplace)
                 {
                     codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
-                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {escapedParameterRef});");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {escapedParameterRef});");
                 }
             }
             else
             {
-                codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({parameter.Name}))");
+                codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({escapedParameterRef}))");
                 if (shouldReplace)
                 {
                     codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
-                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {escapedParameterRef});");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {escapedParameterRef});");
                 }
             }
         }
@@ -91,8 +96,8 @@ internal class HeaderParameterBinder : IParameterBinder
             //  formatString 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
             var escapedFormat = StringEscapeHelper.EscapeString(formatString);
             var formatExpression = !string.IsNullOrEmpty(formatString)
-                ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedFormat}}}\", {parameter.Name})"
-                : $"{parameter.Name}.ToString()";
+                ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedFormat}}}\", {escapedParameterRef})"
+                : $"{escapedParameterRef}.ToString()";
 
             // 非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
             // ns2.0 的 Headers.Add 不拦截）。不合格跳过（不发射、不 Remove）；

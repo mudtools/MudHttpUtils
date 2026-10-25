@@ -155,9 +155,11 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
         var returnsByRef = property.ReturnsByRef || returnsByRefReadonly;
         var refPrefix = returnsByRefReadonly ? "ref readonly " : returnsByRef ? "ref " : string.Empty;
         var modifiers = BuildModifiers(property.IsStatic, needsUnsafe: ContractPlaceholder.RequiresUnsafeContext(property.Type));
+        // [P1-2 修复] 声明位转义：保留字属性名（如 @event）裸名进属性声明产出 CS1001。
+        var escapedPropertyName = IdentifierEscaper.Escape(property.Name);
         var declaration = property.IsIndexer
             ? $"public {modifiers}{refPrefix}{propertyType} this[{ParameterSignatureBuilder.Build(property.Parameters)}]"
-            : $"public {modifiers}{refPrefix}{propertyType} {property.Name}";
+            : $"public {modifiers}{refPrefix}{propertyType} {escapedPropertyName}";
 
         WriteMemberDocumentation(codeBuilder, "属性");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
@@ -206,7 +208,10 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
 
         WriteMemberDocumentation(codeBuilder, "事件");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        codeBuilder.AppendLine($"        public {modifiers}event {delegateType} {@event.Name}");
+        // [P1-2 修复] 声明位转义：保留字事件名（如 @event 接口成员）裸名进事件声明产出 CS1001。
+        // 异常消息用原始名（ISymbol.Name 不含 @，消息文本不含 @ 更自然）。
+        var escapedEventName = IdentifierEscaper.Escape(@event.Name);
+        codeBuilder.AppendLine($"        public {modifiers}event {delegateType} {escapedEventName}");
         codeBuilder.AppendLine("        {");
         // 使用自定义访问器（而非字段式事件）以避免 CS0067「事件从未使用」告警。
         codeBuilder.AppendLine($"            add => throw new global::System.NotSupportedException(\"{BuildMessage("事件", @event.Name)}\");");

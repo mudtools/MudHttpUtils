@@ -247,3 +247,5 @@ Mud.HttpUtils.HttpClientResolverExtensions
 static Mud.HttpUtils.HttpClientResolverExtensions.GetOrCreateClient(this Mud.HttpUtils.IHttpClientResolver! resolver, string! clientName, System.Func<Mud.HttpUtils.IEnhancedHttpClient!>! factory) -> Mud.HttpUtils.IEnhancedHttpClient!
 Mud.HttpUtils.IAsyncHttpContentSerializer
 Mud.HttpUtils.IAsyncHttpContentSerializer.ToHttpContentAsync<T>(T item, object? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Net.Http.HttpContent?>
+Mud.HttpUtils.IHttpClientIdentity
+Mud.HttpUtils.IHttpClientIdentity.ClientName.get -> string?

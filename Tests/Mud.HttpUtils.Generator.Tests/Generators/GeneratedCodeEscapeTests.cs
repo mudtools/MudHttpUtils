@@ -285,4 +285,76 @@ public class GeneratedCodeEscapeTests
         generated.Should().Contain("catch", "守卫必须位于 catch 块中（仅在 Add 抛异常时释放）");
         generated.Should().Contain("throw;", "释放后必须原样重抛，不得吞掉异常");
     }
+
+    /// <summary>
+    /// P1-2 回归：C# 保留字命名的接口成员/参数 —— 声明位与引用位必须成对补 <c>@</c> 前缀，
+    /// 否则生成文件报 CS1001/CS0825/CS0102 等（探针实证 12 个错误）。载荷引擎已修同一类缺陷
+    /// （PayloadFieldMapRenderer 的 EscapeIdentifier），本用例守护 HTTP 引擎同步覆盖。
+    /// </summary>
+    [Fact]
+    public void KeywordNamedMembers_ShouldEmitEscapedIdentifiers()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IKeywordApi
+                {
+                    [Get("/data/{int}")]
+                    Task<string> @class(int @int);
+
+                    [Get("/q")]
+                    Task<string> QueryAsync([Query] string @event);
+
+                    [Query("kw")]
+                    string @string { get; set; }
+                }
+            }
+            """;
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "关键字命名的接口成员/参数必须经 @ 转义且生成代码可编译（P1-2 修复）");
+
+        var generated = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+
+        generated.Should().Contain("@class(", "方法声明位必须补 @ 前缀（CS1001 回归）");
+        generated.Should().Contain("@int", "参数声明位必须补 @ 前缀");
+        generated.Should().Contain("@event", "[Query] 参数引用位必须补 @ 前缀（与声明位成对）");
+        generated.Should().Contain("public string @string", "接口属性声明位必须补 @ 前缀");
+        generated.Should().Contain("__queryParams.Add(\"kw\", @string)",
+            "接口 [Query] 属性的引用位必须与声明位成对转义（CS1001 回归）");
+        generated.Should().Contain("__queryParams.Add(\"event\", @event)",
+            "参数引用位必须与声明位成对转义（CS1001/CS0103 回归）");
+    }
+
+    /// <summary>
+    /// P1-2 回归（负向守护口径）：关键字方法名进入占位实现路径（无 HTTP 方法特性）时同样须转义。
+    /// </summary>
+    [Fact]
+    public void KeywordNamedMethod_WithoutHttpAttribute_PlaceholderCompiles()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IKeywordApi
+                {
+                    Task<string> @default();
+                }
+            }
+            """;
+
+        GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "关键字方法名的占位实现必须可编译（P1-2 修复；HTTPCLIENT024 占位路径）");
+    }
 }

@@ -15,7 +15,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **HttpClient 模式**：支持通过 `HttpClient` 属性直接注入 HttpClient 接口，与 `TokenManage` 互斥
 - **依赖注入**：自动生成服务注册扩展方法 `AddWebApiHttpClient()`
 - **智能注释**：根据运行模式自动生成 DI 依赖提示注释
-- **Timeout 生效**：`[HttpClientApi(Timeout = N)]` 中的 `Timeout` 属性大于 0 时，生成器在注册代码中为命名客户端 `{接口名}_HttpClient` 生成 `client.Timeout` 设置（该超时属于命名客户端；实现类实际使用的 HttpClient 是否为其默认实例取决于注册顺序，见「生成客户端命名」）
+- **Timeout 生效**：`[HttpClientApi(Timeout = N)]` 中的 `Timeout` 属性大于 0 时，生成器在注册代码中为命名客户端 `{接口名}_HttpClient` 生成 `client.Timeout` 设置（该超时属于命名客户端；实现类实际使用的 HttpClient 是否为其默认实例取决于注册顺序，见「生成客户端命名」）；**`Timeout ≤ 0` 不生成赋值**（`HttpClient.Timeout` 不接受零/负值），命名客户端使用 HttpClient 默认超时（100 秒），并报 `HTTPCLIENT042`（Warning）
 
 ### 高级功能
 
@@ -698,14 +698,22 @@ Task<Config> GetConfigAsync();
 
 #### 默认缓存键结构
 
-未提供 `CacheKeyTemplate` 时，生成器按以下结构组装缓存键（`IHttpResponseCache` 为进程级单例，键必须显式携带接口与应用维度，防止串缓存）：
+未提供 `CacheKeyTemplate` 时，生成器按以下结构组装缓存键（`IHttpResponseCache` 为进程级单例，键必须显式携带接口、应用与客户端维度，防止串缓存）：
 
 ```text
-{AppKey}␟{接口全名}.{方法名}|{user:userId}|{参数段...}
+{AppKey}␟{ClientName}␟{接口全名}.{方法名}|{user:userId}|{参数段...}
   ├─ AppKey 前缀：运行端按 IAppContextHolder.Current（UseApp/BeginScope）→ 默认应用 → "default" 解析（F-01 层B）
+  ├─ ClientName 段：客户端实现 IHttpClientIdentity 且 ClientName 非空时出现，否则整段省略（历史键格式）
   ├─ 接口全名：不同接口的同名同参方法互不命中（F-01 层A）
   └─ user 段：仅 VaryByUser=true 时出现；缺少身份来源时退化为 user:anonymous（编译期 HTTPCLIENT034 警告）
 ```
+
+**客户端维度（3.1.0 新增）**：`EnhancedHttpClient` 的 `ClientName` 即 `IHttpClientIdentity.ClientName`
+（命名客户端返回注册名，其余为 `null`）。`IAppHttpClientFactory` 产出的每应用命名客户端天然携带各自名称，
+因此 HttpClient 模式 / 每应用客户端的同方法同参请求不再互串缓存。**残留边界**：两个客户端同名同址、
+仅凭据（请求头）不同时仍共键——请求头进内存缓存键会扩大泄漏面，刻意不做；此类场景请改用
+Default/TokenManager 模式（应用维度经上下文隔离）或注册按租户分键的自定义 `IHttpResponseCache`。
+HttpClient 模式 + `[Cache]` 会在编译期报 `HTTPCLIENT041` 提示该边界。
 
 > **兼容性（升级注意）**：键结构变更意味着**升级后既有缓存条目全量失效一次**（新键无法命中旧键），属预期行为，不造成脏读。
 >
@@ -908,11 +916,11 @@ var user = await api.GetUserAsync(1);
 | `HTTPCLIENT005`     | Error    | URL 模板格式无效                                                                                                                                                                                                                     | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板                                                                                                                                                                                                                                                 | 是（`HttpClientInvalidUrlTemplateCodeFixProvider`，修复反斜杠/花括号配对） | 是     |
 | `HTTPCLIENT007`     | Error    | 同时指定 `HttpClient` 和 `TokenManage`                                                                                                                                                                                               | 两者互斥，只设置其中一个                                                                                                                                                                                                                                                                  | 是（`HttpClientMutuallyExclusiveCodeFixProvider`，二选一移除）             | 是     |
 | `HTTPCLIENT008`     | Error    | 加密配置但 HttpClient 类型不支持加密                                                                                                                                                                                                 | 使用 `IEnhancedHttpClient` 或移除加密配置                                                                                                                                                                                                                                                 | 否                                                                         | 是     |
-| `HTTPCLIENT009`     | Warning  | XML 请求但 HttpClient 类型不支持 XML                                                                                                                                                                                                 | 使用 `IEnhancedHttpClient` 或修改 Content-Type                                                                                                                                                                                                                                            | 否                                                                         | 是     |
+| `HTTPCLIENT009`     | Info     | XML 内容类型但自定义 HttpClient 类型未实现 `IXmlHttpClient`（生成代码经 `IHttpRequestExecutor` 完成 XML 序列化，**不依赖**该接口）                                                                                                     | 通常可忽略；仅当该客户端类型还会被非生成路径当作 `IXmlHttpClient` 使用时才需要补齐实现                                                                                                                                                                                                     | 否                                                                         | 是     |
 | `HTTPCLIENT011`     | Warning  | `[Cache]` 与 `Response<T>` 返回类型组合                                                                                                                                                                                              | 缓存会存储状态码和响应头，建议使用普通返回类型                                                                                                                                                                                                                                            | 否                                                                         | 是     |
 | `HTTPCLIENT012`     | Info     | 泛型接口：生成器将转发类型参数与约束                                                                                                                                                                                                 | 无需处理（泛型接口**已支持**代码生成）                                                                                                                                                                                                                                                    | 否                                                                         | 否     |
 | `HTTPCLIENT013`     | Error    | URL 模板中的路径占位符与 `[Path]` 参数不匹配                                                                                                                                                                                         | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应                                                                                                                                                                                                                        | 否                                                                         | 是     |
-| `HTTPCLIENT014`     | Warning  | `HttpClient` 类型未找到                                                                                                                                                                                                              | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端                                                                                                                                                                                                                            | 否                                                                         | 是     |
+| `HTTPCLIENT014`     | Warning  | `HttpClient` 类型未找到（解析链与生成代码实际发射的裸类型名一致：精确元数据名 → `Mud.HttpUtils.` → 接口命名空间 → `System.Net.Http.` → 源码命名空间全局扫描）                                                                        | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端                                                                                                                                                                                                                            | 否                                                                         | 是     |
 | `HTTPCLIENT015`     | Error    | `TokenManage` 类型未找到                                                                                                                                                                                                             | 确认类型名称正确，或确保包含该类型的项目已引用                                                                                                                                                                                                                                            | 否                                                                         | 是     |
 | `HTTPCLIENT016`     | Error    | `TokenManage` 类型缺少必需方法                                                                                                                                                                                                       | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>`                                                                                                                                                                                                                 | 否                                                                         | 是     |
 | `HTTPCLIENT017`     | Warning  | `HttpClient` 类型无法解析，兼容性校验被跳过                                                                                                                                                                                          | 使用完全限定名确保类型可解析                                                                                                                                                                                                                                                              | 否                                                                         | 是     |
@@ -938,6 +946,8 @@ var user = await api.GetUserAsync(1);
 | `HTTPCLIENT038`     | Info     | 接口声明的语义符号无法解析（常见于接口声明语法不完整，如 IDE 输入中途），本次已跳过该接口的实现类生成                                                                                                                                | 修复接口声明的语法错误（如补全接口名），修复后本提示自动消失                                                                                                                                                                                                                              | 否                                                                         | 是     |
 | `HTTPCLIENT039`     | Warning  | 方法设置了 `[Token(Disabled = true)]`（方法级显式或继承接口级）的同时又设置了令牌注入参数（`TokenType`/`TokenManagerKey`/`InjectionMode`/`Name`/`Scopes`/`Scheme`/`RequiresUserId`）                                                     | 免令牌方法不取令牌、不注入、不参与令牌恢复，注入参数一律被忽略；请移除注入参数，或将 `Disabled` 设为 `false`                                                                                                                                                                              | 否                                                                         | 是     |
 | `HTTPCLIENT040`     | Warning  | 参数级 `[Token(Disabled = true)]`：`Disabled` 仅在方法级/接口级有意义，参数级设置已忽略（该参数仍按令牌参数语义处理）                                                                                                                    | 如需免令牌请在方法上标注 `[Token(Disabled = true)]`；如该参数确为令牌参数，移除 `Disabled` 即可                                                                                                                                                                                             | 否                                                                         | 是     |
+| `HTTPCLIENT041`     | Warning  | HttpClient 模式（`HttpClient = ...`）下标注 `[Cache]`：该模式不切换应用上下文，缓存键的应用维度恒为 `"default"`，进程级缓存仅按客户端维度区分                                                                                              | 多客户端/多应用共用进程时可能互串缓存。三选一：① 改用 Default/TokenManager 模式（应用维度隔离）；② 确保客户端实现 `IHttpClientIdentity` 且命名唯一；③ 注册按租户分键的自定义 `IHttpResponseCache`                                                                                          | 否                                                                         | 是     |
+| `HTTPCLIENT042`     | Warning  | `[HttpClientApi(Timeout = 0)]` 或负值：`HttpClient.Timeout` 不接受 `TimeSpan.Zero` 与负值（运行期 `ArgumentOutOfRangeException`），该设置已忽略                                                                                          | `Timeout` 必须大于 0；已忽略时命名客户端使用 HttpClient 默认超时（100 秒），需自定义请提供正数                                                                                                                                                                                               | 否                                                                         | 是     |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 >
@@ -970,6 +980,20 @@ var user = await api.GetUserAsync(1);
 为「外部报文 → 强类型载荷」生成字段映射委托表（`[PayloadContract]` / `[PayloadField]`）。生成物是
 `public static IPayloadFieldMap<T> PayloadFieldMap`（fluent `Map` 链），只被消费方手写运行时引擎消费；
 `PayloadNode` / `IPayloadFieldMap<T>` / `PayloadContractAccessor` 等运行时契约位于 `Mud.HttpUtils.Abstractions`（`Mud.HttpUtils.Payloads` 命名空间）。
+
+发射形态（3.1.1 起）：映射链是**类型级静态只读字段**，公开属性只做转发 ——
+
+```csharp
+private static readonly global::Mud.HttpUtils.Payloads.IPayloadFieldMap<MyPayload> __payloadFieldMap =
+    global::Mud.HttpUtils.Payloads.PayloadFieldMap<MyPayload>.Create("MyPayload")
+        .Map("UserID", (t, n) => { t.UserId = ...; })
+        /* ... */;
+
+public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<MyPayload> PayloadFieldMap => __payloadFieldMap;
+```
+
+因此同一类型的映射链**只构造一次**（此前每次属性访问都重建链与委托，每条报文绑定都重复付费）。
+线程安全由 CLR 类型初始化器保证（一次且线程安全），链本身无状态、可安全多线程共享。
 
 > **能力边界（必读）**：作用域解析仅「根 / 容器（`ScopeFallback`）」两级，**不做「重复同名叶兄弟」聚合推断**——报文布局中同类名多个叶节点散落不同分支时（如微信回调事件按 `MsgType`/`Event` 分发的重复兄弟字段），生成面不提供自动合并投影。此类域特异形态请显式走转换器的 `Method` 通道（自定义静态方法自行遍历 `PayloadNode` 树），该通道即「同类场景推荐路径」；上游仅保证 `PayloadFieldMap` 生成面稳定并文档化该边界，不为单一域形状扩大推断面。
 
@@ -1168,6 +1192,48 @@ public interface IUserApi : IBaseApi
     Task<List<User>> GetUsersAsync();
 }
 ```
+
+#### 宿主自维护基类的契约（`InheritedFrom` 指向手写类）
+
+`InheritedFrom` 也可以指向**手写**的抽象基类（宿主基类）。此时派生实现类的构造函数会以
+`base(...)` 形式调用它，**并且方法体直接引用基类的 protected 字段**，因此宿主基类必须同时满足
+下列两项契约（缺任一项会在生成期报 CS1729 / CS0103，`BaseClassValidator` 会在编译期尽量前置提示）：
+
+1. **构造函数形参**（位置顺序敏感，命名形参必须同名）：
+
+```csharp
+public abstract class HostBase
+{
+    protected HostBase(
+        IMudAppContext appContext,              // 默认模式；HttpClient 模式为 IEnhancedHttpClient/IBaseHttpClient
+        IAppContextHolder appContextHolder,     // 令牌/HttpClient 模式下可能省略，默认模式必需
+        IHttpRequestExecutor executor,          // 所有模式必需
+        ILogger? logger = null,                 // 命名实参 logger: —— 形参必须叫 logger
+        IHttpContentSerializer? contentSerializer = null)  // 命名实参 contentSerializer: —— 同名
+    {
+        // ...
+    }
+}
+```
+
+2. **protected 字段名**（生成方法体直接引用，字段名不可改）：
+
+| 字段 | 必需性 | 用途 |
+|---|---|---|
+| `_appContextHolder` | 默认/TokenManager 模式必需 | 方法体取当前应用上下文（`_appContextHolder.Current`） |
+| `_executor` | 必需 | 执行 HTTP 请求 |
+| `_defaultAppContext` | 默认模式必需 | 默认应用上下文回退 |
+| `_contentSerializer` | 必需 | 请求体序列化 |
+| `_tokenManager` / `_tokenProvider` | TokenManager 模式必需 | 令牌获取 |
+| `_currentUserContext` | 方法需要用户标识时必需 | `VaryByUser` 缓存键、令牌身份 |
+| `_appAuthorizer` | 使用 `UseApp`/`BeginScope(appKey)` 时必需 | 应用切换授权判定 |
+| `_cacheProvider` / `_resilienceResolver` | 基类承载 `[Cache]`/`[Retry]` 时必需 | 缓存与弹性策略 |
+| `_httpClient` | HttpClient 模式必需 | 实际发送 |
+
+> 基类的**普通基接口方法**不会由派生类补位实现（`AllMethods` 仅含派生侧自身方法），
+> 因此宿主基类必须自行实现这些接口成员，否则派生类激活时报 CS0535。
+
+
 
 ### 事件处理器生成
 

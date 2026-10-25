@@ -129,6 +129,10 @@ internal class QueryParameterBinder : IParameterBinder
     {
         var escapedName = StringEscapeHelper.EscapeString(paramName);
 
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001，
+        // 与 ParameterSignatureBuilder 的声明位成对。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name);
+
         if (TypeDetectionHelper.IsArrayType(param.Type))
         {
             // [Query] 数组默认使用重复参数模式（与 Separator = null 行为一致）
@@ -138,7 +142,7 @@ internal class QueryParameterBinder : IParameterBinder
         {
             // Add() 仅过滤 null（M2-#16A：空串/空白是显式值，按 "key=" 保留）；allowNull 时改用 AddAllowNull 保留 null 空值（?q=）。
             var method = allowNull ? "AddAllowNull" : "Add";
-            codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {param.Name});");
+            codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {escapedParamName});");
         }
         else
         {
@@ -156,14 +160,14 @@ internal class QueryParameterBinder : IParameterBinder
                 if (allowNull && TypeDetectionHelper.IsNullableType(param.Type))
                 {
                     // SerializeNull：null 时补发空键（?key=），保留既有格式化语义。
-                    codeBuilder.AppendLine($"{indent}if ({param.Name}.HasValue)");
-                    codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedName}\", {param.Name}, {formatArg});");
+                    codeBuilder.AppendLine($"{indent}if ({escapedParamName}.HasValue)");
+                    codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedName}\", {escapedParamName}, {formatArg});");
                     codeBuilder.AppendLine($"{indent}else");
                     codeBuilder.AppendLine($"{indent}    __queryParams.AddAllowNull(\"{escapedName}\", string.Empty);");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {param.Name}, {formatArg});");
+                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {escapedParamName}, {formatArg});");
                 }
             }
             else
@@ -181,7 +185,7 @@ internal class QueryParameterBinder : IParameterBinder
                         ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\", global::System.Globalization.CultureInfo.InvariantCulture)"
                         : (isFormattableValueType ? "?.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)" : "?.ToString()");
                     var method = allowNull ? "AddAllowNull" : "Add";
-                    codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {param.Name}{formatExpression});");
+                    codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {escapedParamName}{formatExpression});");
                 }
                 else
                 {
@@ -189,7 +193,7 @@ internal class QueryParameterBinder : IParameterBinder
                     var formatExpression = !string.IsNullOrEmpty(formatString)
                         ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\", global::System.Globalization.CultureInfo.InvariantCulture)"
                         : (isFormattableValueType ? ".ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)" : ".ToString()");
-                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {param.Name}{formatExpression});");
+                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {escapedParamName}{formatExpression});");
                 }
             }
         }
@@ -217,9 +221,11 @@ internal class QueryParameterBinder : IParameterBinder
         var separatorLiteral = hasPrefix ? "\".\"" : "\",\"";
         var includeNullLiteral = serializeNull.ToString().ToLowerInvariant();
         var useJsonLiteral = (!treatAsString).ToString().ToLowerInvariant();
-        codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name);
+        codeBuilder.AppendLine($"{indent}if ({escapedParamName} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, {prefixLiteral}, {separatorLiteral}, __queryParams, {includeNullLiteral}, {useJsonLiteral}, true, __rawQueryPairs, 0, _contentSerializer);");
+        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({escapedParamName}, {prefixLiteral}, {separatorLiteral}, __queryParams, {includeNullLiteral}, {useJsonLiteral}, true, __rawQueryPairs, 0, _contentSerializer);");
         codeBuilder.AppendLine($"{indent}}}");
     }
 
@@ -279,7 +285,11 @@ internal class QueryParameterBinder : IParameterBinder
         // 计算最终生效的分隔符：显式设置则使用设置的值，未设置则使用默认值
         var effectiveSeparator = separatorExplicitlySet ? separator : defaultSeparator;
 
-        codeBuilder.AppendLine($"{indent}if ({param.Name} != null && {param.Name}.Any())");
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001，
+        // 与 ParameterSignatureBuilder 的声明位成对。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name);
+
+        codeBuilder.AppendLine($"{indent}if ({escapedParamName} != null && {escapedParamName}.Any())");
         codeBuilder.AppendLine($"{indent}{{");
 
         // 数组元素类型（两种模式共用）
@@ -309,7 +319,7 @@ internal class QueryParameterBinder : IParameterBinder
             // 尝试使用类型专用的 Add 重载
             var elementOverloadKind = TypeDetectionHelper.GetQueryAddOverloadKind(elementType);
 
-            codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}{whereClause})");
+            codeBuilder.AppendLine($"{indent}    foreach (var __item in {escapedParamName}{whereClause})");
             codeBuilder.AppendLine($"{indent}    {{");
 
             if (elementOverloadKind == TypeDetectionHelper.QueryAddOverloadKind.WithFormat)
@@ -328,7 +338,7 @@ internal class QueryParameterBinder : IParameterBinder
         else
         {
             // 分隔符模式: query1=val1;val2;val3
-            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}{whereClause}.Select(__item => {itemToString}));");
+            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {escapedParamName}{whereClause}.Select(__item => {itemToString}));");
             codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __joinedValues);");
         }
 
@@ -353,9 +363,12 @@ internal class QueryParameterBinder : IParameterBinder
     {
         var urlEncode = !(attr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false);
 
-        codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name);
+
+        codeBuilder.AppendLine($"{indent}if ({escapedParamName} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    foreach (var __kvp in {param.Name})");
+        codeBuilder.AppendLine($"{indent}    foreach (var __kvp in {escapedParamName})");
         codeBuilder.AppendLine($"{indent}    {{");
         if (urlEncode)
         {
@@ -382,9 +395,11 @@ internal class QueryParameterBinder : IParameterBinder
         if (TryGenerateInlineQueryFlattening(codeBuilder, param, indent, separator, includeNull, useJson, urlEncode))
             return;
 
-        codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name);
+        codeBuilder.AppendLine($"{indent}if ({escapedParamName} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
+        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({escapedParamName}, string.Empty, \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
         codeBuilder.AppendLine($"{indent}}}");
     }
 
@@ -415,12 +430,15 @@ internal class QueryParameterBinder : IParameterBinder
         // 顶层前缀以「原始前缀 + '.'」形式向下传递；未设置 Prefix 时为空串（生成结果与旧版逐字节一致）。
         var topPrefix = string.IsNullOrEmpty(prefix) ? string.Empty : prefix + ".";
 
-        codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式 / 成员访问链产出 CS1001。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name) ?? param.Name;
+
+        codeBuilder.AppendLine($"{indent}if ({escapedParamName} != null)");
         codeBuilder.AppendLine($"{indent}{{");
 
         if (implementsIQueryParameter)
         {
-            GenerateIQueryParameterInline(codeBuilder, param.Name, indent + "    ",
+            GenerateIQueryParameterInline(codeBuilder, escapedParamName, indent + "    ",
                 topPrefix, separator, includeNullValues, urlEncode);
         }
         else
@@ -429,7 +447,7 @@ internal class QueryParameterBinder : IParameterBinder
             var properties = CollectPublicProperties(typeSymbol);
             foreach (var prop in properties)
             {
-                GeneratePropertyFlatteningInline(codeBuilder, param.Name, prop, indent + "    ",
+                GeneratePropertyFlatteningInline(codeBuilder, escapedParamName, prop, indent + "    ",
                     topPrefix, separator, includeNullValues, useJsonSerialization, urlEncode);
             }
         }
@@ -488,6 +506,10 @@ internal class QueryParameterBinder : IParameterBinder
         bool useJsonSerialization, bool urlEncode, int depth = 0)
     {
         var propName = prop.Name;
+        // [P1-2 修复] DTO 属性名同样可能为保留字（如 event/default）：内联展平发射的是
+        // {objName}.{propName} 成员访问，裸名产出 CS1001。键名保持原始 propName（键是字符串值，
+        // 非标识符），仅成员访问与递归 objExpr 走转义形态。
+        var escapedPropName = IdentifierEscaper.Escape(propName) ?? propName;
         // CFG-04：prefix 为「原始前缀」（已含尾部分隔符）；未设置 Prefix 时 prefix 为空串，key = propName（与旧版一致）。
         var key = prefix + propName;
         var escapedKey = StringEscapeHelper.EscapeString(key);
@@ -497,7 +519,7 @@ internal class QueryParameterBinder : IParameterBinder
         // 检查属性类型是否实现 IQueryParameter
         if (ImplementsIQueryParameter(prop.Type))
         {
-            GenerateIQueryParameterInline(codeBuilder, objName + "." + propName, indent,
+            GenerateIQueryParameterInline(codeBuilder, objName + "." + escapedPropName, indent,
                 key + separator, separator, includeNullValues, urlEncode);
             return;
         }
@@ -508,7 +530,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         if (isSimpleType)
         {
-            GenerateSimplePropertyFlattening(codeBuilder, objName, propName, prop,
+            GenerateSimplePropertyFlattening(codeBuilder, objName, escapedPropName, prop,
                 indent, escapedKey, includeNullValues, useJsonSerialization, urlEncode, propTypeDisplay);
         }
         else
@@ -522,11 +544,11 @@ internal class QueryParameterBinder : IParameterBinder
                 var nestedProps = CollectPublicProperties(nestedTypeSymbol);
                 if (nestedProps.Count > 0)
                 {
-                    codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
+                    codeBuilder.AppendLine($"{indent}if ({objName}.{escapedPropName} != null)");
                     codeBuilder.AppendLine($"{indent}{{");
                     foreach (var nestedProp in nestedProps)
                     {
-                        GeneratePropertyFlatteningInline(codeBuilder, objName + "." + propName, nestedProp,
+                        GeneratePropertyFlatteningInline(codeBuilder, objName + "." + escapedPropName, nestedProp,
                             indent + "    ", key + separator, separator, includeNullValues,
                             useJsonSerialization, urlEncode, depth + 1);
                     }
@@ -536,9 +558,9 @@ internal class QueryParameterBinder : IParameterBinder
             }
 
             // 深度超限或无公共属性：回退到 FlattenObjectToQueryParams（反射路径，非 AOT 安全）
-            codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
+            codeBuilder.AppendLine($"{indent}if ({objName}.{escapedPropName} != null)");
             codeBuilder.AppendLine($"{indent}{{");
-            codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{propName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
+            codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{escapedPropName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
             codeBuilder.AppendLine($"{indent}}}");
         }
     }
@@ -692,10 +714,13 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
     {
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+        // 局部名 __rawQS_{Name} 带前缀不构成关键字，保持原始拼接。
+        var escapedParamName = IdentifierEscaper.Escape(param.Name);
         var rawQsVar = $"__rawQS_{param.Name}";
         if (param.IsValidated)
         {
-            codeBuilder.AppendLine($"{indent}var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
+            codeBuilder.AppendLine($"{indent}var {rawQsVar} = {escapedParamName}.TrimStart('?', '&').TrimEnd('&');");
             codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({rawQsVar}))");
             codeBuilder.AppendLine($"{indent}{{");
             codeBuilder.AppendLine($"{indent}    var __separator = __url.Contains('?') ? \"&\" : \"?\";");
@@ -704,9 +729,9 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else
         {
-            codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({param.Name}))");
+            codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({escapedParamName}))");
             codeBuilder.AppendLine($"{indent}{{");
-            codeBuilder.AppendLine($"{indent}    var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
+            codeBuilder.AppendLine($"{indent}    var {rawQsVar} = {escapedParamName}.TrimStart('?', '&').TrimEnd('&');");
             codeBuilder.AppendLine($"{indent}    if (!string.IsNullOrWhiteSpace({rawQsVar}))");
             codeBuilder.AppendLine($"{indent}    {{");
             codeBuilder.AppendLine($"{indent}        var __separator = __url.Contains('?') ? \"&\" : \"?\";");

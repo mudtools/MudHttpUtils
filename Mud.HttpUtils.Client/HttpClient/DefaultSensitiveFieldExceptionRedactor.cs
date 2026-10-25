@@ -32,7 +32,7 @@ namespace Mud.HttpUtils;
 /// （<c>AddSingleton&lt;IExceptionRedactor&gt;()</c> 且先于库的注册调用）。
 /// </para>
 /// </remarks>
-internal sealed class DefaultSensitiveFieldExceptionRedactor : IExceptionRedactor
+public sealed class DefaultSensitiveFieldExceptionRedactor : IExceptionRedactor
 {
     /// <summary>掩码后的占位符（与 URL query 脱敏同文案，便于日志检索对齐）。</summary>
     private const string Mask = "***REDACTED***";

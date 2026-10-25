@@ -47,7 +47,7 @@ namespace Mud.HttpUtils;
 /// </example>
 /// <seealso cref="IEnhancedHttpClient"/>
 /// <seealso cref="IEncryptableHttpClient"/>
-public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttpClient
+public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttpClient, IHttpClientIdentity
 {
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;

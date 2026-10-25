@@ -11,14 +11,14 @@ namespace PayloadTests
         /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
         [global::System.Runtime.CompilerServices.CompilerGenerated]
         [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
-        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedItemsObjectPayload> PayloadFieldMap
-        {
-            get
-            {
-                return global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedItemsObjectPayload>.Create("NestedItemsObjectPayload")
-                    .Map("SelectedItems", (t, n) => { t.SelectedItems = global::PayloadTests.PayloadConverter.ItemsObject<global::PayloadTests.NestedSelectedItem>(n, "SelectedItem", (global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedSelectedItem.PayloadFieldMap); });
-            }
-        }
+        private static readonly global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedItemsObjectPayload> __payloadFieldMap =
+            global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedItemsObjectPayload>.Create("NestedItemsObjectPayload")
+                .Map("SelectedItems", (t, n) => { t.SelectedItems = global::PayloadTests.PayloadConverter.ItemsObject<global::PayloadTests.NestedSelectedItem>(n, "SelectedItem", (global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedSelectedItem.PayloadFieldMap); });
+
+        /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
+        [global::System.Runtime.CompilerServices.CompilerGenerated]
+        [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
+        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedItemsObjectPayload> PayloadFieldMap => __payloadFieldMap;
     }
 }
 
@@ -36,15 +36,15 @@ namespace PayloadTests
         /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
         [global::System.Runtime.CompilerServices.CompilerGenerated]
         [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
-        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedSelectedItem> PayloadFieldMap
-        {
-            get
-            {
-                return global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedSelectedItem>.Create("NestedSelectedItem")
-                    .Map("QuestionKey", (t, n) => { t.QuestionKey = global::PayloadTests.PayloadConverter.Text(n); })
-                    .Map("OptionIds", (t, n) => { t.OptionIds = global::PayloadTests.PayloadConverter.Items<string>(n, "OptionId"); });
-            }
-        }
+        private static readonly global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedSelectedItem> __payloadFieldMap =
+            global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedSelectedItem>.Create("NestedSelectedItem")
+                .Map("QuestionKey", (t, n) => { t.QuestionKey = global::PayloadTests.PayloadConverter.Text(n); })
+                .Map("OptionIds", (t, n) => { t.OptionIds = global::PayloadTests.PayloadConverter.Items<string>(n, "OptionId"); });
+
+        /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
+        [global::System.Runtime.CompilerServices.CompilerGenerated]
+        [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
+        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedSelectedItem> PayloadFieldMap => __payloadFieldMap;
     }
 }
 

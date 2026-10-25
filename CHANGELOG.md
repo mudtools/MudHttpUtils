@@ -4,6 +4,44 @@
 
 ---
 
+## 3.1.0（多应用缓存隔离，2026-10-25）
+
+### 破坏性变更 / 升级注意
+
+- **缓存键新增客户端维度**：键结构由 `{AppKey}␟{CacheKey}` 变为 `{AppKey}␟{ClientName}␟{CacheKey}`
+  （客户端未实现 `IHttpClientIdentity` 或 `ClientName` 为空时保持旧格式）。**升级后既有缓存条目一次性全量失效**
+  （新键不命中旧键），属预期行为，不造成脏读。
+- **无 DI 工厂路径默认启用异常脱敏**：`RestService.ForGenerated<T>` 创建的客户端现在默认使用
+  `DefaultSensitiveFieldExceptionRedactor`（此前为 null，异常消息中的敏感字段不脱敏）。需要旧行为可显式传
+  `GeneratedClientOptions.ExceptionRedactor`。
+- **`[HttpClientApi(Timeout = 0)]` / 负值不再生成超时赋值**：改为使用 HttpClient 默认超时（100 秒）并报
+  `HTTPCLIENT042`。此前会在命名客户端创建期抛 `ArgumentOutOfRangeException`。
+- **HTTPCLIENT009 由 Warning 降为 Info**：XML 序列化经 `IHttpRequestExecutor` 完成，不依赖客户端 `IXmlHttpClient`，
+  原警告属误报噪音。
+
+### 新增
+
+- **`IHttpClientIdentity` 客户端身份接缝**：为缓存作用域键提供客户端维度；`EnhancedHttpClient.ClientName` 天然满足，
+  外部实现方无需改动（未实现时退化为历史键格式）。
+- **`DefaultSensitiveFieldExceptionRedactor` 提升为公共 API**：宿主可显式注入或复用默认脱敏实现。
+- **诊断**：`HTTPCLIENT041`（HttpClient 模式 + `[Cache]` 的进程级缓存边界提示，含三条可执行指引）、
+  `HTTPCLIENT042`（`Timeout ≤ 0` 无效并已忽略）。
+
+### 修复
+
+- **默认模式 + 继承（`InheritedFrom` / 自动检测抽象基）生成的注册代码无法编译（CS1739）**：派生实现类的
+  `cacheProvider` / `resilienceResolver` 形参现于所有模式下以可选形态存在，注册工厂的命名实参在任何模式均可绑定；
+  注册侧按真实口径（宿主基类模式收窄为带 `[HttpClientApi]` 的基接口）决定解析或传 null。
+- **XML 响应/请求 + 可空引用类型产出非法标识符（CS1001/CS1003）**：`_xmlSerializer_X?` 与 `typeof(X?)` 均已归一化。
+- **关键字命名的接口成员/参数产出不可编译代码**：声明位与引用位成对补 `@` 前缀（HTTP 引擎全链路对齐载荷引擎）。
+- **`HTTPCLIENT014` 对同命名空间短名客户端误报「类型未找到」**：解析链与生成代码实际发射的裸类型名对齐。
+- **`BaseClassValidator` 对手写短名宿主基类完全不校验**：现按真实 `base(...)` 契约校验构造形参与命名实参
+  （不合规在编译期报错，而非延迟到 CS1729）。
+- **缓存热路径重复付出构造开销**：载荷字段映射链改为类型级静态只读字段（同一类型只构造一次）；
+  `MemoryHttpResponseCache` 的 Set 路径全表过期扫描改为按写入次数节流（容量淘汰仍逐次执行）。
+
+---
+
 ## 3.0.9（可靠性修复与易用性增强，2026-10-19）
 
 ### 破坏性变更

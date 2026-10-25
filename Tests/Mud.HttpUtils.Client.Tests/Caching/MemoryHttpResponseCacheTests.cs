@@ -39,6 +39,52 @@ public class MemoryHttpResponseCacheTests
         value.Should().BeNull();
     }
 
+    /// <summary>
+    /// P3-1 回归：Set 路径的全表过期扫描已按写入次数节流，但**过期语义不得改变** ——
+    /// 容量压力下过期条目仍不得被命中（TryGet 自行判定 ExpireTime）。
+    /// </summary>
+    [Fact]
+    public async Task SetPathSweepThrottling_DoesNotMakeExpiredEntriesHittable()
+    {
+        // 容量 2：先写入过期键与存活键塞满，再大量 Set 触发容量淘汰路径（节流生效区间内）
+        var cache = new MemoryHttpResponseCache(maxCacheSize: 2);
+        cache.Set("expired", "stale", TimeSpan.FromMilliseconds(30));
+        cache.Set("alive", "fresh", TimeSpan.FromMinutes(5));
+
+        await Task.Delay(80);
+
+        for (var i = 0; i < 10; i++)
+        {
+            cache.Set($"filler-{i}", i, TimeSpan.FromMinutes(5));
+        }
+
+        cache.TryGet<string>("expired", out var stale).Should().BeFalse(
+            "节流只降低全表扫描频率，不得让过期条目变为可命中（P3-1）");
+        stale.Should().BeNull();
+        cache.TryGet<string>("alive", out _).Should().BeFalse(
+            "容量 2 且持续写入，早期键应被容量淘汰");
+    }
+
+    /// <summary>
+    /// P3-1：容量淘汰仍逐次生效（节流只作用于过期扫描，容量是硬约束）。
+    /// </summary>
+    [Fact]
+    public void CapacityEviction_StillEnforcedUnderSweepThrottling()
+    {
+        var cache = new MemoryHttpResponseCache(maxCacheSize: 3);
+
+        for (var i = 0; i < 50; i++)
+        {
+            cache.Set($"k{i}", i, TimeSpan.FromMinutes(5));
+        }
+
+        var hits = Enumerable.Range(0, 50).Count(i => cache.TryGet<int>($"k{i}", out _));
+
+        hits.Should().BeLessThanOrEqualTo(3,
+            "容量上限 3 必须始终成立（节流不得影响容量淘汰）");
+        hits.Should().BeGreaterThan(0, "最近写入的键应仍在缓存中");
+    }
+
     [Fact]
     public void Remove_ExistingKey_RemovesEntry()
     {

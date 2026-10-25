@@ -32,7 +32,7 @@ HTTPCLIENT004 | 代码生成 | Error | HttpClient API 参数配置错误
 HTTPCLIENT005 | 代码生成 | Error | URL 模板无效
 HTTPCLIENT007 | 代码生成 | Error | HttpClient 与 TokenManage 互斥
 HTTPCLIENT008 | 代码生成 | Error | HttpClient 类型不支持加密
-HTTPCLIENT009 | 代码生成 | Warning | HttpClient 类型不支持 XML 请求
+HTTPCLIENT009 | 代码生成 | Info | HttpClient 类型未实现 IXmlHttpClient（生成路径不依赖）
 HTTPCLIENT011 | 代码生成 | Warning | Cache 与 Response<T> 组合
 HTTPCLIENT012 | 代码生成 | Info | 泛型接口代码生成提示
 HTTPCLIENT013 | 代码生成 | Error | 路径参数不匹配
@@ -60,7 +60,9 @@ HTTPCLIENT036 | 代码生成 | Warning | [FilePath(BufferSize)] 超出支持上�
 HTTPCLIENT037 | 代码生成 | Info | 参数疑似 HTTP 头但未标注 [Header]/[HeaderCollection]（M6-HC-02）
 HTTPCLIENT038 | 代码生成 | Info | 接口符号解析失败，已跳过实现类生成（P2-5）
 HTTPCLIENT039 | 代码生成 | Warning | 免令牌方法（[Token(Disabled = true)]）同时设置了令牌注入参数，参数被忽略（F-1）
-HTTPCLIENT040 | 代码生成 | Warning | 参数级 [Token(Disabled = true)] 无意义，已忽略（F-1）
+HTTPCLIENT040 | 代码生成 | Warning | 参数级 [Token(Disabled = true)] 无意义，已忽略
+HTTPCLIENT041 | 代码生成 | Warning | HttpClient 模式 [Cache] 为进程级共享（无应用上下文来源）
+HTTPCLIENT042 | 代码生成 | Warning | [HttpClientApi(Timeout ≤ 0)] 无效已忽略（P1-3）（F-1）
 HTTPCLIENTREG001 | 代码生成 | Error | HttpClient API 注册生成错误
 HTTPCLIENTREG002 | 代码生成 | Error | RegistryGroupName 不是有效 C# 标识符
 MUD001 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法缺少 HTTP 方法特性

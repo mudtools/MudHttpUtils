@@ -247,6 +247,64 @@ public class CacheIsolationIntegrationTests : IDisposable
         Seq(await api.GetProbeAsync()).Should().BeGreaterThan(0);
     }
 
+    /// <summary>
+    /// P0-2 验收（端到端）：HttpClient 模式 + 两个不同命名的客户端共用一个进程级缓存实例，
+    /// 同方法同参请求必须各自落网（不串缓存）；同客户端再次调用仍命中自身缓存。
+    /// </summary>
+    /// <remarks>
+    /// 缓存键此前只有应用维度，而 HttpClient 模式的应用维度恒为 "default" ⇒ 两个客户端会互相命中。
+    /// 修复后键携带 <see cref="IHttpClientIdentity.ClientName"/>（<see cref="HttpClientFactoryEnhancedClient"/>
+    /// 天然实现），无需改动生成代码。
+    /// </remarks>
+    [Fact]
+    public async Task HttpClientMode_PerNamedClients_ShouldNotShareCache()
+    {
+        // 两个客户端共享同一缓存实例（模拟进程级单例 IHttpResponseCache）
+        var sharedCache = new MemoryHttpResponseCache();
+
+        using var providerA = BuildNamedClientProvider("mud-it-client-a", sharedCache);
+        using var providerB = BuildNamedClientProvider("mud-it-client-b", sharedCache);
+
+        var apiA = providerA.GetRequiredService<IFooCacheApi>();
+        var apiB = providerB.GetRequiredService<IFooCacheApi>();
+
+        var sA1 = Seq(await apiA.GetProbeAsync());
+        var sB1 = Seq(await apiB.GetProbeAsync());
+        var sA2 = Seq(await apiA.GetProbeAsync());
+
+        sB1.Should().Be(sA1 + 1,
+            "不同客户端名的同方法同参请求不得命中对方缓存（P0-2：键需携带客户端维度）");
+        sA2.Should().Be(sA1, "同一客户端再次调用应命中自身缓存（缓存本身仍工作）");
+    }
+
+    /// <summary>
+    /// 构造 HttpClient 模式接口的容器：命名客户端（带 <c>ClientName</c>）+ 指定缓存实例。
+    /// 命名客户端的 PrimaryHandler 指向 TestServer，避免真实网络。
+    /// </summary>
+    private ServiceProvider BuildNamedClientProvider(string clientName, IHttpResponseCache cache)
+    {
+        var factoryServices = new ServiceCollection();
+        factoryServices.AddHttpClient(clientName)
+            .ConfigurePrimaryHttpMessageHandler(() => _server.CreateHandler());
+        var factoryProvider = factoryServices.BuildServiceProvider();
+        var factory = factoryProvider.GetRequiredService<IHttpClientFactory>();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+        services.AddSingleton(cache);
+        services.AddSingleton<IEnhancedHttpClient>(
+            new HttpClientFactoryEnhancedClient(
+                factory,
+                clientName,
+                options: new EnhancedHttpClientOptions { AllowCustomBaseUrls = true },
+                overrideBaseAddress: _httpClient.BaseAddress));
+        services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(null));
+        services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
+        services.AddWebApiHttpClient();
+        return services.BuildServiceProvider();
+    }
+
     private static int Seq(string? json)
         => JsonSerializer.Deserialize<JsonElement>(json!).GetProperty("seq").GetInt32();
 

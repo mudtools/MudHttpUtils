@@ -193,6 +193,50 @@ public class GeneratorSourceContractTests
         "System.Xml.Linq", "XDocument", "XElement", "XAttribute", "XNamespace", "XName",
     };
 
+    // ------------------------------------------------------------------ 标识符转义单一入口守卫（P1-2）
+
+    /// <summary>
+    /// 生成器内「C# 保留字转义」必须只经 <c>Helper/IdentifierEscaper</c>：禁止在其他文件直连
+    /// <c>SyntaxFacts.GetKeywordKind</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// P1-2 的根因是「声明位与引用位分散转义」——载荷引擎修好、HTTP 引擎漏修。上提共享实施后，
+    /// 若允许各处重新手写判定，第二次漂移（判定口径不同 / 新发射点忘了走共享）就会重现。
+    /// </para>
+    /// <para>
+    /// 白名单只保留 <c>Helper/IdentifierEscaper.cs</c> 本身。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void KeywordEscaping_MustGoThroughIdentifierEscaper()
+    {
+        var violations = new List<string>();
+
+        var root = Path.GetFullPath(TestRepoRoot.PathOf("Mud.HttpUtils.Generator"));
+        var files = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                        && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !Path.GetFileName(f).Equals("IdentifierEscaper.cs", StringComparison.Ordinal));
+
+        foreach (var file in files)
+        {
+            var lines = StripComments(File.ReadAllText(file)).Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (lines[i].Contains("SyntaxFacts.GetKeywordKind", StringComparison.Ordinal))
+                {
+                    violations.Add($"{Path.GetFileName(file)}:{i + 1}  →  {lines[i].Trim()}");
+                }
+            }
+        }
+
+        violations.Should().BeEmpty(
+            "标识符转义必须经 Helper/IdentifierEscaper（P1-2 单一入口）；" +
+            "分散实现会让「声明位/引用位成对转义」再次漂移。命中（文件:行号）：\n  - " +
+            string.Join("\n  - ", violations));
+    }
+
     /// <summary>
     /// 字符串感知的注释剥离：把 <c>//</c> 行注释与 <c>/* */</c> 块注释替换为空白（保留换行以维持行号），
     /// 同时正确跳过普通字符串、逐字字符串（<c>@"…"</c>，含 <c>""</c> 转义）与字符字面量中的

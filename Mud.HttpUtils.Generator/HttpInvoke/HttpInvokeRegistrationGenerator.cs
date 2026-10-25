@@ -177,13 +177,53 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
             : null;
 
+        // [P0-1 修复·注册侧对齐] 复刻构造侧 ExtractConfigurationFromAttributes 的 InheritedFrom
+        // 来源解析口径（auto-detect 抽象基 + 显式 InheritedFrom 名称反查），判定是否为
+        // 「宿主基类模式」——该模式下普通基接口的方法由宿主基类实现，派生侧不传缓存/弹性依赖。
+        // 与 InterfaceImplementationGenerator.cs:634-704 同口径；漂移由
+        // RegistrationConstructorContractGuardTests（名集合差 + 值级断言）兜底。
+        var inheritedFrom = AttributeDataHelper.GetStringValueFromAttribute(
+            httpClientApiAttribute, HttpClientGeneratorConstants.InheritedFromProperty);
+        if (string.IsNullOrEmpty(inheritedFrom))
+        {
+            foreach (var directBaseInterface in interfaceSymbol.Interfaces)
+            {
+                var baseApiAttr = directBaseInterface.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name));
+                if (baseApiAttr != null && AttributeDataHelper.GetBoolValueFromAttribute(
+                        baseApiAttr, HttpClientGeneratorConstants.IsAbstractProperty, false))
+                {
+                    inheritedFrom = TypeSymbolHelper.GetImplementationClassName(directBaseInterface.Name);
+                    break;
+                }
+            }
+        }
+
+        var hostBaseClassMode = !string.IsNullOrEmpty(inheritedFrom)
+            && !interfaceSymbol.AllInterfaces.Any(baseInterface => string.Equals(
+                TypeSymbolHelper.GetImplementationClassName(baseInterface.Name),
+                inheritedFrom, StringComparison.Ordinal));
+
         // F-04：扫描接口（含继承链）方法级特性，判定 cacheProvider / resilienceResolver 在
         // 工厂注册中是否必需解析，与 ConstructorGenerator 的 needsCacheParam / needsResilienceParam
-        // 口径一致（HasCache || 基接口存在 [Cache]）。AllInterfaces 已覆盖继承链。
+        // 口径一致。AllInterfaces 已覆盖继承链。
+        // [P0-1 修复·注册侧对齐] 基接口扫描面按「继承形态」分流，与构造侧逐场景恒等（已推演验证）：
+        //   · 非继承 / 生成基模式（InheritedFrom 名称反查到来源接口）：全部基接口 —— 前者的
+        //     AllMethods 含全部基接口方法，后者的来源接口方法由基类实现且经 BaseHasCache
+        //     （要求基接口带 [HttpClientApi]）覆盖，两侧扫描天然重合；
+        //   · 宿主基类模式（InheritedFrom 有值但反查不到来源接口）：仅带 [HttpClientApi] 的基接口 ——
+        //     普通基接口的方法由宿主基类实现（构造侧 AllMethods 仅含自身方法），派生侧不传
+        //     缓存/弹性依赖；若不过滤，注册侧会向派生类可选形参传 GetRequiredService，
+        //     其中 IResiliencePolicyResolver 无默认注册 ⇒ 运行期 DI 解析失败。
+        var baseInterfacesToScan = hostBaseClassMode
+            ? interfaceSymbol.AllInterfaces.Where(i => i.GetAttributes().Any(attr =>
+                HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name)))
+            : interfaceSymbol.AllInterfaces;
+
         var hasCache = false;
         var hasResilience = false;
         foreach (var method in interfaceSymbol.GetMembers()
-            .Concat(interfaceSymbol.AllInterfaces.SelectMany(i => i.GetMembers()))
+            .Concat(baseInterfacesToScan.SelectMany(i => i.GetMembers()))
             .OfType<IMethodSymbol>())
         {
             foreach (var attr in method.GetAttributes())
@@ -384,7 +424,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    appContextHolder: appContextHolder,");
         sb.AppendLine("                    appManager: options?.AppManager,");
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
-        sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
+        // 无 DI 工厂路径的默认脱敏（P2-3）：DI 路径由 AddMudHttpClient 的 TryAddSingleton 兜底，
+        // 而工厂路径此前传 null ⇒ 异常消息中的敏感字段不脱敏（两条路径安全能力不对等）。
+        // 显式注入仍优先（options?.ExceptionRedactor ?? 默认实现）。
+        sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor ?? new global::Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor(),");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
         // 接线成功响应体守卫（DI 路径早已接通；无 DI 工厂此前遗漏 ⇒ 能力缺口）。
         // 语义与 DI 路径一致：0 = 不限制。
@@ -414,22 +457,22 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private void GenerateAddWebApiHttpClientMethod(StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)
     {
-        GenerateDefaultRegistrationMethod(codeBuilder, apis);
+        GenerateDefaultRegistrationMethod(codeBuilder, apis, context);
         GenerateGroupedRegistrationMethods(codeBuilder, apis, context);
     }
 
     /// <summary>
     /// 生成默认注册函数（用于未分组的APIs）
     /// </summary>
-    private void GenerateDefaultRegistrationMethod(StringBuilder codeBuilder, List<HttpClientApiInfo> apis)
+    private void GenerateDefaultRegistrationMethod(StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)
     {
-        GenerateDefaultRegistrationMethodInternal(codeBuilder, apis, HttpClientApiInfoBaseExtensions, "AddWebApiHttpClient");
+        GenerateDefaultRegistrationMethodInternal(codeBuilder, apis, HttpClientApiInfoBaseExtensions, "AddWebApiHttpClient", context);
     }
 
     /// <summary>
     /// 通用的默认注册函数生成方法
     /// </summary>
-    private void GenerateDefaultRegistrationMethodInternal<T>(StringBuilder codeBuilder, List<T> apis, Action<StringBuilder, T> registrationGenerator, string methodName) where T : HttpClientApiInfoBase
+    private void GenerateDefaultRegistrationMethodInternal<T>(StringBuilder codeBuilder, List<T> apis, Action<StringBuilder, T, SourceProductionContext> registrationGenerator, string methodName, SourceProductionContext context) where T : HttpClientApiInfoBase
     {
         var ungroupedApis = apis.Where(api => string.IsNullOrEmpty(api.RegistryGroupName)).ToList();
 
@@ -448,7 +491,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         foreach (var api in ungroupedApis)
         {
-            registrationGenerator(codeBuilder, api);
+            registrationGenerator(codeBuilder, api, context);
         }
 
         codeBuilder.AppendLine("            return services;");
@@ -458,9 +501,9 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     /// <summary>
     /// HttpClientApiInfo 注册生成的委托
     /// </summary>
-    private void HttpClientApiInfoBaseExtensions(StringBuilder codeBuilder, HttpClientApiInfo api)
+    private void HttpClientApiInfoBaseExtensions(StringBuilder codeBuilder, HttpClientApiInfo api, SourceProductionContext context)
     {
-        GenerateHttpClientRegistration(codeBuilder, api);
+        GenerateHttpClientRegistration(codeBuilder, api, context);
     }
 
     /// <summary>
@@ -482,7 +525,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     /// </summary>
     private void GenerateGroupedRegistrations<T>(StringBuilder codeBuilder,
         List<T> apiInfos,
-        Action<StringBuilder, T> registrationGenerator,
+        Action<StringBuilder, T, SourceProductionContext> registrationGenerator,
         string serviceType,
         string descriptionTemplate,
         SourceProductionContext context) where T : HttpClientApiInfoBase
@@ -512,7 +555,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     private void GenerateGroupedRegistrationMethod<T>(StringBuilder codeBuilder,
         string groupName,
         IEnumerable<T> apiInfos,
-        Action<StringBuilder, T> registrationGenerator,
+        Action<StringBuilder, T, SourceProductionContext> registrationGenerator,
         string serviceType,
         string description,
         SourceProductionContext context) where T : HttpClientApiInfoBase
@@ -544,14 +587,14 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         foreach (var api in apiInfos)
         {
-            registrationGenerator(codeBuilder, api);
+            registrationGenerator(codeBuilder, api, context);
         }
 
         codeBuilder.AppendLine("            return services;");
         codeBuilder.AppendLine("        }");
     }
 
-    private void GenerateHttpClientRegistration(StringBuilder codeBuilder, HttpClientApiInfo api)
+    private void GenerateHttpClientRegistration(StringBuilder codeBuilder, HttpClientApiInfo api, SourceProductionContext context)
     {
         var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
         var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
@@ -603,11 +646,26 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // 实现类构造函数注入类型级 IEnhancedHttpClient/IHttpRequestExecutor（RegisterNamedClient 先注册者胜），
         // 因此多接口共存时各命名客户端的 Timeout/BaseAddress 不按命名隔离，请阅读 README「生成客户端命名」章节。
         codeBuilder.AppendLine("            // 注意：实现类当前通过类型级 IEnhancedHttpClient 解析；命名客户端（" + httpClientName + "）仅在该名称被注册为默认 IEnhancedHttpClient 时生效。");
-        codeBuilder.AppendLine($"            global::Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(services, \"{httpClientName}\", client =>");
-        codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine($"                client.Timeout = global::System.TimeSpan.FromSeconds({timeoutSeconds});");
-        // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
-        codeBuilder.AppendLine($"            }});");
+        // P1-3：Timeout <= 0 不生成赋值 —— HttpClient.Timeout 不接受 Zero/负值（运行期 AOORE，
+        // 发生在命名客户端创建期且消息不指向特性）。显式 0/负值的语义是「使用默认 100 秒」，
+        // 与 README「大于 0 时」的表述对齐，并报 HTTPCLIENT042 指向特性位置。
+        if (timeoutSeconds > 0)
+        {
+            codeBuilder.AppendLine($"            global::Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(services, \"{httpClientName}\", client =>");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                client.Timeout = global::System.TimeSpan.FromSeconds({timeoutSeconds});");
+            // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
+            codeBuilder.AppendLine($"            }});");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            global::Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(services, \"{httpClientName}\", null);");
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiTimeoutIgnored,
+                api.Location ?? Location.None,
+                api.InterfaceName,
+                timeoutSeconds));
+        }
 
         // F-04：默认模式（无 HttpClient / TokenManager）构造必需 IMudAppContext，裸 AddTransient<IFoo, Impl>
         // 在 DI 容器无法解析该参数（空容器或未注册 IMudAppContext 时激活即抛）。

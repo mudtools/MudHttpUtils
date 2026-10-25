@@ -28,6 +28,18 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     private bool _disposed;
 
     /// <summary>
+    /// 距上次「Set 路径全表过期扫描」的累计写入次数（计数节流，P3-1）。
+    /// </summary>
+    /// <remarks>
+    /// 时间维度的过期清理已由 <c>CleanupIntervalSeconds</c> 定时器（<see cref="CleanupExpiredEntries"/>）覆盖，
+    /// 每次 Set 都做一次 O(N) 全表扫描属纯热路径开销；容量淘汰本身保持逐次执行（容量是硬约束）。
+    /// </remarks>
+    private int _setOperationsSinceSweep;
+
+    /// <summary>Set 路径全表过期扫描的写入次数阈值（节流粒度）。</summary>
+    private const int ExpiredSweepOperationThreshold = 256;
+
+    /// <summary>
     /// 初始化 MemoryHttpResponseCache 实例。
     /// </summary>
     /// <param name="maxCacheSize">最大缓存条目数，默认 <see cref="ResponseCacheOptions.DefaultMaxCacheSize"/>（1000）。</param>
@@ -294,15 +306,23 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         if (_cache.Count < _maxCacheSize)
             return;
 
-        var now = DateTimeOffset.UtcNow;
-        var entriesToRemove = _cache
-        .Where(kvp => kvp.Value.ExpireTime <= now)
-        .Select(kvp => kvp.Key)
-        .ToList();
-
-        foreach (var key in entriesToRemove)
+        // P3-1：全表过期扫描按写入次数节流（此前每次 Set 都 O(N) 扫全表）。
+        // 时间维度的清理由定时器 CleanupExpiredEntries 负责，此处仅作容量压力下的兜底，
+        // 故降频不影响过期语义（过期条目仍不会被命中：TryGet 自行判定 ExpireTime）。
+        if (Interlocked.Increment(ref _setOperationsSinceSweep) >= ExpiredSweepOperationThreshold)
         {
-            _cache.TryRemove(key, out _);
+            Interlocked.Exchange(ref _setOperationsSinceSweep, 0);
+
+            var now = DateTimeOffset.UtcNow;
+            var entriesToRemove = _cache
+                .Where(kvp => kvp.Value.ExpireTime <= now)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            foreach (var key in entriesToRemove)
+            {
+                _cache.TryRemove(key, out _);
+            }
         }
 
         if (_cache.Count >= _maxCacheSize)

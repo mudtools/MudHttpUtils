@@ -44,10 +44,14 @@ public class DiagnosticCoverageGapTests
 
     /// <summary>
     /// <c>IBaseHttpClient</c> 在生成器内被硬编码为「支持 JSON 但不支持 XML」，
-    /// 故 XML Body + <c>HttpClient = "IBaseHttpClient"</c> 必须报 HTTPCLIENT009（Warning）。
+    /// 故 XML Body + <c>HttpClient = "IBaseHttpClient"</c> 必须报 HTTPCLIENT009（Info，P2-4 降级）。
     /// </summary>
+    /// <remarks>
+    /// 生成代码的 XML 序列化经 <c>IHttpRequestExecutor</c> + 编译期 <c>XmlSerializer</c> 字段完成，
+    /// 从不调用客户端 XML 能力 ⇒ 原 Warning 属误报噪音（P2-4）。
+    /// </remarks>
     [Fact]
-    public void HttpClient009_XmlBodyWithJsonOnlyClient_ReportsWarning()
+    public void HttpClient009_XmlBodyWithJsonOnlyClient_ReportsInfo()
     {
         const string source = """
             using System.Threading.Tasks;
@@ -70,7 +74,8 @@ public class DiagnosticCoverageGapTests
 
         var d = diagnostics.Where(x => x.Id == "HTTPCLIENT009").ToList();
         d.Should().ContainSingle("XML Body 与不支持 XML 的 HttpClient 组合必须报 HTTPCLIENT009");
-        d[0].Severity.Should().Be(DiagnosticSeverity.Warning, "XML 不兼容是警告级别，不阻止生成");
+        d[0].Severity.Should().Be(DiagnosticSeverity.Info,
+            "生成路径不依赖客户端 XML 能力，P2-4 已降级为 Info（不阻断、不制造警告噪音）");
     }
 
     /// <summary>反向用例：<c>IEnhancedHttpClient</c> 同时支持 JSON 与 XML，不应报 HTTPCLIENT009。</summary>
@@ -151,6 +156,44 @@ public class DiagnosticCoverageGapTests
 
         diagnostics.Should().Contain(x => x.Id == "HTTPCLIENT014",
             "HTTPCLIENT017 属「校验被跳过」，其根因诊断 HTTPCLIENT014 应同时呈现");
+    }
+
+    /// <summary>
+    /// P2-4：<c>HttpClient</c> 用**短名**且声明在同一命名空间时必须可解析（不报 HTTPCLIENT014）。
+    /// </summary>
+    /// <remarks>
+    /// 原实现只查 3 个候选（裸名 / Mud.HttpUtils. / System.Net.Http.），比生成代码实际发射的裸类型名
+    /// 解析链更窄 ⇒ 同命名空间的自定义客户端被误报「未找到」。
+    /// </remarks>
+    [Fact]
+    public void HttpClient014_SameNamespaceShortName_ResolvesWithoutDiagnostic()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public interface IMyHttpClient
+                {
+                    Task<TResult?> SendAsync<TResult>(System.Net.Http.HttpRequestMessage request, object? jsonSerializerOptions = null, System.Threading.CancellationToken cancellationToken = default);
+                }
+
+                [HttpClientApi(HttpClient = "IMyHttpClient")]
+                public interface IApi
+                {
+                    [Post("/api/data")]
+                    Task<string> PostAsync([Body] MyDto data);
+                }
+
+                public class MyDto { public string Name { get; set; } }
+            }
+            """;
+
+        var diagnostics = RunGenerator(source);
+
+        diagnostics.Should().NotContain(x => x.Id == "HTTPCLIENT014",
+            "同命名空间的短名类型必须可解析（P2-4：014 的解析链需与生成代码一致）");
     }
 
     /// <summary>反向用例：类型可解析且支持 XML 时不报 HTTPCLIENT014/017。</summary>

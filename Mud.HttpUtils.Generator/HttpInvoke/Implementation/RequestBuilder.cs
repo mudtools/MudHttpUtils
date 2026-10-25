@@ -104,13 +104,17 @@ internal class RequestBuilder
                     ? $".ToString(\"{StringEscapeHelper.EscapeString(interfacePathProp.Format)}\")"
                     : ".ToString()";
 
+                // [P1-2 修复] 引用位转义：保留字属性名（如 @event）裸名进插值洞产出 CS1001，
+                // 与 ConstructorGenerator.GenerateInterfaceProperties 的声明位成对。
+                var escapedPropRef = IdentifierEscaper.Escape(interfacePathProp.Name);
+
                 if (interfacePathProp.UrlEncode)
                 {
-                    ReplacePlaceholder(sb, placeholder, $"{{System.Uri.EscapeDataString({interfacePathProp.Name}{formatExpression})}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{System.Uri.EscapeDataString({escapedPropRef}{formatExpression})}}");
                 }
                 else
                 {
-                    ReplacePlaceholder(sb, placeholder, $"{{{interfacePathProp.Name}{formatExpression}}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{{escapedPropRef}{formatExpression}}}");
                 }
             }
         }
@@ -414,6 +418,10 @@ internal class RequestBuilder
         if (bodyParam == null)
             return;
 
+        // [P1-2 修复] Body 参数名过 IdentifierEscaper：保留字参数名（如 @class）裸名进
+        // 表达式引用位产出 CS1001，与 ParameterSignatureBuilder 的声明位成对。
+        var escapedBodyParamName = IdentifierEscaper.Escape(bodyParam.Name);
+
         var bodyAttr = bodyParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.BodyAttribute);
         var useStringContent = GetUseStringContentFlag(bodyAttr);
         var rawString = GetRawStringFlag(bodyAttr);
@@ -464,7 +472,7 @@ internal class RequestBuilder
                 // 但泛型 AOT 安全重载仅支持 JSON，XML 加密无替代 API。故在调用点就地抑制消费方的 CS0618；
                 // AOT 不安全事实由 XML 路径既有的 AOT 诊断（AOT007）与方法级 IL2026/IL3050 抑制承担。
                 codeBuilder.AppendLine("#pragma warning disable CS0618 // XML 加密无 AOT 安全重载，只能沿用已过时的 object 重载");
-                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{escapedPropertyName}\", SerializeType.{serializeType});");
+                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({escapedBodyParamName}, \"{escapedPropertyName}\", SerializeType.{serializeType});");
                 codeBuilder.AppendLine("#pragma warning restore CS0618");
             }
             else
@@ -475,7 +483,7 @@ internal class RequestBuilder
                 if (encryptTypeName.EndsWith("?", StringComparison.Ordinal))
                     encryptTypeName = encryptTypeName.Substring(0, encryptTypeName.Length - 1).TrimEnd();
 
-                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent<{encryptTypeName}>({bodyParam.Name}, \"{escapedPropertyName}\");");
+                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent<{encryptTypeName}>({escapedBodyParamName}, \"{escapedPropertyName}\");");
             }
 
             codeBuilder.AppendLine($"            using var __encryptedStrContent = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
@@ -483,12 +491,12 @@ internal class RequestBuilder
         }
         else if (rawString)
         {
-            codeBuilder.AppendLine($"            using var __rawStrContent = new StringContent({bodyParam.Name}, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __rawStrContent = new StringContent({escapedBodyParamName}, Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine($"            __httpRequest.Content = __rawStrContent;");
         }
         else if (useStringContent)
         {
-            codeBuilder.AppendLine($"            using var __useStrContent = new StringContent({bodyParam.Name}.ToString() ?? \"\", Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __useStrContent = new StringContent({escapedBodyParamName}.ToString() ?? \"\", Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine($"            __httpRequest.Content = __useStrContent;");
         }
         else if (isXmlContentType)
@@ -501,7 +509,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine("            using var __xmlWriter = System.Xml.XmlWriter.Create(__xmlStream, __xmlSettings);");
             codeBuilder.AppendLine("            var __xmlNs = new System.Xml.Serialization.XmlSerializerNamespaces();");
             codeBuilder.AppendLine("            __xmlNs.Add(\"\", \"\");");
-            codeBuilder.AppendLine($"            {xmlFieldRef}.Serialize(__xmlWriter, {bodyParam.Name}, __xmlNs);");
+            codeBuilder.AppendLine($"            {xmlFieldRef}.Serialize(__xmlWriter, {escapedBodyParamName}, __xmlNs);");
             codeBuilder.AppendLine("            __xmlWriter.Flush();");
             codeBuilder.AppendLine("            var __xmlContent = Encoding.UTF8.GetString(__xmlStream.ToArray());");
             codeBuilder.AppendLine($"            using var __xmlStrContent = new StringContent(__xmlContent, Encoding.UTF8, {contentTypeExpression});");
@@ -512,7 +520,7 @@ internal class RequestBuilder
             // [Phase 3.1 全量收敛] Body 序列化统一委托 IHttpContentSerializer.ToHttpContent，
             // 不再直接调用 JsonSerializer.Serialize。生成代码持有 _contentSerializer（由 DI 注入）。
             // ToHttpContent 内部使用泛型 JsonSerializer.Serialize<T>（AOT 安全），无需在生成代码中区分泛型/非泛型重载。
-            codeBuilder.AppendLine($"            __httpRequest.Content = _contentSerializer.ToHttpContent({bodyParam.Name});");
+            codeBuilder.AppendLine($"            __httpRequest.Content = _contentSerializer.ToHttpContent({escapedBodyParamName});");
         }
     }
 
@@ -522,9 +530,14 @@ internal class RequestBuilder
     private void GenerateFormContentParameter(StringBuilder codeBuilder, ParameterInfo formContentParam, MethodAnalysisResult methodInfo)
     {
         var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
-        var cancellationTokenArg = cancellationTokenParam?.Name ?? "default";
+        // [P1-2 修复] 引用位转义：保留字 CancellationToken 参数名（如 @ct）裸名进命名实参产出 CS1001。
+        var cancellationTokenArg = cancellationTokenParam != null
+            ? IdentifierEscaper.Escape(cancellationTokenParam.Name)
+            : "default";
 
-        codeBuilder.AppendLine($"            using var __formData = await {formContentParam.Name}.GetFormDataContentAsync({cancellationTokenArg}).ConfigureAwait(false);");
+        // [P1-2 修复] 引用位转义：保留字参数名（如 @class）裸名进表达式产出 CS1001。
+        var escapedFormContentParamName = IdentifierEscaper.Escape(formContentParam.Name);
+        codeBuilder.AppendLine($"            using var __formData = await {escapedFormContentParamName}.GetFormDataContentAsync({cancellationTokenArg}).ConfigureAwait(false);");
         codeBuilder.AppendLine($"            __httpRequest.Content = __formData;");
     }
 
@@ -546,23 +559,27 @@ internal class RequestBuilder
             var formAttr = formParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
             var fieldName = GetFormFieldName(formAttr, formParam.Name);
 
+            // [P1-2 修复] 引用位转义：保留字 Form 参数名（如 @event）裸名进表达式产出 CS1001，
+            // 与 ParameterSignatureBuilder 的声明位成对。
+            var escapedFormParamName = IdentifierEscaper.Escape(formParam.Name);
+
             if (TypeDetectionHelper.IsStringType(formParam.Type))
             {
-                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formParam.Name}))");
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({escapedFormParamName}))");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {formParam.Name};");
+                codeBuilder.AppendLine($"                __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {escapedFormParamName};");
                 codeBuilder.AppendLine("            }");
             }
             else if (TypeDetectionHelper.IsValueType(formParam.Type) && !TypeDetectionHelper.IsNullableType(formParam.Type))
             {
                 // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
-                codeBuilder.AppendLine($"            __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {formParam.Name}.ToString() ?? \"\";");
+                codeBuilder.AppendLine($"            __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {escapedFormParamName}.ToString() ?? \"\";");
             }
             else
             {
-                codeBuilder.AppendLine($"            if ({formParam.Name} != null)");
+                codeBuilder.AppendLine($"            if ({escapedFormParamName} != null)");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {formParam.Name}.ToString() ?? \"\";");
+                codeBuilder.AppendLine($"                __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {escapedFormParamName}.ToString() ?? \"\";");
                 codeBuilder.AppendLine("            }");
             }
         }
@@ -589,6 +606,10 @@ internal class RequestBuilder
         var isNonNullableValueType = TypeDetectionHelper.IsValueType(bodyParam.Type) && !TypeDetectionHelper.IsNullableType(bodyParam.Type);
         var needsNullCheck = !isNonNullableValueType && !bodyParam.IsValidated;
 
+        // [P1-2 修复] Body 参数名过 IdentifierEscaper：保留字参数名（如 @class）裸名进
+        // 表达式引用位产出 CS1001，与 ParameterSignatureBuilder 的声明位成对。
+        var escapedBodyParamName = IdentifierEscaper.Escape(bodyParam.Name);
+
         // [复核] 本方法是全库唯一的「条件创建请求体内容」路径，内容对象在**创建点**即把所有权
         // 移交给 __httpRequest.Content（最终由方法级 `using var __httpRequest` 在发送完成之后释放）。
         // 由此推出两条硬约束：
@@ -603,7 +624,7 @@ internal class RequestBuilder
 
         if (needsNullCheck)
         {
-            codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
+            codeBuilder.AppendLine($"            if ({escapedBodyParamName} != null)");
             codeBuilder.AppendLine("            {");
         }
 
@@ -635,6 +656,9 @@ internal class RequestBuilder
             foreach (var prop in properties)
             {
                 var propName = prop.Name;
+                // [P1-2 修复] DTO 属性名同样可能为保留字（如 event/default）：编译期属性枚举路径
+                // 发射的是 {bodyParam}.{propName} 成员访问，裸名产出 CS1001。
+                var escapedPropName = IdentifierEscaper.Escape(propName);
                 var isValueType = prop.Type.IsValueType;
                 var isNullable = prop.Type.NullableAnnotation == NullableAnnotation.Annotated
                                  || (isValueType && prop.Type.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T);
@@ -642,12 +666,12 @@ internal class RequestBuilder
                 if (isValueType && !isNullable)
                 {
                     // 非可空值类型：直接 ToString()
-                    codeBuilder.AppendLine($"{bodyIndent}__bodyFormParams[\"{propName}\"] = {bodyParam.Name}.{propName}.ToString() ?? \"\";");
+                    codeBuilder.AppendLine($"{bodyIndent}__bodyFormParams[\"{propName}\"] = {escapedBodyParamName}.{escapedPropName}.ToString() ?? \"\";");
                 }
                 else
                 {
                     // 引用类型或可空值类型：加 null 检查
-                    codeBuilder.AppendLine($"{bodyIndent}var __val_{propName} = {bodyParam.Name}.{propName};");
+                    codeBuilder.AppendLine($"{bodyIndent}var __val_{propName} = {escapedBodyParamName}.{escapedPropName};");
                     codeBuilder.AppendLine($"{bodyIndent}if (__val_{propName} != null)");
                     codeBuilder.AppendLine($"{bodyIndent}{{");
                     codeBuilder.AppendLine($"{innerIndent}__bodyFormParams[\"{propName}\"] = __val_{propName}.ToString() ?? \"\";");
@@ -665,10 +689,10 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"#pragma warning disable IL2072");
             codeBuilder.AppendLine($"#endif");
             codeBuilder.AppendLine($"{bodyIndent}var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
-            codeBuilder.AppendLine($"{bodyIndent}var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
+            codeBuilder.AppendLine($"{bodyIndent}var __bodyProperties = {escapedBodyParamName}.GetType().GetProperties();");
             codeBuilder.AppendLine($"{bodyIndent}foreach (var __prop in __bodyProperties)");
             codeBuilder.AppendLine($"{bodyIndent}{{");
-            codeBuilder.AppendLine($"{innerIndent}var __val = __prop.GetValue({bodyParam.Name});");
+            codeBuilder.AppendLine($"{innerIndent}var __val = __prop.GetValue({escapedBodyParamName});");
             codeBuilder.AppendLine($"{innerIndent}if (__val != null)");
             codeBuilder.AppendLine($"{innerIndent}{{");
             codeBuilder.AppendLine($"{deepestIndent}__bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
@@ -702,14 +726,17 @@ internal class RequestBuilder
             {
                 var formAttr = formProp.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
                 var fieldName = GetFormFieldName(formAttr, formProp.Name);
+                // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+                // 局部名 __{Name}Content 带前缀不构成关键字，保持原始拼接。
+                var escapedFormPropRef = IdentifierEscaper.Escape(formProp.Name);
                 if (TypeDetectionHelper.IsStringType(formProp.Type))
                 {
-                    codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formProp.Name}))");
+                    codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({escapedFormPropRef}))");
                     codeBuilder.AppendLine("            {");
                     // 构造 + Add 之间必须有异常路径释放（Add 的 name/fileName 头部校验会抛
                     // FormatException/ArgumentException），与 的 StreamContent 分支同构。
                     EmitAddContent(codeBuilder, "                ",
-                        $"new System.Net.Http.StringContent({formProp.Name})",
+                        $"new System.Net.Http.StringContent({escapedFormPropRef})",
                         $"__{formProp.Name}Content", fieldName, fileName: null);
                     codeBuilder.AppendLine("            }");
                 }
@@ -717,15 +744,15 @@ internal class RequestBuilder
                 {
                     // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
                     EmitAddContent(codeBuilder, "            ",
-                        $"new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\")",
+                        $"new System.Net.Http.StringContent({escapedFormPropRef}.ToString() ?? \"\")",
                         $"__{formProp.Name}Content", fieldName, fileName: null);
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            if ({formProp.Name} != null)");
+                    codeBuilder.AppendLine($"            if ({escapedFormPropRef} != null)");
                     codeBuilder.AppendLine("            {");
                     EmitAddContent(codeBuilder, "                ",
-                        $"new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\")",
+                        $"new System.Net.Http.StringContent({escapedFormPropRef}.ToString() ?? \"\")",
                         $"__{formProp.Name}Content", fieldName, fileName: null);
                     codeBuilder.AppendLine("            }");
                 }
@@ -741,28 +768,31 @@ internal class RequestBuilder
             var fieldName = AttributeArgumentReader.GetString(mpAttr, null, "FieldName") ?? multipartFormParam.Name;
             var escapedFieldName = StringEscapeHelper.EscapeString(fieldName);
 
+            // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+            var escapedMultipartFormParamRef = IdentifierEscaper.Escape(multipartFormParam.Name);
+
             if (TypeDetectionHelper.IsStringType(multipartFormParam.Type))
             {
-                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({multipartFormParam.Name}))");
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({escapedMultipartFormParamRef}))");
                 codeBuilder.AppendLine("            {");
                 EmitAddContent(codeBuilder, "                ",
-                    $"new System.Net.Http.StringContent({multipartFormParam.Name})",
+                    $"new System.Net.Http.StringContent({escapedMultipartFormParamRef})",
                     $"__{multipartFormParam.Name}Content", fieldName, fileName: null);
                 codeBuilder.AppendLine("            }");
             }
             else if (TypeDetectionHelper.IsValueType(multipartFormParam.Type) && !TypeDetectionHelper.IsNullableType(multipartFormParam.Type))
             {
                 EmitAddContent(codeBuilder, "            ",
-                    $"new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\")",
+                    $"new System.Net.Http.StringContent({escapedMultipartFormParamRef}.ToString() ?? \"\")",
                     $"__{multipartFormParam.Name}Content", fieldName, fileName: null);
             }
             else
             {
                 // 引用类型或可空值类型：加 null 检查
-                codeBuilder.AppendLine($"            if ({multipartFormParam.Name} != null)");
+                codeBuilder.AppendLine($"            if ({escapedMultipartFormParamRef} != null)");
                 codeBuilder.AppendLine("            {");
                 EmitAddContent(codeBuilder, "                ",
-                    $"new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\")",
+                    $"new System.Net.Http.StringContent({escapedMultipartFormParamRef}.ToString() ?? \"\")",
                     $"__{multipartFormParam.Name}Content", fieldName, fileName: null);
                 codeBuilder.AppendLine("            }");
             }
@@ -775,15 +805,18 @@ internal class RequestBuilder
             var fileName = GetUploadFileName(uploadAttr);
             var contentType = GetUploadContentType(uploadAttr);
 
+            // [P1-2 修复] 引用位转义：保留字参数名（如 @event）裸名进表达式产出 CS1001。
+            var escapedUploadParamRef = IdentifierEscaper.Escape(uploadParam.Name);
+
             if (!string.IsNullOrEmpty(contentType))
             {
                 // G7-19：不能使用 `using var` —— 其作用域为 if 块，会在请求构造完成（发送）前 Dispose，
                 // 底层流被提前释放 → MultipartFormDataContent 发送时抛 ObjectDisposedException。
                 // 正确形态：仅异常路径 Dispose（MediaTypeHeaderValue 构造/Add 抛异常时回收包装对象），
                 // 成功路径所有权已转移给 __multipartContent。
-                codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
+                codeBuilder.AppendLine($"            if ({escapedUploadParamRef} != null)");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
+                codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({escapedUploadParamRef});");
                 codeBuilder.AppendLine("                try");
                 codeBuilder.AppendLine("                {");
                 codeBuilder.AppendLine($"                    __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{StringEscapeHelper.EscapeString(contentType)}\");");
@@ -801,11 +834,11 @@ internal class RequestBuilder
             }
             else
             {
-                codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
+                codeBuilder.AppendLine($"            if ({escapedUploadParamRef} != null)");
                 codeBuilder.AppendLine("            {");
                 // 无 ContentType 的 StreamContent 同样需要异常路径释放（与上方 分支同构）。
                 EmitAddContent(codeBuilder, "                ",
-                    $"new System.Net.Http.StreamContent({uploadParam.Name})",
+                    $"new System.Net.Http.StreamContent({escapedUploadParamRef})",
                     $"__{uploadParam.Name}Content", fieldName, fileName);
                 codeBuilder.AppendLine("            }");
             }
@@ -997,10 +1030,14 @@ internal class RequestBuilder
         var paramName = property.ParameterName ?? property.Name;
         var escapedParamName = StringEscapeHelper.EscapeString(paramName);
 
+        // [P1-2 修复] 引用位转义：保留字接口属性名（如 @event）裸名进表达式产出 CS1001，
+        // 与 ConstructorGenerator.GenerateInterfaceProperties 的声明位成对。
+        var escapedPropertyRef = IdentifierEscaper.Escape(property.Name);
+
         if (property.Type == "string" || property.Type == "System.String")
         {
             // Add() 内部已跳过 null/空白值，无需外部检查
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name});");
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {escapedPropertyRef});");
         }
         else
         {
@@ -1013,7 +1050,7 @@ internal class RequestBuilder
                 var formatArg = !string.IsNullOrEmpty(property.Format)
                     ? $"\"{StringEscapeHelper.EscapeString(property.Format)}\""
                     : "null";
-                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}, {formatArg});");
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {escapedPropertyRef}, {formatArg});");
             }
             else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
             {
@@ -1023,7 +1060,7 @@ internal class RequestBuilder
                 var formatExpression = !string.IsNullOrEmpty(property.Format)
                     ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\", {invariantProvider})"
                     : $".ToString(null, {invariantProvider})";
-                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {escapedPropertyRef}{formatExpression});");
             }
             else
             {
@@ -1045,7 +1082,7 @@ internal class RequestBuilder
                         ? "?.ToString()"
                         : $"?.ToString({formatLiteral})";
                 }
-                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {escapedPropertyRef}{formatExpression});");
             }
         }
     }
@@ -1085,25 +1122,29 @@ internal class RequestBuilder
             var shouldReplace = property.Replace || headerMergeMode == "Replace";
             var isStringType = TypeDetectionHelper.IsStringType(property.Type);
 
+            // [P1-2 修复] 引用位转义：保留字接口属性名（如 @event）裸名进表达式 / nameof 产出
+            // CS1001 / 绑定错误，与声明位成对。局部名 __ifaceHeaderValue_{Name} 以转义形态拼接。
+            var escapedPropertyRef = IdentifierEscaper.Escape(property.Name);
+
             if (isStringType)
             {
                 // [GEN-18][§8.6] 运行期守卫：net4x/netstandard2.0 编译的 HttpClient 不校验头值 CR/LF，
                 // 显式拒绝含 CR/LF 的头值以阻止头部注入。
-                codeBuilder.AppendLine($"            if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({property.Name}))");
-                codeBuilder.AppendLine($"                throw new global::System.ArgumentException(\"HTTP 头值包含非法字符（CR/LF）。\", nameof({property.Name}));");
+                codeBuilder.AppendLine($"            if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({escapedPropertyRef}))");
+                codeBuilder.AppendLine($"                throw new global::System.ArgumentException(\"HTTP 头值包含非法字符（CR/LF）。\", nameof({escapedPropertyRef}));");
                 // string 类型：null/空白时跳过
-                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({property.Name}))");
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({escapedPropertyRef}))");
                 if (shouldReplace)
                 {
                     codeBuilder.AppendLine($"            {{");
                     codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
-                    codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {property.Name});");
+                    codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {escapedPropertyRef});");
                     codeBuilder.AppendLine($"            }}");
                 }
                 else
                 {
                     codeBuilder.AppendLine($"                if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
-                    codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {property.Name});");
+                    codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {escapedPropertyRef});");
                 }
             }
             else
@@ -1112,12 +1153,12 @@ internal class RequestBuilder
                 //  property.Format 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
                 var escapedPropertyFormat = StringEscapeHelper.EscapeString(property.Format);
                 var formatExpression = !string.IsNullOrEmpty(property.Format)
-                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedPropertyFormat}}}\", {property.Name})"
-                    : $"{property.Name}.ToString()";
+                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedPropertyFormat}}}\", {escapedPropertyRef})"
+                    : $"{escapedPropertyRef}.ToString()";
 
                 // 非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
                 // ns2.0 的 Headers.Add 不拦截）。不合格跳过；Debug 仅输出头名（不输出值，防敏感信息落日志）。
-                var headerValueLocal = $"__ifaceHeaderValue_{property.Name}";
+                var headerValueLocal = $"__ifaceHeaderValue_{escapedPropertyRef}";
 
                 // 值类型不会为 null，直接添加
                 if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
@@ -1145,7 +1186,7 @@ internal class RequestBuilder
                 else
                 {
                     // 可空类型：null 时跳过
-                    codeBuilder.AppendLine($"            if ({property.Name} != null)");
+                    codeBuilder.AppendLine($"            if ({escapedPropertyRef} != null)");
                     codeBuilder.AppendLine($"            {{");
                     codeBuilder.AppendLine($"                var {headerValueLocal} = {formatExpression};");
                     codeBuilder.AppendLine($"                if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({headerValueLocal}))");
@@ -1204,9 +1245,29 @@ internal class RequestBuilder
         return bool.TryParse(rawStringArg?.ToString(), out var result) && result;
     }
 
+    /// <summary>
+    /// 归一化 XML 序列化器的类型实参：**全域**剥离可空引用标注。
+    /// </summary>
+    /// <remarks>
+    /// <para>两类消费点都必须走本方法：</para>
+    /// <list type="number">
+    /// <item>字段名（<c>_xmlSerializer_Ns_User?</c> 含 <c>?</c> 不是合法标识符）；</item>
+    /// <item><c>typeof</c> 实参（C# 不允许 typeof 承载可空引用标注）。</item>
+    /// </list>
+    /// <para>
+    /// 必须全域而非仅剥尾部：<c>TypeSymbolHelper.GetTypeFullName</c> 的显示格式含
+    /// <c>IncludeNullableReferenceTypeModifier</c>，<c>List&lt;User?&gt;</c> / <c>User?[]</c>
+    /// 等中缀形态同样会进入 <see cref="GeneratorContext.XmlResponseTypes"/>。
+    /// 可空值类型（<c>int?</c>）的 <c>?</c> 一并剥离——XmlSerializer 以非可空形态序列化，
+    /// 装箱值语义不变（<c>new XmlSerializer(typeof(int?))</c> 运行期本就不抛）。
+    /// </para>
+    /// </remarks>
+    internal static string NormalizeXmlSerializerType(string xmlType)
+        => xmlType.IndexOf('?') >= 0 ? xmlType.Replace("?", string.Empty) : xmlType;
+
     internal static string GetXmlSerializerFieldReference(string typeName)
     {
-        var safeName = typeName
+        var safeName = NormalizeXmlSerializerType(typeName)
             .Replace("<", "_")
             .Replace(">", "_")
             .Replace(",", "_")

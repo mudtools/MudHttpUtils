@@ -27,21 +27,39 @@ public class BaseClassValidatorTests
 
     #region IsGeneratedClass Tests
 
+    /// <summary>
+    /// P2-2：短名归属判定改为「能解析到本编译内类型 ⇒ 手写基类（完整校验）」。
+    /// </summary>
+    /// <remarks>
+    /// 未解析到的短名仍视为生成类（生成代码执行期不可见：自动检测抽象基 / 显式 InheritedFrom
+    /// 指向生成实现），否则必然误报「基类不存在」。
+    /// </remarks>
     [Theory]
     [InlineData("TestWrap", true)]
     [InlineData("MyClassWrap", true)]
     [InlineData("SomeWrapClass", true)]
-    [InlineData("MyClass", true)]
     [InlineData("SimpleClass", true)]
     [InlineData("Namespace.Internal.MyClass", true)]
     [InlineData("System.Object", false)]
     [InlineData("MyNamespace.MyClass", false)]
+    [InlineData("MyClass", false)]
     public void IsGeneratedClass_WithVariousClassNames_ShouldReturnExpectedResult(string className, bool expected)
     {
-        var result = (bool)_isGeneratedClassMethod.Invoke(null, new object[] { className })!;
+        // 编译内含全局 MyClass 与 MyNamespace.MyClass：前者让短名可解析（⇒ 手写宿主基类）
+        var compilation = CreateCompilation(
+            "public class MyClass { }",
+            "namespace MyNamespace { public class MyClass { } }");
+
+        var result = (bool)_isGeneratedClassMethod.Invoke(null, new object?[] { className, compilation, null })!;
 
         result.Should().Be(expected);
     }
+
+    private static CSharpCompilation CreateCompilation(params string[] declarations)
+        => CSharpCompilation.Create(
+            "TestAssembly",
+            declarations.Select(static d => CSharpSyntaxTree.ParseText(d)).ToArray(),
+            BasicReferenceAssemblies.GetReferences());
 
     #endregion
 
@@ -104,6 +122,72 @@ public class BaseClassValidatorTests
         var isValidProperty = resultType.GetProperty("IsValid");
         var isValid = (bool)isValidProperty!.GetValue(result)!;
         isValid.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// P2-2 正向：短名手写宿主基类（构造函数与真实 base(...) 契约一致）⇒ 校验通过。
+    /// 修复前短名一律被当作生成类跳过，本用例无回归价值。
+    /// </summary>
+    [Fact]
+    public void ValidateBaseClass_ShortNameHostBase_WithCompatibleCtor_Succeeds()
+    {
+        var compilation = CreateMudCompilation("""
+            using Microsoft.Extensions.Logging;
+            using Mud.HttpUtils;
+
+            public abstract class HostBase
+            {
+                protected HostBase(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor,
+                    ILogger? logger = null, IHttpContentSerializer? contentSerializer = null)
+                {
+                }
+            }
+            """);
+
+        IsValid(_validateBaseClassMethod.Invoke(null, new object?[] { compilation, "HostBase", false, null }))
+            .Should().BeTrue("构造函数与 base(appContext, appContextHolder, executor, logger:, contentSerializer:) 契约一致");
+    }
+
+    /// <summary>
+    /// P2-2 反向：短名手写宿主基类构造函数不兼容（缺 logger/contentSerializer 命名形参）⇒ 必须报错。
+    /// 修复前会被「无点号即生成类」放行，缺陷延迟到生成期 CS1729。
+    /// </summary>
+    [Fact]
+    public void ValidateBaseClass_ShortNameHostBase_WithIncompatibleCtor_ReportsError()
+    {
+        var compilation = CreateMudCompilation("""
+            public abstract class HostBase
+            {
+                protected HostBase()
+                {
+                }
+            }
+            """);
+
+        IsValid(_validateBaseClassMethod.Invoke(null, new object?[] { compilation, "HostBase", false, null }))
+            .Should().BeFalse("无参构造无法接受 base(...) 的位置实参与命名实参，必须在编译期报出");
+    }
+
+    private static bool IsValid(object? result)
+    {
+        result.Should().NotBeNull();
+        var isValidProperty = result!.GetType().GetProperty("IsValid");
+        isValidProperty.Should().NotBeNull("ValidationResult 必须暴露 IsValid");
+        return (bool)isValidProperty!.GetValue(result)!;
+    }
+
+    /// <summary>含 Mud.HttpUtils 引用的编译（宿主基类契约用例需要真实的 IMudAppContext 等类型）。</summary>
+    private static CSharpCompilation CreateMudCompilation(string declaration)
+    {
+        var references = BasicReferenceAssemblies.GetReferences();
+        references.Add(MetadataReference.CreateFromFile(typeof(IMudAppContext).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(IHttpRequestExecutor).Assembly.Location));
+
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { CSharpSyntaxTree.ParseText(declaration) },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
     #endregion

@@ -13,26 +13,80 @@ namespace Mud.HttpUtils.Validators;
 internal static class BaseClassValidator
 {
     /// <summary>
-    /// 判断基类是否为代码生成器生成的类
-    /// 如果是 Wrap 类或在 Internal 命名空间中的类（可能是生成的），则跳过验证
+    /// 判断基类是否为代码生成器生成的类。
     /// </summary>
-    private static bool IsGeneratedClass(string baseClassName)
+    /// <param name="baseClassName">InheritedFrom 声明值。</param>
+    /// <param name="compilation">当前编译（用于反查短名是否解析到用户手写类型）。</param>
+    /// <param name="currentNamespace">接口所在命名空间（短名回退查找范围）。</param>
+    /// <remarks>
+    /// <para>
+    /// 生成类（自动检测抽象基 / 显式 InheritedFrom 指向生成实现）在生成器执行期**不可见**
+    /// （生成代码在编译末期才加入），必须跳过校验，否则必然误报「基类不存在」。
+    /// </para>
+    /// <para>
+    /// P2-2：原实现「无点号即视为生成类」把<b>所有短名宿主基类</b>一并跳过 ⇒ 手写基类的
+    /// 存在性/sealed/静态/构造函数兼容检查完全失效（缺陷静默到生成期 CS1729）。
+    /// 收紧为复合判定：短名<b>能解析到本编译内的类型</b>时按手写基类完整校验；
+    /// 解析不到时才视为生成类。
+    /// </para>
+    /// </remarks>
+    private static bool IsGeneratedClass(string baseClassName, Compilation compilation, INamespaceSymbol? currentNamespace)
     {
         // Wrap 类是由代码生成器生成的，执行时无法看到
         if (baseClassName.EndsWith("Wrap", StringComparison.Ordinal))
             return true;
 
-        // 如果基类名称不包含点（即没有命名空间），可能是生成的类（如 Internal 命名空间中的实现类）
-        // 执行时无法看到自己生成的代码，跳过验证
-        if (!baseClassName.Contains('.'))
-            return true;
-
         // Internal 命名空间中的类可能是代码生成器生成的实现类
-        // 如果带命名空间且包含 .Internal.，则可能是生成的
         if (baseClassName.Contains($".{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}."))
             return true;
 
+        // 短名：仅当本编译内反查不到同名类型时才视为生成类。
+        if (!baseClassName.Contains('.'))
+            return ResolveType(compilation, baseClassName, currentNamespace) == null;
+
         return false;
+    }
+
+    /// <summary>
+    /// 基类符号解析（与 <see cref="ValidateBaseClass"/> 同一查找链，供短名归属判定复用）。
+    /// </summary>
+    private static INamedTypeSymbol? ResolveType(Compilation compilation, string baseClassName, INamespaceSymbol? currentNamespace)
+    {
+        var symbol = compilation.GetTypeByMetadataName(baseClassName);
+        if (symbol != null)
+            return symbol;
+
+        var lastDotIndex = baseClassName.LastIndexOf('.');
+        var typeName = lastDotIndex > 0 ? baseClassName.Substring(lastDotIndex + 1) : baseClassName;
+
+        if (currentNamespace != null)
+        {
+            symbol = FindTypeInNamespace(currentNamespace, currentNamespace.ToDisplayString(), typeName);
+            if (symbol != null)
+                return symbol;
+
+            foreach (var childNamespace in currentNamespace.GetNamespaceMembers())
+            {
+                symbol = FindTypeInNamespace(childNamespace, childNamespace.ToDisplayString(), typeName);
+                if (symbol != null)
+                    return symbol;
+            }
+        }
+
+        if (lastDotIndex > 0)
+        {
+            var namespaceName = baseClassName.Substring(0, lastDotIndex);
+            symbol = FindTypeInNamespace(compilation.GlobalNamespace, namespaceName, typeName);
+            if (symbol != null)
+                return symbol;
+        }
+
+        // 短名（无命名空间）也要在当前命名空间内找一次，否则「手写短名基类」会被误判为生成类。
+        symbol = FindTypeInNamespace(compilation.GlobalNamespace, currentNamespace?.ToDisplayString() ?? string.Empty, typeName);
+        if (symbol != null)
+            return symbol;
+
+        return lastDotIndex > 0 ? FindTypeInCompilation(compilation, typeName, baseClassName) : null;
     }
 
     /// <summary>
@@ -71,59 +125,12 @@ internal static class BaseClassValidator
         if (string.IsNullOrEmpty(baseClassName))
             return ValidationResult.Success();
 
-        // 检查基类是否为代码生成器生成的类（Wrap 类或 Internal 命名空间中的类）
+        // 检查基类是否为代码生成器生成的类（Wrap 类 / Internal 命名空间中的实现类 / 反查不到的短名）
         // 如果是生成的类，则跳过验证，因为生成器执行时无法看到自己生成的代码
-        if (IsGeneratedClass(baseClassName))
+        if (IsGeneratedClass(baseClassName, compilation, currentNamespace))
             return ValidationResult.Success();
 
-        // 尝试通过元数据名称查找（适用于外部引用类型）
-        var baseClassSymbol = compilation.GetTypeByMetadataName(baseClassName);
-
-        // 如果找不到且传入当前命名空间，尝试在当前命名空间和子命名空间中查找
-        if (baseClassSymbol == null && currentNamespace != null)
-        {
-            var lastDotIndex = baseClassName.LastIndexOf('.');
-            var typeName = lastDotIndex > 0 ? baseClassName.Substring(lastDotIndex + 1) : baseClassName;
-
-            // 在当前命名空间中查找
-            baseClassSymbol = FindTypeInNamespace(currentNamespace, currentNamespace.ToDisplayString(), typeName);
-
-            // 如果当前命名空间中找不到，尝试在子命名空间中查找（如 Internal）
-            if (baseClassSymbol == null)
-            {
-                foreach (var childNamespace in currentNamespace.GetNamespaceMembers())
-                {
-                    baseClassSymbol = FindTypeInNamespace(childNamespace, childNamespace.ToDisplayString(), typeName);
-                    if (baseClassSymbol != null)
-                        break;
-                }
-            }
-        }
-
-        // 如果还是找不到，尝试通过命名空间查找（适用于同一项目中的类型）
-        if (baseClassSymbol == null)
-        {
-            var lastDotIndex = baseClassName.LastIndexOf('.');
-            if (lastDotIndex > 0)
-            {
-                var namespaceName = baseClassName.Substring(0, lastDotIndex);
-                var typeName = baseClassName.Substring(lastDotIndex + 1);
-
-                // 在全局命名空间中查找类型
-                baseClassSymbol = FindTypeInNamespace(compilation.GlobalNamespace, namespaceName, typeName);
-            }
-        }
-
-        // 如果还是找不到，尝试在所有类型中搜索（更宽泛的查找）
-        if (baseClassSymbol == null)
-        {
-            var lastDotIndex = baseClassName.LastIndexOf('.');
-            if (lastDotIndex > 0)
-            {
-                var typeName = baseClassName.Substring(lastDotIndex + 1);
-                baseClassSymbol = FindTypeInCompilation(compilation, typeName, baseClassName);
-            }
-        }
+        var baseClassSymbol = ResolveType(compilation, baseClassName, currentNamespace);
 
         if (baseClassSymbol == null)
             return ValidationResult.Error($"基类 '{baseClassName}' 不存在");
@@ -139,47 +146,16 @@ internal static class BaseClassValidator
         if (baseClassSymbol.IsStatic)
             return ValidationResult.Error($"'{baseClassName}' 是静态类（static），无法被继承");
 
-        // 验证构造函数：检查是否存在兼容的构造函数
-        // 新执行器架构下，生成器向 base() 传递的参数包括：
-        //   - HttpClient 模式: IBaseHttpClient/IEnhancedHttpClient, IHttpContentSerializer, [IHttpResponseCache], [IResiliencePolicyResolver]
-        //   - TokenManager 模式: ITokenManager, IHttpContentSerializer, [IHttpResponseCache], [IResiliencePolicyResolver]
-        // 验证策略：检查构造函数是否包含必需的参数类型（顺序不敏感，允许额外可选参数）
-        var requiredTypes = new List<string> { "IHttpContentSerializer" };
-        if (hasTokenManager)
-            requiredTypes.Add("ITokenManager");
-        else
-            requiredTypes.Add("IBaseHttpClient"); // IEnhancedHttpClient 继承自 IBaseHttpClient
+        // 验证构造函数：与 ConstructorGenerator 实际发射的 base(...) 契约对齐。
+        //   位置实参（顺序敏感）：
+        //     · TokenManager 模式：ITokenManager, IAppContextHolder, ITokenProvider, IHttpRequestExecutor
+        //     · 其余模式（默认 / HttpClient）：见 TryMatchPositionalBaseCall
+        //   命名实参（名称敏感，缺失即 CS1739）：logger:, contentSerializer:
+        // P2-2：原实现只查「参数类型里有没有 IHttpContentSerializer」，既漏掉 appContextHolder/executor
+        // 位置契约，也与真实发射的命名实参无关 ⇒ 不兼容的宿主基类会被放行到生成期才炸。
+        var requiredTypes = new List<string> { "IHttpContentSerializer", hasTokenManager ? "ITokenManager" : "IBaseHttpClient" };
 
-        var hasCompatibleConstructor = baseClassSymbol.Constructors.Any(ctor =>
-        {
-            var paramTypeStrings = ctor.Parameters.Select(p => p.Type.ToDisplayString()).ToList();
-
-            foreach (var requiredType in requiredTypes)
-            {
-                var found = paramTypeStrings.Any(paramTypeString =>
-                {
-                    if (requiredType == "IBaseHttpClient")
-                    {
-                        // 接受 IBaseHttpClient 或其派生接口（IEnhancedHttpClient 等）
-                        return paramTypeString.Contains("IBaseHttpClient") ||
-                               paramTypeString.Contains("IEnhancedHttpClient");
-                    }
-                    if (requiredType == "ITokenManager")
-                    {
-                        // 接受 ITokenManager、ITenantTokenManager 或 IUserTokenManager
-                        return paramTypeString.Contains("ITokenManager") ||
-                               paramTypeString.Contains("ITenantTokenManager") ||
-                               paramTypeString.Contains("IUserTokenManager");
-                    }
-                    return paramTypeString.Contains(requiredType);
-                });
-
-                if (!found)
-                    return false;
-            }
-
-            return true;
-        });
+        var hasCompatibleConstructor = baseClassSymbol.Constructors.Any(ctor => IsBaseCallCompatible(ctor, hasTokenManager));
 
         if (!hasCompatibleConstructor)
         {
@@ -191,10 +167,58 @@ internal static class BaseClassValidator
                 constructorSignatures.Add($"({paramList})");
             }
 
-            return ValidationResult.Error($"基类 '{baseClassName}' 缺少兼容的构造函数。需要包含: {string.Join(", ", requiredTypes)}。可用构造函数: {string.Join("; ", constructorSignatures)}");
+            return ValidationResult.Error(
+                $"基类 '{baseClassName}' 缺少与生成代码 base(...) 兼容的构造函数。" +
+                $"需要位置实参（令牌/客户端实例、上下文持有器、请求执行器）与命名形参 logger、contentSerializer；" +
+                $"相关类型: {string.Join(", ", requiredTypes)}。可用构造函数: {string.Join("; ", constructorSignatures)}");
         }
 
         return ValidationResult.Success();
+    }
+
+    /// <summary>
+    /// 判定某个构造函数能否接受生成代码发射的 <c>base(...)</c> 实参。
+    /// </summary>
+    /// <remarks>
+    /// 契约与 <c>ConstructorGenerator</c> 的 base 调用发射**同源**：
+    /// 位置实参按基类运行模式分派，命名实参恒为 <c>logger:</c> / <c>contentSerializer:</c>
+    /// （基类为生成类时另有 appManager/appAuthorizer/cacheProvider/resilienceResolver，
+    /// 但那类基类在 <see cref="IsGeneratedClass"/> 已短路，不进入本检查）。
+    /// 判定刻意宽松（类型名包含 + 命名形参存在）：宿主基类的形参名允许自定义前缀，
+    /// 只要求能绑定命名实参 <c>logger</c> / <c>contentSerializer</c>。
+    /// </remarks>
+    private static bool IsBaseCallCompatible(IMethodSymbol ctor, bool hasTokenManager)
+    {
+        if (ctor.Parameters.Length == 0)
+            return false;
+
+        var paramNames = ctor.Parameters.Select(static p => p.Name).ToList();
+        // 命名实参：base(..., logger: logger, contentSerializer: contentSerializer)
+        if (!paramNames.Contains("logger") || !paramNames.Contains("contentSerializer"))
+            return false;
+
+        var typeNames = ctor.Parameters.Select(static p => p.Type.ToDisplayString()).ToList();
+
+        static bool ContainsAny(IReadOnlyList<string> names, params string[] needles)
+            => names.Any(name => needles.Any(needle => name.Contains(needle)));
+
+        // IHttpRequestExecutor：所有模式的位置实参都包含
+        if (!ContainsAny(typeNames, "IHttpRequestExecutor"))
+            return false;
+
+        if (hasTokenManager)
+        {
+            return ContainsAny(typeNames, "ITokenManager", "ITenantTokenManager", "IUserTokenManager")
+                   && ContainsAny(typeNames, "IAppContextHolder");
+        }
+
+        // 非 TokenManager 模式（默认模式 / HttpClient 模式，均可能作为宿主基类形态）：
+        //   默认      → (IMudAppContext, IAppContextHolder, IHttpRequestExecutor, ...)
+        //   HttpClient→ (IEnhancedHttpClient|IBaseHttpClient, IHttpRequestExecutor, ...)
+        var defaultModeShape = ContainsAny(typeNames, "IMudAppContext") && ContainsAny(typeNames, "IAppContextHolder");
+        var httpClientModeShape = ContainsAny(typeNames, "IBaseHttpClient", "IEnhancedHttpClient");
+
+        return defaultModeShape || httpClientModeShape;
     }
 
     /// <summary>

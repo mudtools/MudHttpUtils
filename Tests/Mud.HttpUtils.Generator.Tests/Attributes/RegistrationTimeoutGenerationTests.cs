@@ -39,6 +39,128 @@ public class RegistrationTimeoutGenerationTests
         return outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
     }
 
+    /// <summary>跑注册生成器并拼接全部生成树（扩展方法文件 + 工厂注册文件）。</summary>
+    private static string RunRegistrationGeneratorAllTrees(string source)
+    {
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        CSharpGeneratorDriver.Create(new HttpInvokeRegistrationGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        return string.Join("\n", outputCompilation.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+    }
+
+    /// <summary>跑注册生成器并返回（生成文本, 诊断）。</summary>
+    private static (string? Generated, ImmutableArray<Diagnostic> Diagnostics) RunRegistrationGeneratorWithDiagnostics(string source)
+    {
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new HttpInvokeRegistrationGenerator();
+        CSharpGeneratorDriver.Create(generator)
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        return (outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString(), diagnostics);
+    }
+
+    /// <summary>
+    /// P1-3 回归：<c>[HttpClientApi(Timeout = 0)]</c> 不得生成 <c>FromSeconds(0)</c>
+    /// （HttpClient.Timeout 不接受 Zero，运行期 AOORE），并恰报 1 条 HTTPCLIENT042。
+    /// </summary>
+    [Fact]
+    public void CFG03_HttpClientApiWithZeroTimeout_SkipsAssignmentAndReportsHttpClient042()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi(Timeout = 0)]
+                public interface ITimeoutZeroApi
+                {
+                    [Get("/users")]
+                    System.Threading.Tasks.Task<string> GetUsersAsync();
+                }
+            }
+            """;
+
+        var (generated, diagnostics) = RunRegistrationGeneratorWithDiagnostics(source);
+
+        generated.Should().NotBeNullOrEmpty();
+        generated.Should().NotContain("TimeSpan.FromSeconds(0)",
+            "Timeout = 0 不得生成 client.Timeout 赋值（运行期 ArgumentOutOfRangeException）");
+        generated.Should().Contain("AddMudHttpClient(services,",
+            "命名客户端注册本身仍须经 AddMudHttpClient（不传配置委托）");
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT042").Should().ContainSingle(
+            "Timeout ≤ 0 必须恰报 1 条 HTTPCLIENT042 指向特性");
+    }
+
+    /// <summary>
+    /// P2-3 回归：无 DI 工厂路径（<c>RestService.RegisterGeneratedFactory</c>）必须带默认异常脱敏，
+    /// 显式注入优先（<c>options?.ExceptionRedactor ?? 默认实现</c>）。
+    /// DI 路径由 <c>AddMudHttpClient</c> 的 <c>TryAddSingleton&lt;IExceptionRedactor&gt;</c> 兜底，
+    /// 工厂路径此前传 <c>null</c> ⇒ 两条路径安全能力不对等。
+    /// </summary>
+    [Fact]
+    public void CFG03_NonDiFactory_PassesDefaultExceptionRedactor()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IRedactorProbeApi
+                {
+                    [Get("/probe")]
+                    System.Threading.Tasks.Task<string> GetProbeAsync();
+                }
+            }
+            """;
+
+        // 工厂注册代码在独立的 generated 文件里，须拼接全部生成树后再断言。
+        var generated = RunRegistrationGeneratorAllTrees(source);
+
+        generated.Should().NotBeNullOrEmpty();
+        generated.Should().Contain(
+            "exceptionRedactor: options?.ExceptionRedactor ?? new global::Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor(),",
+            "无 DI 工厂路径必须默认脱敏，且显式注入优先（P2-3）");
+    }
+
+    /// <summary>P1-3 回归：负值 Timeout 同路径（用户表达「禁用超时」意图的自然写法）。</summary>
+    [Fact]
+    public void CFG03_HttpClientApiWithNegativeTimeout_SkipsAssignmentAndReportsHttpClient042()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi(Timeout = -1)]
+                public interface ITimeoutNegativeApi
+                {
+                    [Get("/users")]
+                    System.Threading.Tasks.Task<string> GetUsersAsync();
+                }
+            }
+            """;
+
+        var (generated, diagnostics) = RunRegistrationGeneratorWithDiagnostics(source);
+
+        generated.Should().NotContain("client.Timeout",
+            "负值 Timeout 不得生成 client.Timeout 赋值");
+        diagnostics.Where(d => d.Id == "HTTPCLIENT042").Should().ContainSingle(
+            "负值 Timeout 必须恰报 1 条 HTTPCLIENT042");
+    }
+
     [Fact]
     public void CFG03_HttpClientApiWithoutTimeout_GeneratedConfig_Uses50()
     {

@@ -905,6 +905,144 @@ namespace TestNamespace
             "XML 反序列化应通过 ResponseDescriptor.XmlSerializer 将序列化器交由执行器运行时调用");
     }
 
+    /// <summary>
+    /// P1-1 回归：可空引用类型返回 + XML 响应 —— 字段名与 typeof 实参都必须剥离 '?'
+    /// （'?' 不是合法标识符字符，且 typeof 不允许承载可空引用标注）。
+    /// 必须 nullable enable：禁用上下文下可空引用标注不流入符号显示串，复现不了缺陷。
+    /// </summary>
+    [Fact]
+    public void Generator_WithNullableXmlResponse_EmitsSerializerWithoutQuestionMark()
+    {
+        var source = @"
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/data"", ResponseContentType = ""application/xml"")]
+        Task<MyXmlData?> GetDataAsync();
+    }
+
+    public class MyXmlData
+    {
+        public string Name { get; set; }
+    }
+}";
+
+        var outputCompilation = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            nullable: NullableContextOptions.Enable,
+            description: "可空引用类型 + XML 响应的生成代码必须可编译（P1-1 修复）");
+        var allGeneratedCode = GetAllGeneratedCode(outputCompilation);
+
+        allGeneratedCode.Should().Contain("_xmlSerializer_TestNamespace_MyXmlData =",
+            "可空引用类型的 XML 序列化器字段名必须剥离 '?'（P1-1 修复）");
+        allGeneratedCode.Should().Contain("typeof(TestNamespace.MyXmlData)",
+            "typeof 实参必须使用归一化后的非可空类型（可空标注不是合法 typeof 实参）");
+        allGeneratedCode.Should().NotContain("_xmlSerializer_TestNamespace_MyXmlData?",
+            "序列化器字段名不得残留 '?'（不是合法标识符字符，CS1001 回归）");
+    }
+
+    /// <summary>
+    /// P0-2（F8）：HttpClient 模式 + <c>[Cache]</c> ⇒ 恰 1 条 HTTPCLIENT041（进程级缓存作用域提示）。
+    /// </summary>
+    [Fact]
+    public void Generator_HttpClientModeWithCache_ReportsHttpClient041()
+    {
+        var source = @"
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(HttpClient = ""IBaseHttpClient"")]
+    public interface ITestApi
+    {
+        [Get(""/products"")]
+        [Cache(60)]
+        Task<string> GetAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT041").Should().ContainSingle(
+            "HttpClient 模式无应用上下文来源，[Cache] 必须提示进程级共享边界（P0-2）");
+    }
+
+    /// <summary>
+    /// P0-2（F8）反向守护：Default 模式 + <c>[Cache]</c> ⇒ 0 条 HTTPCLIENT041（应用维度可用，无边界问题）。
+    /// </summary>
+    [Fact]
+    public void Generator_DefaultModeWithCache_DoesNotReportHttpClient041()
+    {
+        var source = @"
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/products"")]
+        [Cache(60)]
+        Task<string> GetAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT041",
+            "Default 模式经应用上下文隔离缓存，不应提示进程级共享边界");
+    }
+
+    /// <summary>
+    /// P1-1 回归（请求体路径）：[Body] 可空引用类型 + XML ContentType。
+    /// </summary>
+    [Fact]
+    public void Generator_WithNullableXmlBody_EmitsSerializerWithoutQuestionMark()
+    {
+        var source = @"
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post(""/data"")]
+        Task<string> PostDataAsync([Body(ContentType = ""application/xml"")] MyXmlData? data);
+    }
+
+    public class MyXmlData
+    {
+        public string Name { get; set; }
+    }
+}";
+
+        var outputCompilation = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            nullable: NullableContextOptions.Enable,
+            description: "可空引用类型 + XML 请求体的生成代码必须可编译（P1-1 修复）");
+        var allGeneratedCode = GetAllGeneratedCode(outputCompilation);
+
+        allGeneratedCode.Should().Contain("_xmlSerializer_TestNamespace_MyXmlData =",
+            "请求体路径的可空引用 XML 序列化器字段名必须剥离 '?'（P1-1 修复）");
+        allGeneratedCode.Should().Contain("typeof(TestNamespace.MyXmlData)",
+            "typeof 实参必须使用归一化后的非可空类型");
+        allGeneratedCode.Should().NotContain("_xmlSerializer_TestNamespace_MyXmlData?",
+            "序列化器字段名不得残留 '?'（CS1001 回归）");
+    }
+
     #endregion
 
     #region BUG 修复验证：FormContent 使用 IsNullOrWhiteSpace

@@ -76,3 +76,6 @@ static Mud.HttpUtils.AppContextFactoryExtensions.CreateAppScope(this System.ISer
 static Mud.HttpUtils.AppContextFactoryExtensions.GetRequiredNamedClient(this System.IServiceProvider! services, string! clientName) -> Mud.HttpUtils.IEnhancedHttpClient!
 Mud.HttpUtils.MemoryUserTokenStore.CompareExchangeAccessTokenAsync(string! userId, string! tokenType, string! expectedToken, string? newToken, long expiresInSeconds = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Mud.HttpUtils.MemoryUserTokenStore.CompareExchangeRefreshTokenAsync(string! userId, string! tokenType, string! expectedToken, string? newToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor
+Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor.DefaultSensitiveFieldExceptionRedactor() -> void
+Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor.Redact(Mud.HttpUtils.ApiException! exception) -> void

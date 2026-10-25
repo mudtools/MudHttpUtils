@@ -121,12 +121,20 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    /// <summary>
+    /// P2-4：XML 内容类型 + 自定义 HttpClient 类型未实现 <c>IXmlHttpClient</c>。
+    /// <para>
+    /// 降级为 Info：生成代码的 XML 序列化/反序列化经 <c>IHttpRequestExecutor</c> + 编译期
+    /// <c>XmlSerializer</c> 字段完成，**不**调用客户端的 XML 能力；仅当同一客户端类型还被
+    /// 非生成路径当作 <c>IXmlHttpClient</c> 使用时才需要该接口。原 Warning 属误报噪音。
+    /// </para>
+    /// </summary>
     public static readonly DiagnosticDescriptor HttpClientXmlNotSupported = new(
         id: "HTTPCLIENT009",
-        title: "HttpClient 类型不支持 XML 请求",
-        messageFormat: "接口 {0} 的方法 {1} 需要 XML 请求/响应，但指定的 HttpClient 类型 '{2}' 未实现 IXmlHttpClient 接口。请使用同时实现了 IXmlHttpClient 的类型（如 IEnhancedHttpClient），或修改方法的内容类型配置。",
+        title: "HttpClient 类型未实现 IXmlHttpClient（生成路径不依赖）",
+        messageFormat: "接口 {0} 的方法 {1} 声明了 XML 内容类型，而自定义 HttpClient 类型 '{2}' 未实现 IXmlHttpClient 接口。生成代码的 XML 序列化/反序列化经 IHttpRequestExecutor 完成，不依赖该接口，通常可忽略本提示；仅当'{2}'还会被非生成路径当作 IXmlHttpClient 使用时才需要补齐实现。",
         category: "代码生成",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true);
 
     // 原 HTTPCLIENT010（HttpClientApiAttribute.BaseAddress 已弃用）为死诊断 ——
@@ -605,6 +613,38 @@ internal static class Diagnostics
         id: "HTTPCLIENT040",
         title: "参数级 [Token(Disabled = true)] 无意义，已忽略",
         messageFormat: "接口 {0} 的方法 {1} 的参数 {2} 设置了 [Token(Disabled = true)]；Disabled 仅在方法级/接口级有意义，参数级设置已忽略（该参数仍按令牌参数语义处理）。如需免令牌请在方法上标注 [Token(Disabled = true)]。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// P0-2：HttpClient 模式下 <c>[Cache]</c> 的作用域边界提示。
+    /// <para>
+    /// HttpClient 模式无应用上下文来源（<c>_appContextHolder</c>/<c>_appManager</c> 均不注入），
+    /// 进程级缓存单例的键在应用维度恒为 <c>"default"</c>；客户端维度仅在客户端实现
+    /// <c>IHttpClientIdentity</c> 时生效。多客户端/多应用共用进程时仍可能串缓存，
+    /// 故编译期给出三条可执行指引（与运行期接缝互补，不宣称完全闭合）。
+    /// </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor HttpClientModeCacheProcessScoped = new(
+        id: "HTTPCLIENT041",
+        title: "HttpClient 模式下缓存为进程级共享",
+        messageFormat: "接口 {0} 的方法 {1} 标注了 [Cache]，但接口使用 HttpClient 模式（HttpClient = ...）：该模式不切换应用上下文，缓存键的应用维度恒为 \"default\"，进程级缓存仅按客户端维度（客户端需实现 Mud.HttpUtils.IHttpClientIdentity）区分。多客户端/多应用共用同一进程时可能互相命中缓存。建议：① 改用 Default/TokenManager 模式以获得应用维度隔离；② 确保客户端实现 IHttpClientIdentity 且命名不同；③ 或注册按租户分键的自定义 IHttpResponseCache。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// P1-3：接口级 <c>[HttpClientApi(Timeout = 0)]</c> 或负值。
+    /// <see cref="System.Net.Http.HttpClient.Timeout"/> 不接受 <see cref="System.TimeSpan.Zero"/> 与负值
+    /// （运行期抛 <see cref="System.ArgumentOutOfRangeException"/>，发生在命名客户端创建期、消息不指向特性）。
+    /// README 明言「大于 0 时」才生成赋值；显式 ≤0 的语义按「使用默认 100 秒」处理并告警，
+    /// 避免「配置以为生效、实际进默认值」不可见（与 HTTPCLIENT021 同口径的配置静默失效提示）。
+    /// </summary>
+    public static readonly DiagnosticDescriptor HttpClientApiTimeoutIgnored = new(
+        id: "HTTPCLIENT042",
+        title: "Timeout 取值无效，已忽略",
+        messageFormat: "接口 {0} 的 [HttpClientApi(Timeout = {1})] 无效：Timeout 必须大于 0。已忽略该设置，命名客户端将使用 HttpClient 默认超时（100 秒）。如需自定义请提供正数。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

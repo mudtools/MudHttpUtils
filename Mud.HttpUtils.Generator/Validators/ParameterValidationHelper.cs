@@ -77,12 +77,17 @@ internal static class ParameterValidationHelper
     /// </summary>
     private static void GenerateSingleParameterValidation(StringBuilder codeBuilder, ParameterInfo param)
     {
+        // [P1-2 修复] 参数名过 IdentifierEscaper：保留字参数（如 @int）下
+        // ① 裸名进条件表达式产出 CS1001；② nameof(@int) 才能绑定到**参数**——
+        // 裸 nameof(int) 会绑定到 int 类型，抛错消息指向类型而非参数（正确性缺陷）。
+        var escapedName = IdentifierEscaper.Escape(param.Name);
+
         // string / string?：使用 IsNullOrWhiteSpace 检查
         if (TypeDetectionHelper.IsStringType(param.Type))
         {
-            codeBuilder.AppendLine($"            if (string.IsNullOrWhiteSpace({param.Name}))");
+            codeBuilder.AppendLine($"            if (string.IsNullOrWhiteSpace({escapedName}))");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
+            codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({escapedName}));");
             codeBuilder.AppendLine($"            }}");
             return;
         }
@@ -92,8 +97,8 @@ internal static class ParameterValidationHelper
             return;
 
         // 可空值类型（int?、Guid? 等）和引用类型（MyClass 等）：使用 == null 检查
-        codeBuilder.AppendLine($"            if ({param.Name} == null)");
-        codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
+        codeBuilder.AppendLine($"            if ({escapedName} == null)");
+        codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({escapedName}));");
     }
 
 

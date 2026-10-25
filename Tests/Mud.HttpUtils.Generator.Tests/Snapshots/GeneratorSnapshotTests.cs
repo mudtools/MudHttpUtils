@@ -109,6 +109,30 @@ namespace TestNamespace
     }
 
     /// <summary>
+    /// 场景: 默认模式 + 自动检测抽象基（P0-1 回归，与 <see cref="SnapshotInputSources"/> 同名样本对齐）。
+    /// 固化继承模式派生类构造函数的可选形参布局（cacheProvider/resilienceResolver 全模式存在）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromMode_DefaultMode_ShouldCompileRegistration()
+    {
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(
+            SnapshotInputSources.All.First(s => s.Name == nameof(Snapshot_InheritedFromMode_DefaultMode_ShouldCompileRegistration)).Source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
+    /// 场景: 宿主基类 + 普通基接口 [Cache]（P0-1 行 6 回归，与 <see cref="SnapshotInputSources"/> 同名样本对齐）。
+    /// 固化「缓存方法由宿主基类实现 ⇒ 派生侧 cacheProvider 为可选形参」的发射形态。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromMode_HostBaseWithPlainBaseCache_ShouldCompile()
+    {
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(
+            SnapshotInputSources.All.First(s => s.Name == nameof(Snapshot_InheritedFromMode_HostBaseWithPlainBaseCache_ShouldCompile)).Source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
     /// 场景 3: PUT 方法 + Path + Body 参数。
     /// </summary>
     [Fact]

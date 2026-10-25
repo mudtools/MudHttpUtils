@@ -48,8 +48,10 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         string classKeyword = context.Configuration.IsAbstract ? "abstract partial class" : "partial class";
 
         // [v2.4 §3.2] 泛型接口类型参数转发：将接口的类型参数和约束原样转发到实现类。
+        // [P1-2 修复] 类型参数名过 IdentifierEscaper：保留字类型参数（如 @class）裸名进
+        // 类型参数列表与约束子句产出 CS1001，两处成对转义。
         var typeParams = _interfaceSymbol.IsGenericType
-            ? $"<{string.Join(", ", _interfaceSymbol.TypeParameters.Select(tp => tp.Name))}>"
+            ? $"<{string.Join(", ", _interfaceSymbol.TypeParameters.Select(tp => IdentifierEscaper.Escape(tp.Name)))}>"
             : string.Empty;
 
         // 转发类型约束（where T : class, new() 等）
@@ -75,7 +77,11 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
                     parts.Add("new()");
 
                 if (parts.Count > 0)
-                    constraintParts.Add($"where {tp.Name} : {string.Join(", ", parts)}");
+                {
+                    // [P1-2 修复] 类型参数名同样可能为保留字（class Foo<@class> 合法）：
+                    // 约束子句 where {Name} 裸名产出 CS1001，与类声明的类型参数列表成对转义。
+                    constraintParts.Add($"where {IdentifierEscaper.Escape(tp.Name)} : {string.Join(", ", parts)}");
+                }
             }
             if (constraintParts.Count > 0)
                 constraints = " " + string.Join(" ", constraintParts);

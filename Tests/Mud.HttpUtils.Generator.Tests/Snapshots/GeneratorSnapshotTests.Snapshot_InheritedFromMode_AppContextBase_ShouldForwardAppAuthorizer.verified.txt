@@ -249,7 +249,7 @@ namespace TestNamespace.Internal
 #if NET5_0_OR_GREATER
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public DerivedApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appContext, appContextHolder, executor, appManager: appManager, appAuthorizer: appAuthorizer, logger: logger, contentSerializer: contentSerializer)
+        public DerivedApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appContext, appContextHolder, executor, appManager: appManager, appAuthorizer: appAuthorizer, logger: logger, contentSerializer: contentSerializer)
         {
         }
 

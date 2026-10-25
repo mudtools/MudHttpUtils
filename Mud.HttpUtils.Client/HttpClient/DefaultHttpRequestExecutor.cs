@@ -157,6 +157,36 @@ public class DefaultHttpRequestExecutor(
         return string.IsNullOrEmpty(currentAppKey) ? "default" : currentAppKey!;
     }
 
+    /// <summary>
+    /// 解析缓存键的作用域前缀：应用维度 + 客户端维度。
+    /// </summary>
+    /// <param name="httpClient">本次请求实际执行的客户端实例（可能为 null，测试替身常见）。</param>
+    /// <returns>
+    /// 有客户端名时为 <c>{appKey}␟{clientName}</c>；客户端未实现 <see cref="IHttpClientIdentity"/>
+    /// 或客户端名为空时为 <c>{appKey}</c>（历史格式，零漂移）。
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// 动因：<see cref="IHttpResponseCache"/> 为进程级单例。HttpClient 模式（以及任何不切换应用上下文的
+    /// 装配，含 <c>IAppHttpClientFactory</c> 的每应用客户端）下应用维度恒为
+    /// <c>"default"</c>，不同客户端（不同 BaseAddress / 凭据）的同方法同参请求会命中同一键 ⇒ 跨客户端串缓存。
+    /// </para>
+    /// <para>
+    /// <b>残留边界（有意不做）</b>：两个客户端同名同址、仅凭据（请求头）不同时仍共键 ——
+    /// 请求头进内存缓存键会扩大泄漏面。此类场景请改用 Default/TokenManager 模式（应用维度经
+    /// 上下文隔离）或注册按租户分键的自定义 <see cref="IHttpResponseCache"/>。
+    /// </para>
+    /// <para>
+    /// 键格式变更导致一次性全量缓存失效（与引入应用维度时同口径），已在 CHANGELOG 明示。
+    /// </para>
+    /// </remarks>
+    private string ResolveCacheScopePrefix(IBaseHttpClient? httpClient)
+    {
+        var appKey = ResolveCurrentCacheScopeKey();
+        var clientName = (httpClient as IHttpClientIdentity)?.ClientName;
+        return string.IsNullOrEmpty(clientName) ? appKey : appKey + "\u001F" + clientName;
+    }
+
     /// <inheritdoc/>
     // XML 响应路径在 Native AOT 下不可达：AOT007（编译期）拒绝 XML 方法，ConstructorGenerator 在
     // AOT 上下文中将 XmlSerializer 字段改为抛 PlatformNotSupportedException 的属性。故此处压制 IL2026 是安全的。
@@ -793,7 +823,7 @@ public class DefaultHttpRequestExecutor(
             DownloadAsync(req, httpClient, descriptor.Response, ct);
 
             var result = await ExecuteWithOrchestrationAsync<byte[]?>(
-            request, descriptor, cancellationToken, downloadExecute).ConfigureAwait(false);
+            request, httpClient, descriptor, cancellationToken, downloadExecute).ConfigureAwait(false);
             return (TResult?)(object?)result;
         }
 
@@ -803,7 +833,7 @@ public class DefaultHttpRequestExecutor(
         SendAndDeserializeAsync<TResult>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
 
         return await ExecuteWithOrchestrationAsync(
-        request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
+        request, httpClient, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -819,7 +849,7 @@ public class DefaultHttpRequestExecutor(
         SendAsResponseAsync<TInner>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
 
         return await ExecuteWithOrchestrationAsync(
-        request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
+        request, httpClient, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -883,6 +913,7 @@ public class DefaultHttpRequestExecutor(
     /// </remarks>
     private async Task<TResult?> ExecuteWithOrchestrationAsync<TResult>(
     HttpRequestMessage request,
+    IBaseHttpClient httpClient,
     ExecutionDescriptor descriptor,
     CancellationToken cancellationToken,
     Func<HttpRequestMessage, CancellationToken, Task<TResult>> coreExecute)
@@ -909,8 +940,8 @@ public class DefaultHttpRequestExecutor(
                 {
                     var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
                     // 透传滑动过期语义
-                    // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
-                    var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
+                    // 键前置「应用维度 + 客户端维度」前缀，堵跨应用/跨客户端串缓存（与仅缓存路径口径一致）
+                    var scopedKey = $"{ResolveCacheScopePrefix(httpClient)}\u001F{descriptor.CacheKey}";
                     return await _cacheProvider.GetOrFetchAsync(
                     scopedKey,
                     () => ResilienceWrapped(cancellationToken),
@@ -928,8 +959,8 @@ public class DefaultHttpRequestExecutor(
         {
             var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
             // 透传滑动过期语义
-            // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
-            var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
+            // 键前置「应用维度 + 客户端维度」前缀，堵跨应用/跨客户端串缓存（与弹性+缓存路径口径一致）
+            var scopedKey = $"{ResolveCacheScopePrefix(httpClient)}\u001F{descriptor.CacheKey}";
             return await _cacheProvider.GetOrFetchAsync(
             scopedKey,
             () => coreExecute(request, cancellationToken),

@@ -288,24 +288,13 @@ internal class InterfaceImplementationGenerator
         if (httpClientType == "IEnhancedHttpClient" || httpClientType == "IBaseHttpClient")
             return;
 
-        var typeSymbol = _compilation.GetTypeByMetadataName(httpClientType);
-
-        if (typeSymbol == null)
-        {
-            var candidates = new[]
-            {
-                httpClientType,
-                $"Mud.HttpUtils.{httpClientType}",
-                $"System.Net.Http.{httpClientType}"
-            };
-
-            foreach (var candidate in candidates)
-            {
-                typeSymbol = _compilation.GetTypeByMetadataName(candidate);
-                if (typeSymbol != null)
-                    break;
-            }
-        }
+        // P2-4：复用 ResolveType 的完整解析链（精确元数据名 → Mud.HttpUtils. 前缀 → 接口所在命名空间
+        // → System.Net.Http. 前缀 → 源码命名空间全局扫描 → 引用程序集回退）。
+        // 原实现只有 3 个候选项（裸名 / Mud.HttpUtils. / System.Net.Http.），比生成代码实际发射的
+        // 裸类型名解析链**更窄**：`HttpClient = "MyHttpClient"`（声明在同一命名空间）会被误报「未找到」。
+        // System.Net.Http.* 后缀保留为兜底（既有候选之一，ResolveType 的解析链不含该前缀）。
+        var typeSymbol = ResolveType(httpClientType)
+            ?? _compilation.GetTypeByMetadataName($"System.Net.Http.{httpClientType}");
 
         if (typeSymbol == null)
         {

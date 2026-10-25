@@ -11,14 +11,14 @@ namespace PayloadTests
         /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
         [global::System.Runtime.CompilerServices.CompilerGenerated]
         [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
-        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedObjectPayload> PayloadFieldMap
-        {
-            get
-            {
-                return global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedObjectPayload>.Create("NestedObjectPayload")
-                    .Map("ScanCodeInfo", (t, n) => { t.ScanCodeInfo = global::PayloadTests.PayloadConverter.Object<global::PayloadTests.NestedScanCode>(n, (global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedScanCode.PayloadFieldMap); });
-            }
-        }
+        private static readonly global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedObjectPayload> __payloadFieldMap =
+            global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedObjectPayload>.Create("NestedObjectPayload")
+                .Map("ScanCodeInfo", (t, n) => { t.ScanCodeInfo = global::PayloadTests.PayloadConverter.Object<global::PayloadTests.NestedScanCode>(n, (global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedScanCode.PayloadFieldMap); });
+
+        /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
+        [global::System.Runtime.CompilerServices.CompilerGenerated]
+        [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
+        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedObjectPayload> PayloadFieldMap => __payloadFieldMap;
     }
 }
 
@@ -36,15 +36,15 @@ namespace PayloadTests
         /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
         [global::System.Runtime.CompilerServices.CompilerGenerated]
         [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
-        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedScanCode> PayloadFieldMap
-        {
-            get
-            {
-                return global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedScanCode>.Create("NestedScanCode")
-                    .Map("ScanType", (t, n) => { t.ScanType = global::PayloadTests.PayloadConverter.Text(n); })
-                    .Map("ScanResult", (t, n) => { t.ScanResult = global::PayloadTests.PayloadConverter.Text(n); });
-            }
-        }
+        private static readonly global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedScanCode> __payloadFieldMap =
+            global::Mud.HttpUtils.Payloads.PayloadFieldMap<global::PayloadTests.NestedScanCode>.Create("NestedScanCode")
+                .Map("ScanType", (t, n) => { t.ScanType = global::PayloadTests.PayloadConverter.Text(n); })
+                .Map("ScanResult", (t, n) => { t.ScanResult = global::PayloadTests.PayloadConverter.Text(n); });
+
+        /// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成）。</summary>
+        [global::System.Runtime.CompilerServices.CompilerGenerated]
+        [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "<VERSION>")]
+        public static global::Mud.HttpUtils.Payloads.IPayloadFieldMap<global::PayloadTests.NestedScanCode> PayloadFieldMap => __payloadFieldMap;
     }
 }
 

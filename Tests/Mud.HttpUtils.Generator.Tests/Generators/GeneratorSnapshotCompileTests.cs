@@ -470,6 +470,86 @@ namespace TestNamespace
     }
 }
 """),
+        // P0-1 回归：默认模式 + 自动检测抽象基（无 Cache/弹性）—— 修复前注册工厂的
+        // cacheProvider:/resilienceResolver: 命名实参对无该形参的继承构造必然 CS1739。
+        // 注：编译断言侧的双生成器覆盖见 Compilation/RealDeclarationMatrixTests（本类的
+        // GeneratorCompileAssert 只跑类生成器，抓不到注册侧契约断裂）。
+        new("Snapshot_InheritedFromMode_DefaultMode_ShouldCompileRegistration", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(IsAbstract = true)]
+    public interface IBaseApi
+    {
+        [Get("/base")]
+        Task<string> GetBaseDataAsync();
+    }
+
+    [HttpClientApi]
+    public interface IDerivedApi : IBaseApi
+    {
+        [Get("/derived")]
+        Task<string> GetDerivedDataAsync();
+    }
+}
+"""),
+        // P0-1 行 6 回归：宿主基类 + 普通基接口（无 [HttpClientApi]）带 [Cache] ——
+        // 派生侧只实现自身方法，缓存方法由宿主基类实现 ⇒ 构造侧为可选形参、注册侧须传 null。
+        new("Snapshot_InheritedFromMode_HostBaseWithPlainBaseCache_ShouldCompile", """
+using System;
+using Microsoft.Extensions.Logging;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public abstract class HostBase
+    {
+        protected readonly IAppContextHolder _appContextHolder;
+        protected readonly IHttpRequestExecutor _executor;
+        protected readonly IMudAppContext _defaultAppContext;
+        protected readonly IHttpContentSerializer _contentSerializer;
+
+        protected HostBase(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor,
+            ILogger? logger = null, IHttpContentSerializer? contentSerializer = null)
+        {
+            _appContextHolder = appContextHolder;
+            _executor = executor;
+            _defaultAppContext = appContext;
+            _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+        }
+    }
+
+    public interface IPlainCacheCarrier
+    {
+        [Get("/plain")]
+        [Cache(60)]
+        Task<string> GetPlainCachedAsync();
+    }
+
+    // 宿主基类必须自行实现普通基接口的成员（派生侧 AllMethods 仅含自身方法，不补位），
+    // 且构造函数形参须与 base(...) 发射对齐（logger/contentSerializer 为命名实参）。
+    public abstract class HostCacheBase : HostBase, IPlainCacheCarrier
+    {
+        protected HostCacheBase(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor,
+            ILogger? logger = null, IHttpContentSerializer? contentSerializer = null)
+            : base(appContext, appContextHolder, executor, logger, contentSerializer)
+        {
+        }
+
+        public virtual Task<string> GetPlainCachedAsync() => throw new NotSupportedException();
+    }
+
+    [HttpClientApi(InheritedFrom = "HostCacheBase")]
+    public interface ITestApi : IPlainCacheCarrier
+    {
+        [Get("/own")]
+        Task<string> GetOwnAsync();
+    }
+}
+"""),
         // ── T-01（评审改版）：缺陷回归样本，入 SnapshotInputSources 后自动获得快照级 + 编译断言双覆盖 ──
 
         // F-02 回归：HmacSignature 全接口样本。修复前 __httpRequest 先使用后声明（CS0841），

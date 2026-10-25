@@ -43,9 +43,12 @@ internal static class PayloadFieldMapRenderer
     /// （取到的是 <c>"event"</c>）⇒ 直接拼接会产出 <c>t.event = …</c> 或 <c>partial class class</c>，
     /// 让**生成文件**报一堆语法错误（实测 <c>CS1001</c> / <c>CS1519</c> / <c>CS1513</c> / <c>CS0260</c>，
     /// 且 <c>[PayloadContract]</c> 类会连带报 CS0260「缺少 partial 修饰符」这种指向错误位置的失败）。
+    /// <para>
+    /// 实现上提为 <see cref="IdentifierEscaper"/>（HttpInvoke 引擎共用，
+    /// 消除两份同构实现），行为逐字不变。
+    /// </para>
     /// </remarks>
-    private static string EscapeIdentifier(string identifier) =>
-        SyntaxFacts.GetKeywordKind(identifier) != SyntaxKind.None ? "@" + identifier : identifier;
+    private static string EscapeIdentifier(string identifier) => IdentifierEscaper.Escape(identifier) ?? identifier;
 
     /// <summary>
     /// 渲染生成代码。
@@ -72,30 +75,29 @@ internal static class PayloadFieldMapRenderer
         sb.Append(indent).Append("{\n");
 
         var memberIndent = indent + "    ";
-        sb.Append(memberIndent).Append("/// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成");
+        var docSummary = "/// <summary>载荷字段映射契约（由 [PayloadContract] 声明生成";
         if (model.ScopeFallback != null)
-            sb.Append("；作用域回退节点 ").Append(model.ScopeFallback);
+            docSummary += "；作用域回退节点 " + model.ScopeFallback;
+        docSummary += "）。</summary>";
 
-        sb.Append("）。</summary>\n");
-
+        // P2-1：缓存映射链为**类型级**静态只读字段（此前是属性 getter，每次访问都重建
+        // PayloadFieldMap 链 ⇒ 每条报文绑定都付出一次链构造 + 委托分配）。
+        // 线程安全由 CLR 类型初始化器保证（一次且线程安全）；PayloadFieldMap 链本身无状态
+        // （既有契约），故共享无副作用。形态保持 C# 7.3 可编译（静态字段初始化器 + 无捕获 lambda）。
+        sb.Append(memberIndent).Append(docSummary).Append('\n');
         if (config.EmitMarkers)
         {
             sb.Append(memberIndent).Append(GeneratedCodeConsts.CompilerGeneratedAttribute).Append('\n');
             sb.Append(memberIndent).Append(GeneratedCodeConsts.HttpGeneratedCodeAttribute).Append('\n');
         }
 
-        sb.Append(memberIndent)
-            .Append("public static ")
+        sb.Append(memberIndent).Append("private static readonly ")
             .Append(PayloadsNamespace).Append("IPayloadFieldMap<")
             .Append(model.TypeDisplay)
-            .Append("> PayloadFieldMap\n");
+            .Append("> __payloadFieldMap =\n");
 
-        sb.Append(memberIndent).Append("{\n");
-        sb.Append(memberIndent).Append("    get\n");
-        sb.Append(memberIndent).Append("    {\n");
-
-        var bodyIndent = memberIndent + "        ";
-        sb.Append(bodyIndent).Append("return ").Append(PayloadsNamespace).Append("PayloadFieldMap<")
+        var bodyIndent = memberIndent + "    ";
+        sb.Append(bodyIndent).Append(PayloadsNamespace).Append("PayloadFieldMap<")
             .Append(model.TypeDisplay).Append(">.Create(\"")
             .Append(StringEscapeHelper.EscapeString(model.ContractId ?? model.TypeName)).Append('"');
 
@@ -122,8 +124,20 @@ internal static class PayloadFieldMapRenderer
             }
         }
 
-        sb.Append(memberIndent).Append("    }\n");
-        sb.Append(memberIndent).Append("}\n");
+        sb.Append('\n');
+        sb.Append(memberIndent).Append(docSummary).Append('\n');
+        if (config.EmitMarkers)
+        {
+            sb.Append(memberIndent).Append(GeneratedCodeConsts.CompilerGeneratedAttribute).Append('\n');
+            sb.Append(memberIndent).Append(GeneratedCodeConsts.HttpGeneratedCodeAttribute).Append('\n');
+        }
+
+        sb.Append(memberIndent)
+            .Append("public static ")
+            .Append(PayloadsNamespace).Append("IPayloadFieldMap<")
+            .Append(model.TypeDisplay)
+            .Append("> PayloadFieldMap => __payloadFieldMap;\n");
+
         sb.Append(indent).Append("}\n");
 
         if (model.Namespace != null)

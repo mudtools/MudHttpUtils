@@ -35,6 +35,34 @@ public class PayloadFieldMapGeneratorTests
     [Fact]
     public Task BasicPayload_Snapshot() => VerifyPayloadAsync(PayloadTestData.BasicPayload);
 
+    /// <summary>
+    /// P2-1 结构守卫：映射链必须是**类型级静态只读字段** + 表达式体属性转发
+    /// （每次访问重建链会让每条报文绑定都付出一次链构造 + 委托分配）。
+    /// </summary>
+    /// <remarks>
+    /// 参考相等性由发射形态直接保证（静态字段只初始化一次），故此处校验形状而非运行时实例；
+    /// 运行期行为由 <see cref="PayloadRuntimeContractTests"/> 覆盖。
+    /// </remarks>
+    [Fact]
+    public void PayloadFieldMap_EmitsStaticFieldBackedProperty()
+    {
+        var (_, outputCompilation) = VerifyFixture.RunGeneratorDriver(
+            PayloadTestData.Source(PayloadTestData.BasicPayload),
+            additionalReferences: null,
+            generator: new PayloadFieldMapGenerator());
+
+        var generated = string.Join("\n", outputCompilation.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+
+        generated.Should().Contain("private static readonly global::Mud.HttpUtils.Payloads.IPayloadFieldMap<",
+            "映射链必须是类型级静态只读字段（P2-1：只构造一次）");
+        generated.Should().Contain("__payloadFieldMap =",
+            "静态字段必须有稳定的契约名（快照与守卫共用）");
+        generated.Should().Contain("PayloadFieldMap => __payloadFieldMap;",
+            "公开属性必须是表达式体转发静态字段（不得每次访问重建链）");
+        generated.Should().NotContain("get\n",
+            "不得回退为属性访问器内重建链的实现形态（P2-1 回归）");
+    }
+
     /// <summary>全部推断形态 + <c>Method</c> 的两种首参绑定（<c>string?</c> ⇒ <c>n?.Value</c>，<c>PayloadNode?</c> ⇒ <c>n</c>）。</summary>
     [Fact]
     public Task AllFormatsPayload_Snapshot() => VerifyPayloadAsync(PayloadTestData.AllFormatsPayload);

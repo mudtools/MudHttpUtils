@@ -53,7 +53,9 @@ internal static class ParameterSignatureBuilder
         }
 
         if (p.IsParams) sb.Append("params ");
-        sb.Append(p.Type.ToDisplayString(TypeFormat)).Append(' ').Append(p.Name);
+        // [P1-2 修复] 参数名过 IdentifierEscaper：C# 保留字参数（int @int / string @event）
+        // 裸名进声明位产出 CS1001。引用位（方法体内 {p.Name} 表达式）在同批修复中成对转义。
+        sb.Append(p.Type.ToDisplayString(TypeFormat)).Append(' ').Append(IdentifierEscaper.Escape(p.Name));
 
         if (p.HasExplicitDefaultValue)
         {
