@@ -20,11 +20,15 @@ namespace Mud.HttpUtils.Resilience;
 /// 此装饰器实现了 <see cref="IEnhancedHttpClient"/> 和 <see cref="IEncryptableHttpClient"/> 接口，将所有 HTTP 请求方法
 /// （JSON、XML、下载等）通过 Polly 弹性策略包装后转发给内部客户端。
 /// <para>
+/// 同时转发 <see cref="IHttpClientIdentity"/>：装饰器不得截断客户端身份，否则执行器的缓存键
+/// 会退化为「仅应用维度」⇒ 弹性装饰下的多客户端装配重新出现跨客户端串缓存。
+/// </para>
+/// <para>
 /// 注意：<see cref="IEncryptableHttpClient.EncryptContent"/> 和 <see cref="IEncryptableHttpClient.DecryptContent"/> 方法不经过弹性策略包装，
 /// 因为加密/解密是请求前的本地数据转换操作，不涉及网络 I/O。
 /// </para>
 /// </remarks>
-public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpClient
+public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpClient, IHttpClientIdentity
 {
     private readonly IEnhancedHttpClient _innerClient;
     private readonly IResiliencePolicyProvider _policyProvider;
@@ -52,6 +56,12 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         _logger = logger ?? NullLogger<ResilientHttpClient>.Instance;
         _options = options;
     }
+
+    /// <summary>
+    /// 转发内层客户端身份（显式实现，不扩展装饰器的公共 API 面）。
+    /// 内层未实现 <see cref="IHttpClientIdentity"/> 时为 <c>null</c> ⇒ 缓存键退化为历史格式。
+    /// </summary>
+    string? IHttpClientIdentity.ClientName => (_innerClient as IHttpClientIdentity)?.ClientName;
 
     private long MaxCloneContentSize => _options?.MaxCloneContentSize ?? HttpRequestMessageCloner.DefaultMaxContentSize;
 

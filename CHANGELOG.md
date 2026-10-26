@@ -33,7 +33,16 @@
   `cacheProvider` / `resilienceResolver` 形参现于所有模式下以可选形态存在，注册工厂的命名实参在任何模式均可绑定；
   注册侧按真实口径（宿主基类模式收窄为带 `[HttpClientApi]` 的基接口）决定解析或传 null。
 - **XML 响应/请求 + 可空引用类型产出非法标识符（CS1001/CS1003）**：`_xmlSerializer_X?` 与 `typeof(X?)` 均已归一化。
-- **关键字命名的接口成员/参数产出不可编译代码**：声明位与引用位成对补 `@` 前缀（HTTP 引擎全链路对齐载荷引擎）。
+- **关键字命名的接口成员/参数/类型产出不可编译代码**：声明位与引用位成对补 `@` 前缀（HTTP 引擎全链路对齐载荷引擎）。
+  复核补齐 `[Path]` 的 URL 插值 / `string.Format` / `nameof`、默认缓存键参数段、`[FormContent]` 类名与属性引用，
+  以及保留字命名的接口/类型（实现类继承子句、注册产物与签名中的类型引用均保留 `@`）；
+  URL 占位符校验同时放行保留字（`[Path] int @event` + `"{event}"` 不再被误判为非法模板）。
+- **泛型接口生成产物不可编译**：实现类继承子句重复追加类型实参（`IApi<T><T>`）已修正；不再为开放泛型生成
+  DI 注册代码（`AddTransient<IApi>` 必然 CS0305），`HTTPCLIENT012` 改为提示「仅生成实现类，请按封闭泛型手动注册」。
+- **`ResilientHttpClient` 截断客户端身份导致跨客户端串缓存**：装饰器现显式转发
+  `IHttpClientIdentity.ClientName`（含 `WithBaseAddress` 重建路径），弹性装饰下缓存键的客户端维度不再退化为 `default`。
+- **`HTTPCLIENT042` 无源码位置**：注册侧现把接口声明位置写入 `HttpClientApiInfo.Location`，
+  诊断可导航至 `[HttpClientApi(Timeout = ...)]` 特性行。
 - **`HTTPCLIENT014` 对同命名空间短名客户端误报「类型未找到」**：解析链与生成代码实际发射的裸类型名对齐。
 - **`BaseClassValidator` 对手写短名宿主基类完全不校验**：现按真实 `base(...)` 契约校验构造形参与命名实参
   （不合规在编译期报错，而非延迟到 CS1729）。

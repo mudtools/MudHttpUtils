@@ -157,15 +157,14 @@ public class RegistrationConstructorContractGuardTests
         }
 
         // ── 维度 2：值形态（可选形参不得被塞 GetRequiredService） ──
-        AssertValueShape(ctorParameters, factoryArguments, "cacheProvider", cache, shape);
-        AssertValueShape(ctorParameters, factoryArguments, "resilienceResolver", cache || resilience, shape);
+        AssertValueShape(ctorParameters, factoryArguments, "cacheProvider", shape);
+        AssertValueShape(ctorParameters, factoryArguments, "resilienceResolver", shape);
     }
 
     private static void AssertValueShape(
         Dictionary<string, bool> ctorParameters,
         Dictionary<string, string> factoryArguments,
         string parameterName,
-        bool expectedRequired,
         string shape)
     {
         if (!ctorParameters.TryGetValue(parameterName, out var isOptional))

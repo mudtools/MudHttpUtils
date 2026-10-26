@@ -21,14 +21,12 @@ internal abstract class HttpClientApiInfoBase
     /// 初始化 HttpClient API 信息基类
     /// </summary>
     /// <param name="namespaceName">命名空间名称</param>
-    /// <param name="baseUrl">API 基础地址（可为空，运行时通过Options配置）</param>
     /// <param name="timeout">超时时间（秒）</param>
     /// <param name="registryGroupName">注册组名称</param>
     /// <param name="location">接口声明的源代码位置，用于诊断报告</param>
-    protected HttpClientApiInfoBase(string namespaceName, string? baseUrl, int timeout, string? registryGroupName = null, Location? location = null)
+    protected HttpClientApiInfoBase(string namespaceName, int timeout, string? registryGroupName = null, Location? location = null)
     {
         Namespace = namespaceName ?? throw new ArgumentNullException(nameof(namespaceName));
-        BaseUrl = baseUrl;
         Timeout = timeout;
         RegistryGroupName = registryGroupName;
         Location = location;
@@ -38,15 +36,6 @@ internal abstract class HttpClientApiInfoBase
     /// 命名空间名称
     /// </summary>
     public string Namespace { get; }
-
-    /// <summary>
-    /// API 基础地址（可为 null：运行时通过 Options 配置）。
-    /// </summary>
-    /// <remarks>
-    /// [Phase4 修复 5.1] 属性类型与构造参数语义对齐（CS8618/CS8601）：构造参数本就是 <c>string?</c>，
-    /// 属性却声明为非空，导致「可能为 null」的赋值被标记。生成器内无任何读取点（已确认），故放宽为可空。
-    /// </remarks>
-    public string? BaseUrl { get; }
 
     /// <summary>
     /// 超时时间（秒）

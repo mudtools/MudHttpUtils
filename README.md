@@ -140,7 +140,7 @@ sequenceDiagram
 > **关键设计**：
 >
 > - **零运行时反射**：生成代码直接调用 `IHttpRequestExecutor` 与 `IEnhancedHttpClient`，核心路径无反射（仅 `FormUrlEncoded` Body、`QueryMap` 复杂类型、XML 序列化等少数场景保留反射）。
-> - **装饰器叠加**：`ResilientHttpClient` 实现 `IEnhancedHttpClient` 并包装内层客户端，因此弹性策略、令牌恢复、追踪等能力可逐层叠加而不侵入业务接口。
+> - **装饰器叠加**：`ResilientHttpClient` 实现 `IEnhancedHttpClient` 并包装内层客户端（同时显式转发 `IHttpClientIdentity`，缓存键的客户端维度不会被装饰器截断），因此弹性策略、令牌恢复、追踪等能力可逐层叠加而不侵入业务接口。
 > - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。多租户场景**必须**调用 `AddMudHttpAppContextHolder()`（或使用配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐）+ `AddMudHttpAppResilience(...)` 才能获得 per-app 弹性隔离；多租户场景**必须**注册 `IAppAccessAuthorizer` 防止跨租户越权。应用切换必须走**作用域式**入口（`IAppScopeSwitcher.UseAppScope`）并确保归还，详见「多应用与租户隔离」。
 
 ### 🚀 快速开始
@@ -882,7 +882,7 @@ Mud.HttpUtils 在设计之初即面向 **Native AOT** 与**裁剪（Trimming）*
 | `HTTPCLIENT008`     | Error    | 加密配置但 HttpClient 类型不支持加密                               | 使用 `IEnhancedHttpClient` 或移除加密配置                                                                                                                                                                                          |
 | `HTTPCLIENT009`     | Warning  | XML 请求但 HttpClient 类型不支持 XML                               | 使用 `IEnhancedHttpClient` 或修改 Content-Type                                                                                                                                                                                     |
 | `HTTPCLIENT011`     | Warning  | `[Cache]` 与 `Response<T>` 返回类型组合                            | 缓存会存储状态码和响应头，建议使用普通返回类型                                                                                                                                                                                     |
-| `HTTPCLIENT012`     | Info     | 泛型接口：生成器将转发类型参数与约束                               | 无需处理，仅供感知（泛型接口**已支持**代码生成）                                                                                                                                                                                   |
+| `HTTPCLIENT012`     | Info     | 泛型接口：仅生成实现类（转发类型参数与约束），不生成 DI 注册代码   | 仅需感知：开放泛型无法绑定 DI，请按封闭泛型手动注册                                                                                                                                                                               |
 | `HTTPCLIENT013`     | Error    | URL 模板中的路径占位符与 `[Path]` 参数不匹配                       | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应                                                                                                                                                                 |
 | `HTTPCLIENT014`     | Warning  | 指定的 `HttpClient` 类型在当前编译中未找到                         | 确认类型名称正确，或确保已注册对应命名客户端                                                                                                                                                                                       |
 | `HTTPCLIENT015`     | Error    | `TokenManage` 类型未找到                                           | 确认类型名称正确，或确保包含该类型的项目已引用                                                                                                                                                                                     |

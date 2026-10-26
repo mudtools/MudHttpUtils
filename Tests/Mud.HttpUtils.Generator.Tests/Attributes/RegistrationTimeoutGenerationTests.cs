@@ -101,6 +101,13 @@ public class RegistrationTimeoutGenerationTests
 
         diagnostics.Where(d => d.Id == "HTTPCLIENT042").Should().ContainSingle(
             "Timeout ≤ 0 必须恰报 1 条 HTTPCLIENT042 指向特性");
+
+        // P1-3 补充：Location 必须落在消费方源码（此前 ProcessInterface 未传 Location ⇒ None，IDE 无法导航）。
+        var timeoutDiagnostic = diagnostics.Single(d => d.Id == "HTTPCLIENT042");
+        timeoutDiagnostic.Location.IsInSource.Should().BeTrue(
+            "HTTPCLIENT042 必须可导航到消费方源码");
+        timeoutDiagnostic.Location.GetLineSpan().StartLinePosition.Line.Should().Be(4,
+            "诊断应指向 [HttpClientApi(Timeout = ...)] 特性行（接口声明的 Span 起点），而不是 Location.None");
     }
 
     /// <summary>

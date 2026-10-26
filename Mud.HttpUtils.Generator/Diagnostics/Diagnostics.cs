@@ -201,7 +201,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor HttpClientApiGenericInterfaceNotSupported = new(
     id: "HTTPCLIENT012",
     title: "泛型接口代码生成",
-    messageFormat: "接口 {0} 是泛型接口，源生成器将转发类型参数与约束。",
+    messageFormat: "接口 {0} 是泛型接口：生成器仅转发类型参数与约束生成实现类，不生成 DI 注册代码（开放泛型无法绑定）。请按封闭泛型手动注册。",
     category: "代码生成",
     DiagnosticSeverity.Info,
     isEnabledByDefault: true,

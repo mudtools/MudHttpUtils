@@ -63,9 +63,46 @@ public class ResilientHttpClientTests
     }
 
     /// <summary>
-    /// M3-#21 smoke：WithBaseAddress 后日志仍可用�?
-    /// 字段已收强为 <c>ILogger&lt;ResilientHttpClient&gt;</c>，WithBaseAddress 直接透传�?logger（无向下强转点）�?
-    /// 新实例走非幂等跳过重试路径时应正常写出日志�?
+    /// P0-2 补充：装饰器必须转发 <see cref="IHttpClientIdentity.ClientName"/>。
+    /// 截断身份会让执行器的缓存键退化为「仅应用维度」（HttpClient 模式恒为 default）⇒
+    /// 弹性装饰下的多客户端装配重新出现跨客户端串缓存。
+    /// </summary>
+    [Fact]
+    public void ClientName_ShouldForwardInnerClientIdentity()
+    {
+        var mockInner = new Mock<IEnhancedHttpClient>();
+        mockInner.As<IHttpClientIdentity>().Setup(x => x.ClientName).Returns("orders-client");
+        mockInner.Setup(c => c.WithBaseAddress(It.IsAny<Uri>())).Returns(mockInner.Object);
+        var policyProvider = new Mock<IResiliencePolicyProvider>();
+
+        var client = new ResilientHttpClient(mockInner.Object, policyProvider.Object);
+        ((IHttpClientIdentity)client).ClientName.Should().Be("orders-client",
+            "装饰器不得截断客户端身份，否则缓存键客户端维度失效");
+
+        var rebased = client.WithBaseAddress(new Uri("https://api.example.com"));
+        ((IHttpClientIdentity)rebased).ClientName.Should().Be("orders-client",
+            "WithBaseAddress 重建装饰器后身份必须继续转发");
+    }
+
+    /// <summary>
+    /// 内层未实现身份接缝（外部实现方 / 测试替身）时装饰器返回 null ⇒
+    /// 缓存键退化为历史格式（零行为漂移）。
+    /// </summary>
+    [Fact]
+    public void ClientName_WhenInnerClientHasNoIdentity_ShouldBeNull()
+    {
+        var mockInner = new Mock<IEnhancedHttpClient>();
+        var policyProvider = new Mock<IResiliencePolicyProvider>();
+
+        var client = new ResilientHttpClient(mockInner.Object, policyProvider.Object);
+
+        ((IHttpClientIdentity)client).ClientName.Should().BeNull();
+    }
+
+    /// <summary>
+    /// M3-#21 smoke：WithBaseAddress 后日志仍可用�?
+    /// 字段已收强为 <c>ILogger&lt;ResilientHttpClient&gt;</c>，WithBaseAddress 直接透传�?logger（无向下强转点）�?
+    /// 新实例走非幂等跳过重试路径时应正常写出日志�?
     /// </summary>
     [Fact]
     public async Task WithBaseAddress_ThenSend_LoggerStillUsable()
@@ -76,7 +113,7 @@ public class ResilientHttpClientTests
             .Setup(c => c.PostAsJsonAsync<string, string>(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<string, string, CancellationToken>((_, _, _) => Task.FromException<string?>(new HttpRequestException("boom")));
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
-        // LoggerMessage 源生成代码先检�?IsEnabled，默�?false 会跳过写日志
+        // LoggerMessage 源生成代码先检�?IsEnabled，默�?false 会跳过写日志
         mockLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         var policyProvider = new PollyResiliencePolicyProvider(new ResilienceOptions
         {
@@ -89,7 +126,7 @@ public class ResilientHttpClientTests
         var act = () => rebased.PostAsJsonAsync<string, string>("https://api.example.com/orders", "payload");
         await act.Should().ThrowAsync<HttpRequestException>();
 
-        // 非幂�?POST 默认跳过重试（仅 1 次调用），该路径经新实例�?_logger 写日�?
+        // 非幂�?POST 默认跳过重试（仅 1 次调用），该路径经新实例�?_logger 写日�?
         mockInner.Verify(c => c.PostAsJsonAsync<string, string>(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         mockLogger.Verify(
             l => l.Log(

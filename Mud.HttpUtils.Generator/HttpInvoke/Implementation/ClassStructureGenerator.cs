@@ -47,9 +47,10 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
     {
         string classKeyword = context.Configuration.IsAbstract ? "abstract partial class" : "partial class";
 
-        // [v2.4 §3.2] 泛型接口类型参数转发：将接口的类型参数和约束原样转发到实现类。
+        // [v2.4 §3.2] 泛型接口类型参数转发：将接口的类型参数和约束转发到实现类声明。
         // [P1-2 修复] 类型参数名过 IdentifierEscaper：保留字类型参数（如 @class）裸名进
         // 类型参数列表与约束子句产出 CS1001，两处成对转义。
+        // 注意：接口基类型显示串（FullyQualifiedFormat）已自带类型实参，仅在类声明处追加本串。
         var typeParams = _interfaceSymbol.IsGenericType
             ? $"<{string.Join(", ", _interfaceSymbol.TypeParameters.Select(tp => IdentifierEscaper.Escape(tp.Name)))}>"
             : string.Empty;
@@ -72,7 +73,9 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
                     parts.Add("notnull");
                 foreach (var constraintType in tp.ConstraintTypes)
                     parts.Add(constraintType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-                        .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes)));
+                        .WithMiscellaneousOptions(
+                            SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
+                            SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers)));
                 if (tp.HasConstructorConstraint)
                     parts.Add("new()");
 
@@ -88,17 +91,21 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         }
 
         string inheritance = string.Empty;
-        // [修复] typeParams 由接口类型参数名拼接（如 <T>，本身无命名空间歧义）。
         // 接口名使用 global:: 完全限定，避免 X.Internal 子命名空间中存在同名类型时静默绑定到错误类型。
+        // FullyQualifiedFormat 已包含泛型实参（如 <T>），不得再次追加类型参数（重复会产出 IApi<T><T>）。
+        // [P1-2 修复] WithMiscellaneousOptions 会整体替换选项集合：必须显式保留
+        // EscapeKeywordIdentifiers，否则保留字类型名（interface @class）渲染为 class 而不可编译。
         var interfaceFullName = _interfaceSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
+            .WithMiscellaneousOptions(
+                SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
+                SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers));
         if (context.HasInheritedFrom)
         {
-            inheritance = $" : {context.Configuration.InheritedFrom}, {interfaceFullName}{typeParams}";
+            inheritance = $" : {context.Configuration.InheritedFrom}, {interfaceFullName}";
         }
         else
         {
-            inheritance = $" : {interfaceFullName}{typeParams}";
+            inheritance = $" : {interfaceFullName}";
         }
 
         // [SW-01] 抽象面补齐：接口已继承「旧切换契约」IAppContextSwitcher 时，为生成类附加实现

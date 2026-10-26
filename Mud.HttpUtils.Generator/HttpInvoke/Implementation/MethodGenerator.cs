@@ -333,7 +333,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var returnTypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(
                 SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+                SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
         var returnType = methodSymbol.ReturnType.ToDisplayString(returnTypeFormat);
         // [AOT v4 Phase 19.2 / D6/D14] 方法级 [UnconditionalSuppressMessage] 替代原类级压制：
         // AOT 安全说明：生成代码经执行器间接 JSON 序列化，通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，
@@ -532,7 +533,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var typeFormat = SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(
                 SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+                SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
 
         var isStatic = methodSymbol.IsStatic;
         var returnsByRefReadonly = methodSymbol.RefKind == RefKind.RefReadOnly;

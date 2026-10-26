@@ -217,6 +217,9 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             ? null
             : classSymbol.ContainingNamespace?.ToDisplayString();
         var className = classSymbol.Name;
+        // 引用位转义：partial 类名/属性名可能是 C# 保留字（如 @class / @event），
+        // 裸名进声明位/表达式位产出 CS1001。
+        var escapedClassName = IdentifierEscaper.Escape(className);
 
         var sb = new StringBuilder();
 
@@ -230,7 +233,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             sb.AppendLine();
         }
 
-        sb.AppendLine($"public partial class {className}");
+        sb.AppendLine($"public partial class {escapedClassName}");
         sb.AppendLine("{");
 
         // 生成 GetFormDataContentAsync 方法
@@ -371,7 +374,8 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="prop">属性信息</param>
     private void GeneratePropertyAddCode(StringBuilder sb, PropertyInfo prop)
     {
-        var propertyName = prop.Name;
+        // 引用位转义：属性名为 C# 保留字时（如 @event）裸名进表达式产出 CS1001。
+        var propertyName = IdentifierEscaper.Escape(prop.Name);
         var escapedJsonName = StringEscapeHelper.EscapeString(prop.JsonName);
         var type = prop.Type;
 
@@ -414,7 +418,9 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="byteArrayPropertyName">byte[] 类型属性的名称，如果没有则为 null</param>
     private void GenerateFilePropertyAddCode(StringBuilder sb, PropertyInfo prop, string? byteArrayPropertyName)
     {
-        var propertyName = prop.Name;
+        // 引用位转义口径同 GeneratePropertyAddCode：文件属性与 byte[] 属性均可能为保留字名。
+        var propertyName = IdentifierEscaper.Escape(prop.Name);
+        var escapedByteArrayRef = IdentifierEscaper.Escape(byteArrayPropertyName);
         var escapedJsonName = StringEscapeHelper.EscapeString(prop.JsonName);
 
         sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
@@ -423,7 +429,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         if (!string.IsNullOrEmpty(byteArrayPropertyName))
         {
             // 如果有 byte[] 属性，使用 CreateFileContent 方法
-            sb.AppendLine($"            var fileContent = HttpClientUtils.CreateFileContent({propertyName}!, {byteArrayPropertyName});");
+            sb.AppendLine($"            var fileContent = HttpClientUtils.CreateFileContent({propertyName}!, {escapedByteArrayRef});");
         }
         else
         {

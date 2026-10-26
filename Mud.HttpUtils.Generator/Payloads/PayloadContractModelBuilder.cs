@@ -105,7 +105,8 @@ internal static class PayloadContractModelBuilder
     private static readonly SymbolDisplayFormat GeneratedTypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
         .WithMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+            SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
 
     /// <summary>解析结果分类（映射到 <c>PAYLOAD004</c>~<c>PAYLOAD007</c>）。</summary>
     private enum ResolutionFailure

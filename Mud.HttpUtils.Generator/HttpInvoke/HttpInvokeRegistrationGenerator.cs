@@ -145,6 +145,13 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (isAbstract)
             return null;
 
+        // 泛型接口只生成实现类（类型参数与约束转发），不生成 DI 注册：
+        // 开放泛型无法用 AddTransient<TService, TImplementation>() 配合默认模式的
+        // appContext 工厂 lambda（无法闭合类型参数），生成的注册代码必然 CS0305。
+        // 消费方需按封闭泛型手动注册；HTTPCLIENT012 已提示该边界。
+        if (interfaceSymbol.IsGenericType)
+            return null;
+
         var timeout = ExtractTimeoutParameter(httpClientApiAttribute);
 
         var registryGroupName = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.RegistryGroupNameProperty);
@@ -242,11 +249,11 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             interfaceSymbol.Name,
             implementationName,
             namespaceName,
-            string.Empty,
             timeout,
             registryGroupName,
             httpClient,
-            tokenManagerType)
+            tokenManagerType,
+            interfaceSyntax.GetLocation())
         {
             HasCache = hasCache,
             HasResilience = hasResilience
@@ -390,7 +397,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     /// </summary>
     private void GenerateFactoryRegistrationCall(StringBuilder sb, HttpClientApiInfo api)
     {
-        var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
+        // 接口名可能是保留字（如 interface @class）：ISymbol.Name 不含 @ ⇒ 直接拼接产出 global::Ns.class（CS1001）。
+        var fullyQualifiedInterface = $"global::{api.Namespace}.{IdentifierEscaper.Escape(api.InterfaceName)}";
         var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
 
         sb.AppendLine($"            global::Mud.HttpUtils.RestService.RegisterGeneratedFactory<{fullyQualifiedInterface}>((client, options) =>");
@@ -596,7 +604,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private void GenerateHttpClientRegistration(StringBuilder codeBuilder, HttpClientApiInfo api, SourceProductionContext context)
     {
-        var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
+        var fullyQualifiedInterface = $"global::{api.Namespace}.{IdentifierEscaper.Escape(api.InterfaceName)}";
         var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
 
         if (!string.IsNullOrEmpty(api.HttpClientType))

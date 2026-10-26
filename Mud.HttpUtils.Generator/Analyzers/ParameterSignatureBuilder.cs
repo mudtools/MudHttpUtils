@@ -24,7 +24,8 @@ internal static class ParameterSignatureBuilder
     private static readonly SymbolDisplayFormat TypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
         .WithMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+            SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
 
     public static string Build(IMethodSymbol method) =>
         method.Parameters.Length == 0

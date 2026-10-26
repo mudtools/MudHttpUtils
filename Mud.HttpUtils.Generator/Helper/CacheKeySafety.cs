@@ -79,12 +79,20 @@ internal static class CacheKeySafety
     }
 
     /// <summary>生成 KeySafeScalar 的键片段表达式（InvariantCulture）。</summary>
+    /// <remarks>
+    /// 参数名经 <see cref="IdentifierEscaper"/> 转义：保留字参数（如 <c>@event</c>）裸名进表达式
+    /// 产出 CS1001，与声明位必须成对转义。
+    /// </remarks>
     public static string ScalarKeyExpression(string paramName)
-        => $"Convert.ToString({paramName}, CultureInfo.InvariantCulture)";
+        => $"Convert.ToString({IdentifierEscaper.Escape(paramName)}, CultureInfo.InvariantCulture)";
 
     /// <summary>生成 KeySafeCollection 的键片段表达式（string.Join + InvariantCulture）。</summary>
+    /// <remarks>引用位转义口径同 <see cref="ScalarKeyExpression"/>。</remarks>
     public static string CollectionKeyExpression(string paramName)
-        => $"({paramName} == null ? \"-\" : string.Join(\",\", {paramName}.Select(x => Convert.ToString(x, CultureInfo.InvariantCulture) ?? \"-\")))";
+    {
+        var paramRef = IdentifierEscaper.Escape(paramName);
+        return $"({paramRef} == null ? \"-\" : string.Join(\",\", {paramRef}.Select(x => Convert.ToString(x, CultureInfo.InvariantCulture) ?? \"-\")))";
+    }
 
     private static bool IsStreamLike(string typeName)
     {

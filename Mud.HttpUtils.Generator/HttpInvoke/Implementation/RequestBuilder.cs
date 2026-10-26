@@ -969,6 +969,9 @@ internal class RequestBuilder
     {
         var placeholder = $"{{{placeholderName}}}";
         var isStringType = TypeDetectionHelper.IsStringType(paramType);
+        // [P1-2 补充] 引用位转义：保留字路径参数（如 @int）裸名进插值洞/nameof 产出 CS1001，
+        // 与 ParameterSignatureBuilder 的声明位成对。占位符名仍用原始名（它是 URL 模板字面量的一部分）。
+        var escapedParamRef = IdentifierEscaper.Escape(paramName);
 
         if (string.IsNullOrEmpty(formatString))
         {
@@ -982,18 +985,18 @@ internal class RequestBuilder
                     // 只是把参数名指向真正的路径参数（原先由 EscapeDataString 内部抛出，ParamName 是 stringToEscape），
                     // 同时让流分析判定表达式非空。非可空 string 参数不受影响，生成文本保持简短。
                     var stringExpr = paramType.TrimEnd().EndsWith("?", StringComparison.Ordinal)
-                        ? $"{paramName} ?? throw new System.ArgumentNullException(nameof({paramName}))"
-                        : paramName;
+                        ? $"{escapedParamRef} ?? throw new System.ArgumentNullException(nameof({escapedParamRef}))"
+                        : escapedParamRef;
                     ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({stringExpr})}}");
                 }
                 else
                 {
-                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString(({paramName}).ToString() ?? string.Empty)}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString(({escapedParamRef}).ToString() ?? string.Empty)}}");
                 }
             }
             else
             {
-                ReplacePlaceholder(sb, placeholder, $"{{{paramName}}}");
+                ReplacePlaceholder(sb, placeholder, $"{{{escapedParamRef}}}");
             }
             return;
         }
@@ -1001,7 +1004,7 @@ internal class RequestBuilder
         if (formatString!.Contains("{0}"))
         {
             var escapedFormat = StringEscapeHelper.EscapeString(formatString);
-            var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {paramName})";
+            var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {escapedParamRef})";
             if (urlEncode)
             {
                 ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({formatExpr})}}");
@@ -1014,7 +1017,7 @@ internal class RequestBuilder
         }
 
         var escapedStandardFormat = StringEscapeHelper.EscapeString(formatString);
-        var standardFormatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedStandardFormat}}}\", {paramName})";
+        var standardFormatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedStandardFormat}}}\", {escapedParamRef})";
         if (urlEncode)
         {
             ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({standardFormatExpr})}}");

@@ -329,7 +329,8 @@ internal static class TypeSymbolHelper
             typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
             genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
             miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-                               SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier,
+                               SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+                               SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers,
             parameterOptions: SymbolDisplayParameterOptions.IncludeType,
             propertyStyle: SymbolDisplayPropertyStyle.ShowReadWriteDescriptor,
             localOptions: SymbolDisplayLocalOptions.IncludeType,

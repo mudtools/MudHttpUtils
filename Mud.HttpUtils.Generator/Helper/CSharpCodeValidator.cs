@@ -100,8 +100,10 @@ internal static class CSharpCodeValidator
                     return false;
                 }
 
-                // 检查参数名是否为合法的C#标识符
-                if (!IsValidCSharpIdentifier(paramName))
+                // 检查参数名是否为合法的C#标识符。
+                // URL 占位符不是 C# 发射位：保留字作为参数名合法（声明/引用位经 @ 转义），
+                // 默认占位符名直接取自符号名 ⇒ 允许关键字（如 [Path] int @event + "{event}"）。
+                if (!IsValidCSharpIdentifier(paramName) && !IsCSharpKeyword(paramName))
                 {
                     errorMessage = $"URL模板中的参数名 '{paramName}' 不是合法的C#标识符";
                     return false;

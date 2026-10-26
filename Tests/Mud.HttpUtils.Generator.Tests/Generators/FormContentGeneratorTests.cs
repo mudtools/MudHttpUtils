@@ -168,5 +168,48 @@ public class UploadRequest
         generatedCode.Should().Contain("path\\\\name");
     }
 
+    /// <summary>
+    /// P1-2 补充：<c>[FormContent]</c> 类名 / 属性名为 C# 保留字时，partial 类声明位与
+    /// 属性引用位必须成对补 <c>@</c> 前缀（否则生成文件报 CS1001）。
+    /// </summary>
+    [Fact]
+    public void FormContentGenerator_WithKeywordNamedClassAndProperties_GeneratesCompilableCode()
+    {
+        const string source = """
+            using System;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [FormContent]
+                public partial class @class
+                {
+                    public string @event { get; set; } = "";
+
+                    [FilePath]
+                    public string @string { get; set; } = "";
+
+                    public byte[] @default { get; set; } = Array.Empty<byte>();
+                }
+            }
+            """;
+
+        var generatorType = TestHelper.GetType("Mud.HttpUtils.FormContentGenerator");
+        var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            generator,
+            source,
+            description: "关键字命名的 [FormContent] 类/属性必须经 @ 转义且生成代码可编译");
+
+        var generatedCode = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+        generatedCode.Should().Contain("public partial class @class",
+            "partial 类声明位必须补 @ 前缀");
+        generatedCode.Should().Contain("IsNullOrWhiteSpace(@event)",
+            "字符串属性引用位必须补 @ 前缀");
+        generatedCode.Should().Contain("CreateFileContent(@string!, @default)",
+            "文件属性与 byte[] 属性的引用位必须补 @ 前缀");
+    }
+
     #endregion
 }

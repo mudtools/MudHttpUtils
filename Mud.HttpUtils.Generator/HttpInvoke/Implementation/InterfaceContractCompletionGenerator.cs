@@ -46,7 +46,8 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
     private static readonly SymbolDisplayFormat TypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
         .WithMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+            SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
 
     /// <summary>占位实现的原因描述（用于诊断消息）。</summary>
     private const string UnsupportedMemberReason =

@@ -514,7 +514,9 @@ internal class QueryParameterBinder : IParameterBinder
         var key = prefix + propName;
         var escapedKey = StringEscapeHelper.EscapeString(key);
         var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
+            .WithMiscellaneousOptions(
+                SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
+                SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers));
 
         // 检查属性类型是否实现 IQueryParameter
         if (ImplementsIQueryParameter(prop.Type))

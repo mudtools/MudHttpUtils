@@ -305,7 +305,17 @@ public class GeneratedCodeEscapeTests
                 public interface IKeywordApi
                 {
                     [Get("/data/{int}")]
-                    Task<string> @class(int @int);
+                    Task<string> @class([Path] int @int);
+
+                    [Get("/ids/{int}")]
+                    [Cache(60)]
+                    Task<string> CachedAsync([Path] int @int, [Query] string @event, [Query] int[] @default);
+
+                    [Get("/fmt/{int}")]
+                    Task<string> FormattedAsync([Path(FormatString = "D4")] int @int);
+
+                    [Get("/text/{string}")]
+                    Task<string> NullableTextAsync([Path] string? @string);
 
                     [Get("/q")]
                     Task<string> QueryAsync([Query] string @event);
@@ -330,6 +340,69 @@ public class GeneratedCodeEscapeTests
             "接口 [Query] 属性的引用位必须与声明位成对转义（CS1001 回归）");
         generated.Should().Contain("__queryParams.Add(\"event\", @event)",
             "参数引用位必须与声明位成对转义（CS1001/CS0103 回归）");
+
+        // [Path] 引用位（URL 插值洞 / string.Format / nameof）——F3 原清单遗漏的发射点
+        generated.Should().Contain("Uri.EscapeDataString((@int)",
+            "[Path] 关键字参数的 URL 插值洞必须补 @ 前缀");
+        generated.Should().Contain("\"{0:D4}\", @int)",
+            "[Path(FormatString)] 的 string.Format 实参必须补 @ 前缀");
+        generated.Should().Contain("nameof(@string)",
+            "可空 string 路径参数的 nameof 必须补 @ 前缀（CS1001 回归）");
+
+        // 缓存键表达式（标量段）——F3 原清单遗漏的发射点
+        generated.Should().Contain("Convert.ToString(@int, CultureInfo.InvariantCulture)",
+            "缓存键标量段引用必须补 @ 前缀（CacheKeySafety）");
+        generated.Should().Contain("Convert.ToString(@event, CultureInfo.InvariantCulture)",
+            "缓存键标量段引用必须补 @ 前缀（CacheKeySafety）");
+        generated.Should().Contain("string.Join(\",\", @default.Select(x =>",
+            "缓存键集合段引用必须补 @ 前缀（CacheKeySafety）");
+    }
+
+    /// <summary>
+    /// P1-2 补充：保留字命名的<b>类型</b>出现在方法签名中时（返回类型 / 参数类型），
+    /// 类型显示串同样必须保留 <c>@</c> 前缀。
+    /// </summary>
+    /// <remarks>
+    /// <c>SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(...)</c> 会<b>整体替换</b>
+    /// 选项集合，历史实现在返回类型/参数类型/属性类型格式中只写 <c>UseSpecialTypes</c>，
+    /// 丢失 <c>EscapeKeywordIdentifiers</c> ⇒ <c>class @class</c> 渲染为 <c>class</c>（CS1001）。
+    /// </remarks>
+    [Fact]
+    public void KeywordNamedType_InSignature_ShouldEmitEscapedTypeReferences()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class @class
+                {
+                    public string Value { get; set; } = string.Empty;
+                }
+
+                [HttpClientApi]
+                public interface IKeywordTypeApi
+                {
+                    [Get("/data")]
+                    Task<@class> GetAsync();
+
+                    [Post("/data")]
+                    Task SendAsync([Body] @class @event);
+                }
+            }
+            """;
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "保留字命名类型出现在签名中时，生成代码必须可编译（类型显示串须含 @）");
+
+        var generated = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+        generated.Should().Contain("TestNamespace.@class",
+            "返回类型/参数类型显示串必须保留 @ 前缀（EscapeKeywordIdentifiers 不得被 WithMiscellaneousOptions 覆盖）");
+        generated.Should().Contain("@event",
+            "保留字参数名在声明位必须补 @ 前缀");
     }
 
     /// <summary>

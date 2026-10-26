@@ -239,6 +239,69 @@ public class RealDeclarationMatrixTests
             "生成基模式下普通基接口的缓存方法由派生类生成，注册侧必须解析缓存服务（不得收窄为 null）");
     }
 
+    /// <summary>
+    /// F3 补充（发布前复核）：接口名本身是保留字（<c>interface @class</c>）时，
+    /// 注册产物里的类型引用必须成对补 <c>@</c>（<c>ISymbol.Name</c> 不含 <c>@</c>）。
+    /// </summary>
+    [Fact]
+    public void KeywordNamedInterface_RegistrationEmitsEscapedTypeReference()
+    {
+        var source = Usings + """
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface @class
+                {
+                    [Get("/data")]
+                    Task<string> GetAsync();
+                }
+            }
+            """;
+
+        var (output, _) = RunBothGenerators(source);
+
+        var errors = output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+        errors.Should().BeEmpty(
+            $"保留字命名的接口必须可编译（注册产物类型引用须补 @）；错误：{string.Join("\n", errors.Select(e => e.ToString()))}");
+
+        var registration = GetRegistrationText(output);
+        registration.Should().Contain("global::TestNamespace.@class",
+            "注册产物引用保留字接口名时必须补 @ 前缀（否则 global::TestNamespace.class 为 CS1001）");
+    }
+
+    /// <summary>
+    /// 泛型接口：实现类可生成，但注册产物必须<b>跳过</b>——开放泛型无法绑定
+    /// <c>AddTransient&lt;TService, TImplementation&gt;</c>（生成物必然 CS0305）。
+    /// </summary>
+    [Fact]
+    public void GenericInterface_GeneratesImplementationWithoutRegistration()
+    {
+        var source = Usings + """
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IGenericApi<T>
+                {
+                    [Get("/items")]
+                    Task<T> GetAsync();
+                }
+            }
+            """;
+
+        var (output, diagnostics) = RunBothGenerators(source);
+
+        var errors = output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+        errors.Should().BeEmpty(
+            $"泛型接口必须跳过 DI 注册生成（否则开放泛型类型引用 CS0305）；错误：{string.Join("\n", errors.Select(e => e.ToString()))}");
+
+        output.SyntaxTrees.Should().NotContain(
+            t => t.FilePath.Contains("HttpClientApiExtensions"),
+            "泛型接口不应产出 DI 注册扩展方法");
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT012",
+            "应提示泛型接口仅生成实现类、需按封闭泛型手动注册");
+    }
+
     private const string Usings = """
         using System;
         using System.Threading.Tasks;
