@@ -114,8 +114,9 @@ public abstract partial class EnhancedHttpClient
 
             var nextUri = new Uri(currentUri, response.Headers.Location);
 
-            // 逐跳复验：与初始请求 ValidateRequestAsync 同源的全套校验（白名单 / HTTPS / 私网 / 内网域名）
-            await UrlValidator.ValidateUrlAsync(nextUri.ToString(), _allowCustomBaseUrls, cancellationToken).ConfigureAwait(false);
+            // 逐跳复验：与初始请求 ValidateRequestAsync 同源的全套校验（白名单 / HTTPS / 私网 / 内网域名）。
+            // AM2-02：必须走 ValidateUrlCoreAsync（容器级验证器优先），否则重定向成为自定义校验的旁路。
+            await ValidateUrlCoreAsync(nextUri.ToString(), cancellationToken).ConfigureAwait(false);
 
             if (IsPreserveMethodRedirect(response.StatusCode) &&
             request.Content != null &&

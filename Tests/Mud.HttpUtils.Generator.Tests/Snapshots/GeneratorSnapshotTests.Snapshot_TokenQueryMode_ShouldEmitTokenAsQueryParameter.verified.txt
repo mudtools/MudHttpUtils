@@ -209,6 +209,13 @@ namespace TestNamespace.Internal
                 __url += (__url.Contains("?") ? "&" : "?") + __queryParams.ToString();
             }
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
+#if NETSTANDARD2_0
+#pragma warning disable CS0618 // netstandard2.0 无 HttpRequestMessage.Options，只能写已过时的 Properties
+            __httpRequest.Properties[global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey] = __appContext.AppKey;
+#pragma warning restore CS0618
+#else
+            __httpRequest.Options.Set(new System.Net.Http.HttpRequestOptionsKey<string>(global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey), __appContext.AppKey);
+#endif
 
 #if NET5_0_OR_GREATER
             __httpRequest.Options.TryAdd("__Mud_HttpUtils_TokenRecoveryContext", new Mud.HttpUtils.TokenRecoveryContext

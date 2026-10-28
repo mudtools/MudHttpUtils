@@ -15,17 +15,35 @@ public partial class DefaultAppManager<TAppContext>
     /// 把懒加载项实例化并并入注册表（一次且仅一次）。
     /// </summary>
     /// <remarks>
-    /// 并发安全：Lazy&lt;T&gt; 保证工厂在并发下只被调用一次；
+    /// <para>
+    /// 并发安全：<see cref="Lazy{T}"/> 保证工厂在并发下只被调用一次；
     /// 工厂抛异常时不吞异常，且不写入注册表。
+    /// </para>
+    /// <para>
+    /// <b>AM2-07</b>：以 <see cref="IAppRegistry{TAppContext}.Add"/> 的<b>返回值</b>作一次性闸门 ——
+    /// 此前无条件重建外部标识索引并发布 <see cref="AppInstantiated"/>，N 个并发首访会执行 N 次
+    /// <c>O(n)</c> 索引重建与 N 次事件（订阅方按事件做幂等缓存时被放大）。现在只有真正完成
+    /// "声明态 → 物化态"跃迁的那个线程进入副作用段。
+    /// </para>
+    /// <para>
+    /// 物化成功后<b>摘除声明条目</b>：<see cref="Lazy{T}"/> 与工厂闭包不再需要常驻，
+    /// 同时避免"声明存在但注册表也有"的双份状态扩大不一致窗口。
+    /// </para>
     /// </remarks>
     private bool TryMaterializeLazy(string appKey, out TAppContext context)
     {
         if (_lazyApps.TryGetValue(appKey, out var lazy))
         {
             var materialized = lazy.Value;
-            _registry.Add(appKey, materialized);
-            RebuildExternalIndex();
-            OnAppInstantiated(appKey, materialized);
+
+            // 闸门：仅"抢到插入"的线程执行副作用（并发首访下其余线程只读）。
+            if (_registry.Add(appKey, materialized))
+            {
+                _lazyApps.TryRemove(appKey, out _);
+                RebuildExternalIndex();
+                OnAppInstantiated(appKey, materialized);
+            }
+
             context = materialized;
             return true;
         }
@@ -66,7 +84,10 @@ public partial class DefaultAppManager<TAppContext>
         if (factory == null)
             throw new ArgumentNullException(nameof(factory));
 
-        var isNew = !_lazyApps.ContainsKey(appKey) && !_registry.TryGet(appKey, out _);
+        // AM2-09（ADR-004 统一存在性口径）：已物化 ∪ 已声明 都算"已存在"，只影响事件类型判定。
+        // 该判定为 check-then-act，但仅用于事件分类（不参与状态机决策），并发误报最多一条
+        // 事件类型偏差，不产生状态错误——已在 ADR-004 中登记为可接受。
+        var existed = _lazyApps.ContainsKey(appKey) || _registry.TryGet(appKey, out _);
 
         _lazyApps[appKey] = new Lazy<TAppContext>(factory, LazyThreadSafetyMode.ExecutionAndPublication);
 
@@ -74,7 +95,7 @@ public partial class DefaultAppManager<TAppContext>
             TrySetDefaultAppKeyCore(appKey, requireRegistered: false);
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
-            appKey, isNew ? AppConfigurationChangeType.Added : AppConfigurationChangeType.Updated));
+            appKey, existed ? AppConfigurationChangeType.Updated : AppConfigurationChangeType.Added));
     }
 
     /// <summary>

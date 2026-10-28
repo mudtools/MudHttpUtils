@@ -79,6 +79,8 @@ public class ConfigP0FixTests
         nameof(EnhancedHttpClientOptions.ResponseInterceptors),
         nameof(EnhancedHttpClientOptions.SensitiveDataMasker),
         nameof(EnhancedHttpClientOptions.AppAccessAuthorizer),
+        // AM2-02：URL 验证器由 CreateEnhancedClient 从容器回填，克隆器刻意不拷贝。
+        nameof(EnhancedHttpClientOptions.UrlValidator),
     };
 
     private static readonly HashSet<string> ExpectedCopiedProperties = new()

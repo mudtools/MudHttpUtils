@@ -64,6 +64,17 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
     private readonly bool _allowCustomBaseUrls;
     private readonly IHttpContentSerializer _contentSerializer;
 
+    /// <summary>
+    /// URL 验证器（AM2-02）。<c>null</c> ⇒ 回落进程级静态门面 <see cref="UrlValidator"/>（无 DI 路径行为不变）。
+    /// </summary>
+    /// <remarks>
+    /// 此前主校验链路<b>直接调用</b>静态 <see cref="UrlValidator"/>，宿主经
+    /// <c>AddSingleton&lt;IUrlValidator, X&gt;()</c> 注册的实现从未被调用（<c>UrlValidator.Instance</c>
+    /// 是无写入无读取的死字段）。本字段是该依赖的唯一入口，由
+    /// <see cref="EnhancedHttpClientOptions.UrlValidator"/> 承载（DI 路径由容器回填）。
+    /// </remarks>
+    private readonly IUrlValidator? _urlValidator;
+
     // Phase 1/2/3 运行时消费字段
     private readonly RequestBodySerializationMode _requestBodySerialization;
     private readonly IExceptionRedactor? _exceptionRedactor;
@@ -194,6 +205,8 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
         _responseInterceptors = options.ResponseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
         _sensitiveDataMasker = options.SensitiveDataMasker;
         _allowCustomBaseUrls = options.AllowCustomBaseUrls;
+        // AM2-02：容器级自定义验证器（null ⇒ 静态门面，无 DI 路径零漂移）。
+        _urlValidator = options.UrlValidator;
         // Phase 1/2/3：从 options 读取运行时消费属性
         _requestBodySerialization = options.RequestBodySerialization;
         _exceptionRedactor = options.ExceptionRedactor;
@@ -223,6 +236,18 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
 
     #region 辅助方法
 
+    /// <summary>
+    /// URL 安全校验的统一入口（AM2-02）：有容器级验证器则用实例，否则回落静态门面。
+    /// </summary>
+    /// <remarks>
+    /// 三个调用点（绝对 URL、相对 URL 的 BaseAddress、重定向逐跳复验）必须全部走本方法 ——
+    /// 任何一处直连静态门面都会让"自定义验证器生效"出现旁路。
+    /// </remarks>
+    private ValueTask ValidateUrlCoreAsync(string? url, CancellationToken cancellationToken)
+        => _urlValidator is null
+            ? UrlValidator.ValidateUrlAsync(url, allowCustomBaseUrls: _allowCustomBaseUrls, cancellationToken)
+            : _urlValidator.ValidateUrlAsync(url, allowCustomBaseUrls: _allowCustomBaseUrls, cancellationToken);
+
     /// <summary>异步请求校验 —— DNS 相关判定 await，消除 sync-over-async。</summary>
     private async ValueTask<string> ValidateRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -237,8 +262,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
 
         if (Uri.IsWellFormedUriString(url, UriKind.Absolute))
         {
-            await UrlValidator.ValidateUrlAsync(url, allowCustomBaseUrls: _allowCustomBaseUrls, cancellationToken)
-            .ConfigureAwait(false);
+            await ValidateUrlCoreAsync(url, cancellationToken).ConfigureAwait(false);
             return uri;
         }
 
@@ -249,10 +273,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
                 throw new InvalidOperationException("HttpClient未配置BaseAddress，无法使用相对URL");
             }
             // 相对 URL：校验 BaseAddress（绝对 URI 走异步 DNS 通道）
-            await UrlValidator.ValidateUrlAsync(
-            _httpClient.BaseAddress?.ToString(),
-            allowCustomBaseUrls: _allowCustomBaseUrls,
-            cancellationToken).ConfigureAwait(false);
+            await ValidateUrlCoreAsync(_httpClient.BaseAddress?.ToString(), cancellationToken).ConfigureAwait(false);
             return uri;
         }
 

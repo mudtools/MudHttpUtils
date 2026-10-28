@@ -319,9 +319,9 @@ public class AppResiliencePolicyResolverTests
     #region 缓存基数上限（maxCachedApps）
 
     [Fact]
-    public void ResolveResolver_ReturnsNull_WhenCacheFullAndNewKeyQueried()
+    public void ResolveResolver_EvictsOldest_WhenCacheFull()
     {
-        // Arrange — maxCachedApps = 2，缓存满后第 3 个 key 返回 null
+        // AM2-19：容量满时淘汰最旧 → 插入新项（不再"每请求新建"，熔断状态对近期应用连续）。
         var callCount = 0;
         var resolver = new AppResiliencePolicyResolver(appKey =>
         {
@@ -332,17 +332,21 @@ public class AppResiliencePolicyResolverTests
         // 填满缓存
         resolver.ResolveResolver("app1").Should().NotBeNull();
         resolver.ResolveResolver("app2").Should().NotBeNull();
+        callCount.Should().Be(2);
 
-        // Act — 第 3 个 key：缓存已满且 key 不在缓存中
-        var result = resolver.ResolveResolver("app3");
-
-        // Assert — 超限时不缓存，但工厂仍被调用（fail-safe 路径）
-        result.Should().NotBeNull("工厂返回非 null 选项时仍创建解析器（不缓存但不返回 null）");
+        // 第 3 个 key：淘汰最旧（app1）后插入
+        var third = resolver.ResolveResolver("app3");
+        third.Should().NotBeNull("淘汰最旧后必须为新的应用建立解析器");
         callCount.Should().Be(3);
 
-        // 再次查询 app3 — 仍不在缓存中，工厂再次被调用
-        var result2 = resolver.ResolveResolver("app3");
-        callCount.Should().Be(4, "超限 key 不被缓存，工厂每次被调用");
+        // 新项已被缓存：再次查询不得重建（修复前每次都要新建 provider ⇒ 熔断器归零）
+        resolver.ResolveResolver("app3").Should().BeSameAs(third);
+        callCount.Should().Be(3, "AM2-19：超限期插入的解析器必须被缓存，不能每次重建");
+
+        // app2 仍存活（只有最旧的一个被淘汰）
+        var second = resolver.ResolveResolver("app2");
+        callCount.Should().Be(3, "近期活跃应用（app2）的熔断状态必须保持连续");
+        second.Should().NotBeNull();
     }
 
     [Fact]

@@ -109,6 +109,9 @@ public static class HttpClientServiceCollectionExtensions
 
         // ② 容器级自定义 IUrlValidator（默认实现由 AddMudHttpClientInfrastructure 以 TryAdd 注册）
         // ⇒ 白名单策略由宿主在实现内自管，不代判。
+        // AM2-02 复核：本分支的"自管"前提在 3.1.0 及之前是**假的**（自定义实现从未被调用，
+        // 于是这里既跳过了告警、又放过了未配置白名单的严格模式客户端 —— 双重掩盖）。
+        // 现已由 EnhancedHttpClientOptions.UrlValidator 真正接入，前提成立，分支语义不变。
         var validator = sp.GetService<IUrlValidator>();
         if (validator != null && validator is not DefaultUrlValidator)
             return;
@@ -366,26 +369,50 @@ public static class HttpClientServiceCollectionExtensions
         services.TryAddSingleton<IUrlParameterKeyFormatter, CamelCaseUrlParameterKeyFormatter>();
 
         // B4：挂接 AppManagerDiagnostics 诊断出口，使订阅者异常可被 ILogger 记录。
-        // 使用一次性工厂（结果丢弃）确保在容器构建阶段即完成挂接。
+        // AM2-14：接线改为可注销（owner 判定）—— 进程级静态槽在多容器下会互相覆盖，
+        // 先释放的容器绝不能清掉仍在运行的容器的日志出口。
         services.TryAddSingleton<AppManagerDiagnosticsWiring>(sp =>
-        {
-            var logger = sp.GetService<ILogger<DefaultAppManager<IMudAppContext>>>();
-            if (logger != null)
-            {
-                AppManagerDiagnostics.SubscriberFailed = (ex, appKey, changeType) =>
-         logger.LogWarning(ex,
-         "AppManager ConfigurationChanged 订阅者异常：AppKey={AppKey}, ChangeType={ChangeType}",
-         AppKeyValidator.ToSafeText(appKey), changeType);
-
-            }
-            return new AppManagerDiagnosticsWiring();
-        });
+        new AppManagerDiagnosticsWiring(sp.GetService<ILogger<DefaultAppManager<IMudAppContext>>>()));
     }
 
     /// <summary>
-    /// 内部占位类型，用于驱动 AppManagerDiagnostics 的 DI 解析（一次性挂接）。
+    /// 把 <see cref="AppManagerDiagnostics"/> 的进程级静态出口接线到 <c>ILogger</c>，并在容器释放时按
+    /// <b>所有者判定</b>注销（<b>AM2-14</b>）。
     /// </summary>
-    internal sealed class AppManagerDiagnosticsWiring;
+    /// <remarks>
+    /// <para>
+    /// <see cref="AppManagerDiagnostics"/> 位于 <c>Abstractions</c>（无日志依赖），其槽位是 <c>static</c>。
+    /// 多容器（多宿主 / 并行测试）场景下后接线者会覆盖先接线者，且容器释放后仍持有已死容器的
+    /// <c>ILogger</c>（它会继续向已释放的日志管道写日志）。
+    /// </para>
+    /// <para>
+    /// 因此接线时登记 <c>owner = this</c>，释放时仅当自己仍是 owner 才清空 —— 被接管的一方释放时为空操作，
+    /// 存活容器的出口不受影响。
+    /// </para>
+    /// </remarks>
+    internal sealed class AppManagerDiagnosticsWiring : IDisposable
+    {
+        /// <summary>按容器中的日志器接线；无日志器时为空操作（不占用 owner 槽）。</summary>
+        /// <param name="logger">应用管理器日志器；为 <c>null</c> 时不接线。</param>
+        public AppManagerDiagnosticsWiring(ILogger<DefaultAppManager<IMudAppContext>>? logger)
+        {
+            if (logger is null)
+                return;
+
+            AppManagerDiagnostics.Wire(this);
+            AppManagerDiagnostics.SubscriberFailed = (ex, appKey, changeType) =>
+                logger.LogWarning(ex,
+                    "AppManager ConfigurationChanged 订阅者异常：AppKey={AppKey}, ChangeType={ChangeType}",
+                    AppKeyValidator.ToSafeText(appKey), changeType);
+            AppManagerDiagnostics.ContextDisposeFailed = (ex, appKey) =>
+                logger.LogWarning(ex,
+                    "AppManager 延迟释放旧应用上下文失败（已忽略）：AppKey={AppKey}",
+                    AppKeyValidator.ToSafeText(appKey));
+        }
+
+        /// <inheritdoc />
+        public void Dispose() => AppManagerDiagnostics.Unwire(this);
+    }
 
     /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
@@ -993,6 +1020,38 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// 注册宿主的 <see cref="IAppScopeSwitcher"/> 实现，并以<b>同一实例</b>暴露
+    /// <see cref="IAppContextHolder"/> 与 <see cref="IAppScopeSwitcher"/> 两个契约（AM2-13）。
+    /// </summary>
+    /// <typeparam name="TSwitcher">切换器实现类型（须为无状态/单例语义）。</typeparam>
+    /// <remarks>
+    /// <para>
+    /// <b>唯一真实缺口</b>：宿主实现 <see cref="IAppScopeSwitcher"/> 后，只能按具体类型或
+    /// <see cref="IAppContextHolder"/> 解析，<b>无法按该契约解析</b>（<c>IAppScopeSwitcher</c> 从未被注册）。
+    /// 注册顺序问题已由 G7 的 <see cref="DelegatingAppContextHolder"/> 治本，本方法不再重复解决。
+    /// </para>
+    /// <para>
+    /// <b>为什么必须"同一实例"</b>：若 <see cref="IAppContextHolder"/> 与 <see cref="IAppScopeSwitcher"/>
+    /// 各解析出一个实例，就会出现"两个 <see cref="AsyncLocal{T}"/> 互不可见"—— 这正是 G7 治过的病，
+    /// 不能在这里重新种回来。故两处都转发到同一个 <typeparamref name="TSwitcher"/> 单例。
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 <c>null</c>。</exception>
+    public static IServiceCollection AddMudHttpAppScopeSwitcher<TSwitcher>(this IServiceCollection services)
+        where TSwitcher : class, IAppScopeSwitcher
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.AddSingleton<TSwitcher>();
+        services.AddSingleton<IAppContextHolder>(sp => sp.GetRequiredService<TSwitcher>());
+        services.AddSingleton<IAppScopeSwitcher>(sp => sp.GetRequiredService<TSwitcher>());
+        return services;
+    }
+
+    /// <summary>
     /// 注册默认的应用上下文持有器（<b>委托式适配器</b><see cref="DelegatingAppContextHolder"/>，单例）。
     /// </summary>
     /// <remarks>
@@ -1006,17 +1065,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <see cref="IAppContextHolder.Current"/>（get）/ <c>SwitchTo</c> / <c>BeginScope</c>；
     /// 无其它实现时回退为内部的 <see cref="AsyncLocalAppContextSwitcher"/>（单应用零配置行为不变）。
     /// </para>
-    /// <para>
-    /// ⇒ 消费方注册自定义持有器/切换器的<b>顺序不再影响语义</b>：在其<b>之后</b>注册（非 <c>TryAdd</c>，即"最后注册者胜"）
-    /// 同样会被转发到；框架也不再抢先占用容器内唯一的持有器槽位（消除了"两个 <c>AsyncLocal</c> 互不可见"的根因）。
-    /// </para>
-    /// <para>
-    /// 使用 <c>TryAddSingleton</c>，不会覆盖宿主已注册的自定义实现（宿主<b>先</b>注册时本方法为 no-op）。
-    /// 目标在首次访问时解析并缓存 ⇒ 宿主注册须在首次访问上下文（通常为首次创建客户端/首个请求）之前完成。
-    /// </para>
     /// </remarks>
-    /// <param name="services">服务集合。</param>
-    /// <returns>服务集合（链式调用）。</returns>
     public static IServiceCollection AddMudHttpAppContextHolder(this IServiceCollection services)
     {
         if (services == null)
@@ -1027,11 +1076,23 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 注册 URL 验证器到 DI 容器（C4-P2：DI 化过渡）。
+    /// 注册 URL 验证器到 DI 容器。
     /// </summary>
     /// <remarks>
-    /// 注册后，<see cref="UrlValidator"/> 静态方法的调用将被转发到 DI 实例。
-    /// 未注册时静态方法退化为进程级私有实例，行为与现状等价。
+    /// <para>
+    /// 注册后，<see cref="EnhancedHttpClient"/> 的三条校验路径（绝对 URL、相对 URL 的 BaseAddress、
+    /// 重定向逐跳复验）都经 <see cref="EnhancedHttpClientOptions.UrlValidator"/> 调用该实现。
+    /// 未注册时回落 <see cref="UrlValidator"/> 静态门面（进程级策略），行为与历史一致。
+    /// </para>
+    /// <para>
+    /// <b>AM2-02 勘误</b>：此前本文档声称"<see cref="UrlValidator"/> 静态方法的调用将被转发到 DI 实例"，
+    /// 该转发<b>从未实现</b>，宿主注册的自定义实现被静默忽略。现由
+    /// <c>CreateEnhancedClient</c> 从容器回填 <see cref="EnhancedHttpClientOptions.UrlValidator"/> 真正接入。
+    /// </para>
+    /// <para>
+    /// 若需临时恢复 3.1.0 及之前的行为（自定义实现不生效），<b>移除本方法或自定义实现的注册</b>即可 ——
+    /// DI 会回退到 <see cref="DefaultUrlValidator"/> 或直接回落到静态门面，语义精确，不需要额外开关。
+    /// </para>
     /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <returns>服务集合（链式调用）。</returns>
@@ -1048,6 +1109,15 @@ public static class HttpClientServiceCollectionExtensions
     {
         var factory = sp.GetRequiredService<IHttpClientFactory>();
         var encryptionProvider = sp.GetService<IEncryptionProvider>();
+
+        // AM2-15：客户端名同时用作 keyed service 键与日志字段；不合规（空格/中文等）只告警不阻断。
+        // 放在"首个客户端创建时"与 AllowedDomainsReloader / SsrfStrictModeAllowlistStartupCheck 同惯例。
+        if (!AppKey.IsValid(clientName))
+        {
+            var nameLogger = sp.GetService<ILoggerFactory>()?.CreateLogger("Mud.HttpUtils.HttpClient");
+            if (nameLogger is not null)
+                MudHttpClientLog.NonConformingClientNameWarning(nameLogger, AppKey.ToSafeText(clientName));
+        }
 
         // CFG-01：以编程式配置（IOptions<EnhancedHttpClientOptions>）为基线克隆出「每客户端独立实例」，
         // 修正原实现 new EnhancedHttpClientOptions() 丢弃全部编程式配置（RequestBodySerialization /
@@ -1066,6 +1136,8 @@ public static class HttpClientServiceCollectionExtensions
         // （DefaultHttpRequestExecutor）行为一致 —— 否则"默认擦除"只覆盖一半调用面。
         // 与相邻行同口径：服务依赖来自容器，优先级高于编程式配置。
         options.ExceptionRedactor = sp.GetService<IExceptionRedactor>();
+        // AM2-02：容器级 URL 验证器（SSRF 白名单）。null ⇒ EnhancedHttpClient 回落静态门面。
+        options.UrlValidator = sp.GetService<IUrlValidator>();
 
         // CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
         _ = sp.GetService<AllowedDomainsReloader>();

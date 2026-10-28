@@ -203,6 +203,13 @@ namespace TestNamespace.Internal
 
             var __url = $"/token/{System.Uri.EscapeDataString(access_token)}";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
+#if NETSTANDARD2_0
+#pragma warning disable CS0618 // netstandard2.0 无 HttpRequestMessage.Options，只能写已过时的 Properties
+            __httpRequest.Properties[global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey] = __appContext.AppKey;
+#pragma warning restore CS0618
+#else
+            __httpRequest.Options.Set(new System.Net.Http.HttpRequestOptionsKey<string>(global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey), __appContext.AppKey);
+#endif
 
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,

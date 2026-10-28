@@ -34,19 +34,58 @@ public partial class DefaultAppManager<TAppContext>
         // 原"二次读取"循环两次迭代读取同一组变量（除外部改写外行为完全一致），
         // 并不能容忍"默认应用刚被移除"的窗口。改为锁内收敛：从仍存在的应用里选一个作为新默认值，
         // 只在确实无任何应用时才抛出。
+        // AM2-04：回退候选纳入"仅声明"的懒加载项（不在此处物化，避免锁内执行用户工厂）；
+        // 选中声明态键后下一次 GetDefaultApp 会经上面的 TryMaterializeLazy 正常物化。
+        string? pickedKey = null;
         lock (_defaultKeyLock)
         {
-            foreach (var candidate in _registry.EnumerateKeys())
-            {
-                if (_registry.TryGet(candidate, out var fallbackContext))
-                {
-                    Volatile.Write(ref _defaultAppKey, candidate);
-                    return fallbackContext!;
-                }
-            }
+            pickedKey = PickFallbackKey();
+            if (pickedKey is not null)
+                Volatile.Write(ref _defaultAppKey, pickedKey);
+        }
+
+        if (pickedKey is not null)
+        {
+            // AM2-11：回退改变了默认应用指向 ⇒ 可观测。事件在锁外发布，避免订阅者在持锁状态下回调管理器。
+            RaiseDefaultAppChanged(pickedKey);
+
+            if (_registry.TryGet(pickedKey, out var fallbackContext))
+                return fallbackContext!;
+
+            // 选中的是"仅声明"的懒加载键：正常物化路径（再走一次即可，不会重入本回退段）。
+            if (TryMaterializeLazy(pickedKey, out var materialized))
+                return materialized;
         }
 
         throw new InvalidOperationException("默认应用已被移除或未注册，请重新调用 SetDefaultApp 指定默认应用。");
+    }
+
+    /// <summary>
+    /// 选出"回退默认应用"的候选键：优先已物化的应用，其次按序数序取"仅声明"的懒加载键（<b>不物化</b>）。
+    /// </summary>
+    /// <returns>候选键；无任何可用应用时返回 <c>null</c>。</returns>
+    /// <remarks>
+    /// <b>AM2-04</b>：此前 <see cref="GetDefaultApp"/> 与 <see cref="RemoveApp"/> 两处回退各自枚举
+    /// <c>_registry</c>，导致"仅剩懒加载声明"时默认键被置空 ⇒ <c>HasApp</c> 为 <c>true</c> 但
+    /// <c>GetDefaultApp</c> 抛"未设置默认应用"，后续全部请求硬失败。本方法为二者<b>唯一</b>候选来源。
+    /// </remarks>
+    private string? PickFallbackKey()
+    {
+        foreach (var candidate in _registry.EnumerateKeys())
+        {
+            if (_registry.TryGet(candidate, out _))
+                return candidate;
+        }
+
+        // 声明态：序数排序保证确定性与可测试性（不物化 ⇒ 不在锁内跑用户代码）。
+        string? best = null;
+        foreach (var declared in _lazyApps.Keys)
+        {
+            if (best is null || string.CompareOrdinal(declared, best) < 0)
+                best = declared;
+        }
+
+        return best;
     }
 
     /// <inheritdoc />
@@ -58,7 +97,17 @@ public partial class DefaultAppManager<TAppContext>
     /// G3：改为 <c>virtual</c>；默认实现委托给 <see cref="TrySetDefaultAppKeyCore"/>（保持既有"必须已注册"语义）。
     /// </remarks>
     public virtual bool TrySetDefaultApp(string appKey)
-        => TrySetDefaultAppKeyCore(appKey, requireRegistered: true);
+    {
+        var before = Volatile.Read(ref _defaultAppKey);
+        if (!TrySetDefaultAppKeyCore(appKey, requireRegistered: true))
+            return false;
+
+        var after = Volatile.Read(ref _defaultAppKey);
+        if (!string.Equals(before, after, StringComparison.Ordinal))
+            RaiseDefaultAppChanged(after!);
+
+        return true;
+    }
 
     /// <summary>
     /// G3/B8：默认应用键的<b>原子写入</b>入口，可按需跳过"必须已注册"校验。
@@ -93,6 +142,20 @@ public partial class DefaultAppManager<TAppContext>
         Volatile.Write(ref _defaultAppKey, appKey);
         return true;
     }
+
+    /// <summary>
+    /// 默认应用键发生实际变化时发布 <see cref="ConfigurationChanged"/>（<c>Updated</c> + <see cref="AppConfigurationChangedEventArgs.IsDefaultAppChanged"/>）。
+    /// </summary>
+    /// <param name="appKey">新的默认应用键。</param>
+    /// <remarks>
+    /// <b>AM2-11</b>：默认应用切换此前完全不可观测。事件<b>不</b>在 <see cref="TrySetDefaultAppKeyCore"/> 内发布 ——
+    /// 那会让 <see cref="RegisterApp"/>（<c>isDefault: true</c>）与 <see cref="RegisterLazy"/> 各自多发一条
+    /// "默认应用已变更"事件，且发布时机早于这两条路径的索引重建（订阅方会看到不一致视图）。
+    /// 因此统一在"公开入口"补发。
+    /// </remarks>
+    private void RaiseDefaultAppChanged(string appKey)
+        => OnConfigurationChanged(new AppConfigurationChangedEventArgs(
+            appKey, AppConfigurationChangeType.Updated, isDefaultAppChanged: true));
 
     /// <inheritdoc />
     public virtual void SetDefaultApp(string appKey)

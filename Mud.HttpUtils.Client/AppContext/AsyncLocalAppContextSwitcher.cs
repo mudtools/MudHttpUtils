@@ -9,22 +9,69 @@ namespace Mud.HttpUtils;
 
 
 /// <inheritdoc/>
+/// <remarks>
+/// <para>
+/// <b>作用域栈实现（AM2-08 / ADR-005）</b>：环境值不再是"当前上下文 + 归属判定"，而是
+/// <see cref="AsyncLocal{T}"/> 持有的<b>不可变链表栈顶</b>（每个节点含 Context、Parent、Disposed）。
+/// <see cref="Current"/> 沿链回退到最近的未释放节点。
+/// </para>
+/// <para>
+/// <b>为什么必须改</b>：旧实现用 <c>ReferenceEquals(Current, owner)</c> 决定是否回滚 ——
+/// 乱序释放（先释放外层）时，中间应用的节点释放时会回滚到"自己的 previous"，
+/// 终态残留他人应用上下文（可能串租户）。该错误终态曾被测试<b>固化</b>为"已声明行为"。
+/// 栈式实现下每个节点只负责"标记自己已释放"，回退由读取端沿链完成 ⇒ 乱序释放也回到正确祖先，
+/// 且<b>永远不会把某个上下文写进不属于它的执行上下文</b>。
+/// </para>
+/// <para>
+/// <b>热路径成本</b>：无释放发生时 <see cref="Current"/> 仍是"1 次 AsyncLocal 读 + 1 次 Disposed 判定"，
+/// 与旧实现等价；只有链上有已释放节点时才需要额外跳数（嵌套深度实际 ≤3）。
+/// </para>
+/// <para>
+/// <b>跨执行上下文释放</b>：节点对象可能被其它异步流共享，释放只把该节点置为 Disposed，
+/// 不写入任何 <c>Current</c> ⇒ 收敛方向与旧实现一致（fail-closed，不向无关异步流注入上下文）。
+/// </para>
+/// </remarks>
 public class AsyncLocalAppContextSwitcher : IAppContextHolder
 {
-    private readonly AsyncLocal<IMudAppContext?> _context = new();
+    /// <summary>作用域栈节点（不可变链；<see cref="Disposed"/> 是唯一的可变位）。</summary>
+    private sealed class ScopeNode(IMudAppContext context, ScopeNode? parent)
+    {
+        public IMudAppContext Context { get; } = context;
+
+        public ScopeNode? Parent { get; } = parent;
+
+        /// <summary>是否已释放。由创建它的作用域写入，读取端沿链跳过。</summary>
+        public bool Disposed;
+    }
+
+    private readonly AsyncLocal<ScopeNode?> _stack = new();
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 沿链返回最近的未释放节点。<c>init</c> 写入会<b>整体替换</b>栈顶（等价于"从根开始"），
+    /// 与 <see cref="SwitchTo"/> 的"无作用域切换"语义一致。
+    /// </remarks>
     public IMudAppContext? Current
     {
-        get => _context.Value;
-        init => _context.Value = value;
+        get
+        {
+            var node = _stack.Value;
+            while (node is not null && node.Disposed)
+                node = node.Parent;
+
+            return node?.Context;
+        }
+        init => _stack.Value = value is null ? null : new ScopeNode(value, null);
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <b>无作用域切换</b>：把栈顶整体替换为一个"匿名节点"（<c>Parent = null</c>），
+    /// 因此之前建立的 <see cref="BeginScope"/> 作用域在释放时<b>不会</b>把值写回 ——
+    /// 这正是 <c>UseApp</c> 的危险性所在（不会自动归还上下文），推荐改用 <c>UseAppScope</c>。
+    /// </remarks>
     public void SwitchTo(IMudAppContext? context)
-    {
-        _context.Value = context;
-    }
+        => _stack.Value = context is null ? null : new ScopeNode(context, null);
 
     /// <inheritdoc/>
     public IDisposable BeginScope(IMudAppContext context)
@@ -32,22 +79,15 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
         if (context == null)
             throw new ArgumentNullException(nameof(context));
 
-        var previous = _context.Value;
-        // B8：记录本作用域写入的值，用于释放时归属判定。
-        var owner = context;
-        _context.Value = context;
+        var node = new ScopeNode(context, _stack.Value);
+        _stack.Value = node;
 
-        return new AppContextScope(previous, owner, this);
+        return new AppContextScope(node);
     }
 
-    private sealed class AppContextScope(
-    IMudAppContext? previous,
-    IMudAppContext owner,
-    AsyncLocalAppContextSwitcher switcher) : IDisposable
+    /// <summary>作用域句柄：释放时只把<b>自己的节点</b>置为已释放（幂等）。</summary>
+    private sealed class AppContextScope(ScopeNode node) : IDisposable
     {
-        private readonly IMudAppContext? _previous = previous;
-        private readonly IMudAppContext _owner = owner;
-        private readonly AsyncLocalAppContextSwitcher _switcher = switcher;
         private int _disposed;
 
         public void Dispose()
@@ -55,13 +95,9 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
                 return;
 
-            // B8：仅当环境上下文仍等于本作用域写入的值时才回滚。
-            // 跨执行上下文释放（如 Task.Run(() => scope.Dispose())）时不会把"他人的当前值"改写成陈旧值；
-            // 目标流 Current 为 null（从未设置过上下文）时同样不回写——把 previous 注入无关异步流
-            // 会让其后续请求串到 previous 的应用（令牌、per-app 策略、缓存 scope 随之错位），
-            // 多租户隔离一律 fail-closed：宁可残留 null，由宿主显式 UseDefaultApp/BeginScope 收敛。
-            if (ReferenceEquals(_switcher._context.Value, _owner))
-                _switcher._context.Value = _previous;
+            // 仅标记本节点：不读取、也不写入任何 Current。
+            // ⇒ 乱序释放时外层节点仍能沿链回到正确祖先；跨 EC 释放也不会污染他人上下文。
+            node.Disposed = true;
         }
     }
 }

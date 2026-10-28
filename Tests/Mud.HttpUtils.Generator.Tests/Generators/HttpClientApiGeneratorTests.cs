@@ -1334,8 +1334,8 @@ namespace TestNamespace
         generatedCode.Should().NotBeNull();
         generatedCode.Should().Contain("public IDisposable UseDefaultAppScope()",
             "默认模式下应生成 UseDefaultAppScope() 方法");
-        generatedCode.Should().Contain("_appManager?.GetDefaultApp() ?? _defaultAppContext",
-            "默认模式下 UseDefaultAppScope() 应使用 _appManager 回退到 _defaultAppContext");
+        generatedCode.Should().Contain("var context = __ResolveDefaultApp();",
+            "AM2-01：默认模式下 UseDefaultAppScope() 必须经统一解析辅助，而非已失效的 ?? 表达式");
     }
 
     [Fact]
@@ -1487,7 +1487,10 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithDefaultMode_UseDefaultAppFallsBackToDefaultAppContext()
     {
-        // 验证默认模式下 UseDefaultApp() 在 _appManager 为 null 时回退到 _defaultAppContext
+        // AM2-01：验证默认模式下默认应用解析经 __ResolveDefaultApp() ——
+        // 优先跟随注册表默认键（支持运行期热切换），键为空/不可解析时回退构造期绑定值。
+        // 原产物为 `_appManager?.GetDefaultApp() ?? _defaultAppContext`：GetDefaultApp() 在
+        // "管理器非空但无默认应用"时抛异常，异常直接穿出 ⇒ ?? 右侧是死代码，回退永不生效。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -1506,8 +1509,14 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNull();
-        generatedCode.Should().Contain("_appManager?.GetDefaultApp() ?? _defaultAppContext",
-            "默认模式下 UseDefaultApp() 和 UseDefaultAppScope() 应在 _appManager 为 null 时回退到 _defaultAppContext");
+        generatedCode.Should().Contain("private IMudAppContext __ResolveDefaultApp()",
+            "默认模式应发射统一的默认应用解析辅助方法");
+        generatedCode.Should().Contain("_appManager.TryGetApp(__defaultKey, out var __resolved)",
+            "解析必须用 TryGetApp（未命中不抛），而不是 GetApp/GetDefaultApp（会抛，无法参与回退）");
+        generatedCode.Should().Contain("return _defaultAppContext;",
+            "键为空或不可解析时必须回退构造期绑定值");
+        generatedCode.Should().NotContain("_appManager?.GetDefaultApp() ?? _defaultAppContext",
+            "原表达式在管理器非空时右侧不可达（死代码），不得回退到该写法");
     }
 
     #endregion

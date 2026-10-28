@@ -12,12 +12,11 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// C4-P2（双轨过渡）：本类将 <see cref="UrlValidator"/> 静态类的方法委托到 DI 实例上。
-/// 静态方法保留为<b>门面</b>：内部将调用转发到 <see cref="UrlValidator.Instance"/>（DI 注册时赋值）；
-/// 未注册时退化为"进程级私有实例"，行为与现状等价。
+/// 本类把全部成员委托给 <see cref="UrlValidator"/> 静态实现 —— 它是"默认策略的适配器"，
+/// 不持有任何自己的状态。容器注册本类后，主链路会经
+/// <see cref="EnhancedHttpClientOptions.UrlValidator"/> 调用它，效果与直连静态门面逐位一致。
 /// </para>
 /// <para>
-/// 当前实现将所有调用委托回 <see cref="UrlValidator"/> 静态方法，保证既有逻辑零变更。
 /// 后续迭代可将 DNS 缓存、双桶、stripe 锁整体搬移到本类，逐步消除静态状态。
 /// </para>
 /// </remarks>

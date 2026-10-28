@@ -668,6 +668,13 @@ internal static partial class MudHttpClientLog
     public static void ClientConfigRebuildRequired(ILogger logger, string clientName, string items)
     => s_clientConfigRebuildRequired(logger, clientName, items, null);
 
+    // 客户端名不符合 appKey 规范（EventId 200，Warning）——AM2-15：只告警，不阻断。
+    private static readonly Action<ILogger, string, Exception?> s_nonConformingClientName =
+    LoggerMessage.Define<string>(LogLevel.Warning, new EventId(200, nameof(NonConformingClientNameWarning)),
+    "客户端名 {ClientName} 不符合应用标识规范（仅字母、数字、'.'、'_'、'-'，首字符为字母或数字，长度 ≤128）。该名称同时用作 keyed service 键与日志字段；不合规名称会让按规范生成/检索的诊断与配置节对不上。当前仅告警，不影响注册。");
+    public static void NonConformingClientNameWarning(ILogger logger, string clientName)
+    => s_nonConformingClientName(logger, clientName, null);
+
     private static readonly Action<ILogger, string, Exception?> s_tokenRecoverySkippedDuringRefresh =
     LoggerMessage.Define<string>(LogLevel.Debug, new EventId(186, nameof(TokenRecoverySkippedDuringRefresh)),
     "令牌刷新调用链上的 {Method} 请求被跳过 401 恢复（I2 熔断）—— 令牌端点不应挂载 TokenRecoveryDelegatingHandler。");

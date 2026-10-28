@@ -8,7 +8,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -29,23 +28,50 @@ namespace Mud.HttpUtils.Resilience;
 /// <param name="logger">日志记录器（可选）。</param>
 /// <param name="maxCachedApps">per-app 缓存上限，默认 1024。</param>
 /// <exception cref="ArgumentNullException">当 <paramref name="optionsFactory"/> 为 null 时抛出。</exception>
-public sealed class AppResiliencePolicyResolver(
-    Func<string, ResilienceOptions?> optionsFactory,
-    ILogger<AppResiliencePolicyResolver>? logger = null,
-    int maxCachedApps = 1024) : IAppResiliencePolicyResolver, IDisposable
+public sealed class AppResiliencePolicyResolver : IAppResiliencePolicyResolver, IDisposable
 {
-    private readonly Func<string, ResilienceOptions?> _optionsFactory = optionsFactory ?? throw new ArgumentNullException(nameof(optionsFactory));
-    private readonly ILogger _logger = logger ?? NullLogger<AppResiliencePolicyResolver>.Instance;
-    private readonly int _maxCachedApps = maxCachedApps > 0 ? maxCachedApps : 1024;
-
-    // 缓存 per-app 解析器实例；null 值使用哨兵对象表示，避免 ConcurrentDictionary 不支持 null 值的问题
-    private readonly ConcurrentDictionary<string, IResiliencePolicyResolver?> _resolvers = new();
-    private IDisposable? _optionsSubscription;
+    private readonly Func<string, ResilienceOptions?> _optionsFactory;
+    private readonly ILogger _logger;
+    private readonly int _maxCachedApps;
 
     /// <summary>
-    /// 用于表示"已查询但无专属策略"的哨兵标记，避免重复调用 _optionsFactory。
+    /// per-app 解析器缓存（AM2-18/19）：<see cref="BoundedAppCache{TValue}"/> 统一提供
+    /// "独立计数 + 容量上限 + 最旧淘汰 + 失效"，热路径命中零分配。
     /// </summary>
-    private static readonly IResiliencePolicyResolver _nullSentinel = new NullResiliencePolicyResolver();
+    /// <remarks>
+    /// <para>
+    /// <b>修复点</b>：此前用 <c>ConcurrentDictionary.Count</c>（O(n) 且取全部桶锁）+ 未缓存的
+    /// <c>GetOrAdd(key, lambda)</c>（每次未命中分配闭包）；且超限分支<b>每请求</b>
+    /// <c>new PollyResiliencePolicyProvider</c> ⇒ 熔断器每次归零，等于没有熔断。
+    /// </para>
+    /// <para>
+    /// 现在超限时淘汰最旧 25% 再插入 ⇒ 近期活跃应用的熔断状态保持连续。
+    /// </para>
+    /// </remarks>
+    private readonly BoundedAppCache<IResiliencePolicyResolver> _resolvers;
+
+    private IDisposable? _optionsSubscription;
+
+    /// <summary>"容量已满"告警的一次性闸门（避免每次未命中都刷日志）。</summary>
+    private int _cacheFullWarned;
+
+    /// <summary>初始化 <see cref="AppResiliencePolicyResolver"/> 实例。</summary>
+    /// <param name="optionsFactory">按 appKey 获取 <see cref="ResilienceOptions"/> 的工厂函数。返回 null 表示该应用无专属策略。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="maxCachedApps">per-app 缓存上限，默认 1024。</param>
+    /// <exception cref="ArgumentNullException">当 <paramref name="optionsFactory"/> 为 null 时抛出。</exception>
+    public AppResiliencePolicyResolver(
+        Func<string, ResilienceOptions?> optionsFactory,
+        ILogger<AppResiliencePolicyResolver>? logger = null,
+        int maxCachedApps = 1024)
+    {
+        _optionsFactory = optionsFactory ?? throw new ArgumentNullException(nameof(optionsFactory));
+        _logger = logger ?? NullLogger<AppResiliencePolicyResolver>.Instance;
+        _maxCachedApps = maxCachedApps > 0 ? maxCachedApps : 1024;
+
+        // 工厂委托在构造期固定一次（热路径零闭包分配）。
+        _resolvers = new BoundedAppCache<IResiliencePolicyResolver>(_maxCachedApps, CreateResolverOrNull);
+    }
 
     /// <inheritdoc />
     public IResiliencePolicyResolver? ResolveResolver(string appKey)
@@ -53,27 +79,17 @@ public sealed class AppResiliencePolicyResolver(
         if (string.IsNullOrEmpty(appKey))
             return null;
 
-        // D2 修复：防止外部可控 appKey 造成无界增长。
-        if (_resolvers.Count >= _maxCachedApps && !_resolvers.ContainsKey(appKey))
-        {
+        // 仅用于可观测性：真正的淘汰由 BoundedAppCache 内部完成（此处不参与判定）。
+        if (_resolvers.Count >= _maxCachedApps && Interlocked.Exchange(ref _cacheFullWarned, 1) == 0)
             MudHttpClientLog.AppResilienceCacheFull(_logger, _maxCachedApps);
-            // 超限时不缓存，直接调用工厂（fail-safe：不引入新状态）
-            var options = _optionsFactory(appKey);
-            if (options == null)
-                return null;
-            return CreateResolver(options);
-        }
 
-        var cached = _resolvers.GetOrAdd(appKey, key =>
-        {
-            var options = _optionsFactory(key);
-            if (options == null)
-                return _nullSentinel; // 使用哨兵标记"无专属策略"，避免重复调用工厂
+        return _resolvers.GetOrCreate(appKey);
+    }
 
-            return CreateResolver(options);
-        });
-
-        return ReferenceEquals(cached, _nullSentinel) ? null : cached;
+    private IResiliencePolicyResolver? CreateResolverOrNull(string appKey)
+    {
+        var options = _optionsFactory(appKey);
+        return options is null ? null : CreateResolver(options);
     }
 
     private IResiliencePolicyResolver CreateResolver(ResilienceOptions options)
@@ -88,10 +104,12 @@ public sealed class AppResiliencePolicyResolver(
     }
 
     /// <summary>清空指定应用的缓存（应用被注销/配置变更时调用）。</summary>
-    public bool Invalidate(string appKey) => _resolvers.TryRemove(appKey, out _);
+    /// <param name="appKey">应用标识。</param>
+    /// <returns>确实移除返回 <c>true</c>。</returns>
+    public bool Invalidate(string appKey) => _resolvers.Invalidate(appKey);
 
     /// <summary>清空全部 per-app 缓存。</summary>
-    public void InvalidateAll() => _resolvers.Clear();
+    public void InvalidateAll() => _resolvers.InvalidateAll();
 
     /// <summary>订阅弹性选项变更并清空 per-app 缓存，使 IOptionsMonitor 热更新对 per-app 策略生效。</summary>
     internal void SubscribeToOptionChanges(IOptionsMonitor<ResilienceOptions> monitor)
@@ -102,14 +120,4 @@ public sealed class AppResiliencePolicyResolver(
 
     /// <inheritdoc/>
     public void Dispose() => _optionsSubscription?.Dispose();
-
-    /// <summary>
-    /// 哨兵实现，仅用于标记"已查询但无专属策略"，不会被外部使用。
-    /// </summary>
-    private sealed class NullResiliencePolicyResolver : IResiliencePolicyResolver
-    {
-        public Func<Func<HttpRequestMessage, CancellationToken, Task<TResult>>, CancellationToken, Task<TResult>>?
-            ResolvePolicyWrapper<TResult>(ResilienceExecutionOptions options, HttpRequestMessage requestTemplate)
-            => null;
-    }
 }

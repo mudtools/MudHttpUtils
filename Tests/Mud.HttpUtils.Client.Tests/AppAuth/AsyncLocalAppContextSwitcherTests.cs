@@ -149,32 +149,73 @@ public class AsyncLocalAppContextSwitcherTests
         holder.Should().BeSameAs(_switcher);
     }
 
-    // ── F-08：AsyncLocal 作用域行为锁定（generator-review-fix-plan-2026-09-21 §1.8） ──
-    // 以下三个用例锁定的是「已声明行为」而非理想行为：修复乱序释放的全序问题需引入作用域栈
-    // （方案 §1.8 可选演进项，未排期）。若未来无意识变更导致断言失败，请先核对方案文档再动状态机。
+    // ── ADR-005：AsyncLocal 作用域栈行为锁定（AM2-08） ──
+    // 旧实现（"当前值 + 归属判定"）在乱序释放时会残留他人应用上下文，该错误终态曾被固化；
+    // 现改为链表栈，释放只标记节点、回退由读取端沿链完成 ⇒ 乱序释放同样回到正确祖先。
 
     /// <summary>
     /// 场景一（乱序释放）：s1(appA) → s2=BeginScope(appB) → s3=BeginScope(appC) → 先释放 s2 再释放 s3。
-    /// B8 归属判定：s2 释放时 Current=appC ≠ owner=appB → 跳过；s3 释放时 Current=appC == owner → 回滚到
-    /// s3.previous=appB。终态为 appB（正常嵌套语义应回到 appA）——此为已声明行为，乱序释放会打断回滚链。
+    /// 栈式实现：两个节点都只是被标记释放，Current 沿链回退到最近未释放节点 ⇒ 回到 <c>appA</c>。
     /// </summary>
+    /// <remarks>
+    /// <b>历史行为</b>：此前终态为 <c>appB</c>（回滚到 s3.previous），即"先释放外层"会把中间应用
+    /// 残留为当前上下文 —— 多租户下等于串租户。本用例即 AM2-08 的锚点断言。
+    /// </remarks>
     [Fact]
-    public void OutOfOrderDispose_RollbackChainBreaksAtAppB()
+    public void OutOfOrderDispose_ReturnsToOuterContext()
     {
         var appA = CreateTestContext("appA");
         var appB = CreateTestContext("appB");
         var appC = CreateTestContext("appC");
         _switcher.SwitchTo(appA);
 
-        var s2 = _switcher.BeginScope(appB); // previous=appA
-        var s3 = _switcher.BeginScope(appC); // previous=appB
+        var s2 = _switcher.BeginScope(appB);
+        var s3 = _switcher.BeginScope(appC);
 
-        s2.Dispose(); // 乱序：在 appC 环境下释放非 owner 作用域 → 跳过
-        s3.Dispose(); // Current=appC == owner → 回滚到 s3.previous=appB
+        s2.Dispose(); // 乱序：先释放内层（appB）
+        s3.Dispose(); // 再释放外层（appC）
 
-        _switcher.Current.Should().BeSameAs(appB,
-            "B8：乱序释放跳过非 owner 作用域、owner 等值时回滚——回滚链断裂后终态残留 appB（已声明行为，" +
-            "修复需作用域栈方案，见 generator-review-fix-plan §1.8 演进项）");
+        _switcher.Current.Should().BeSameAs(appA,
+            "ADR-005：乱序释放后必须沿链回到正确祖先（appA），不得残留 appB/appC");
+    }
+
+    /// <summary>
+    /// ADR-005 补充：仅释放内层作用域时，当前值回到其外层（正序/乱序均成立）。
+    /// </summary>
+    [Fact]
+    public void DisposeInner_ThenCurrentReturnsToOuterContext()
+    {
+        var appA = CreateTestContext("appA");
+        var appB = CreateTestContext("appB");
+        _switcher.SwitchTo(appA);
+
+        var outer = _switcher.BeginScope(appB);
+        var inner = _switcher.BeginScope(CreateTestContext("appC"));
+
+        inner.Dispose();
+        _switcher.Current.Should().BeSameAs(appB, "释放内层后应回到外层作用域的上下文");
+
+        outer.Dispose();
+        _switcher.Current.Should().BeSameAs(appA, "全部释放后应回到作用域建立前的上下文");
+    }
+
+    /// <summary>
+    /// ADR-005 补充：<c>SwitchTo</c>（无作用域切换）整体替换栈顶，随后释放旧作用域不得把值写回。
+    /// </summary>
+    [Fact]
+    public void SwitchToInsideScope_ThenDispose_KeepsSwitch()
+    {
+        var appA = CreateTestContext("appA");
+        var appB = CreateTestContext("appB");
+        var appC = CreateTestContext("appC");
+        _switcher.SwitchTo(appA);
+
+        var scope = _switcher.BeginScope(appB);
+        _switcher.SwitchTo(appC);
+
+        scope.Dispose();
+        _switcher.Current.Should().BeSameAs(appC,
+            "SwitchTo 是无作用域切换：替换栈顶后旧作用域释放不得把 appB/appA 写回");
     }
 
     /// <summary>

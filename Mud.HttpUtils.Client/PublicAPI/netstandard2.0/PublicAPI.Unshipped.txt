@@ -78,3 +78,6 @@ Mud.HttpUtils.MemoryUserTokenStore.CompareExchangeRefreshTokenAsync(string! user
 Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor
 Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor.DefaultSensitiveFieldExceptionRedactor() -> void
 Mud.HttpUtils.DefaultSensitiveFieldExceptionRedactor.Redact(Mud.HttpUtils.ApiException! exception) -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.UrlValidator.get -> Mud.HttpUtils.IUrlValidator?
+Mud.HttpUtils.EnhancedHttpClientOptions.UrlValidator.set -> void
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpAppScopeSwitcher<TSwitcher>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

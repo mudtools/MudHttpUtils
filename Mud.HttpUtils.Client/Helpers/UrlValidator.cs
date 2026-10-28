@@ -8,9 +8,11 @@ namespace Mud.HttpUtils;
 /// </summary>
 public static class UrlValidator
 {
-    // C4-P2：DI 化过渡桥接。DI 注册时赋值，静态方法转发到 DI 实例；
-    // 未注册时为 null，退化为进程级私有实例（行为与现状等价）。
-    internal static IUrlValidator? Instance;
+    // AM2-02：此处原有 `internal static IUrlValidator? Instance;` 字段，被注释描述为
+    // "DI 注册时赋值、静态方法转发到 DI 实例" —— 实际上既**无任何写入点**也**无任何读取点**
+    // （全仓唯一命中是 DefaultUrlValidator 注释里的 <see cref>），是纯粹的误导性状态。
+    // 容器级验证器的真正注入点是 EnhancedHttpClientOptions.UrlValidator（见 AM2-02）。
+    // 本静态类保持"进程级默认策略"的定位：无 DI 时的兜底实现，不再假装是 DI 桥接。
 
     // M1-#4：白名单改为不可变快照 + Volatile.Write 原子替换。
     // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
@@ -321,9 +323,10 @@ public static class UrlValidator
             var allowedSnapshot = GetAllowedDomains();
             if (allowedSnapshot.Count > 0)
             {
-                var allowedDomains = string.Join(", ", allowedSnapshot.OrderBy(d => d));
+                // C8：不在此处回显白名单原文 —— 异常消息会进日志/告警/工单，域名列表本身即租户拓扑信息。
+                // 只报数量；需要明细请显式调用 GetAllowedDomains()（受调用方自己的可见性约束）。
                 throw new InvalidOperationException(
-                $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
+                $"域名 '{host}' 不在白名单中（当前已登记 {allowedSnapshot.Count} 个白名单域名）。" +
                 "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
             }
 
@@ -387,9 +390,10 @@ public static class UrlValidator
             var allowedSnapshot = GetAllowedDomains();
             if (allowedSnapshot.Count > 0)
             {
-                var allowedDomains = string.Join(", ", allowedSnapshot.OrderBy(d => d));
+                // C8：不在此处回显白名单原文 —— 异常消息会进日志/告警/工单，域名列表本身即租户拓扑信息。
+                // 只报数量；需要明细请显式调用 GetAllowedDomains()（受调用方自己的可见性约束）。
                 throw new InvalidOperationException(
-                $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
+                $"域名 '{host}' 不在白名单中（当前已登记 {allowedSnapshot.Count} 个白名单域名）。" +
                 "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
             }
 

@@ -16,3 +16,5 @@ Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_DefaultAppFallbac
 Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_SetDefaultAppGuard() -> void
 Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_EventIsolation() -> void
 Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_LazyRegistrationSemantics() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_LazyDeclaredIsFirstClass() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_DefaultChangeRaisesEvent() -> void

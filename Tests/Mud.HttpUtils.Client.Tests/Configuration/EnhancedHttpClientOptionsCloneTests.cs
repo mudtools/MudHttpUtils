@@ -135,6 +135,8 @@ public class EnhancedHttpClientOptionsCloneTests
             return new[] { Mock.Of<IHttpResponseInterceptor>() };
         if (propertyType == typeof(ISensitiveDataMasker)) return Mock.Of<ISensitiveDataMasker>();
         if (propertyType == typeof(IAppAccessAuthorizer)) return Mock.Of<IAppAccessAuthorizer>();
+        // AM2-02：URL 验证器（DI 解析面属性，Clone 必须拷贝）。
+        if (propertyType == typeof(IUrlValidator)) return Mock.Of<IUrlValidator>();
         if (propertyType == typeof(IExceptionRedactor)) return Mock.Of<IExceptionRedactor>();
         if (propertyType == typeof(JavaScriptEncoder)) return JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 #if NET8_0_OR_GREATER

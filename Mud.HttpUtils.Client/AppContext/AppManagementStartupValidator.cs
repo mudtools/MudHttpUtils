@@ -64,10 +64,17 @@ internal sealed class AppManagementStartupValidator : IHostedService
         }
 
         var appManager = _serviceProvider.GetService<IAppManager<IMudAppContext>>();
-        if (appManager == null)
+
+        // AM2-06：此前只判 == null，而源生成器会为默认模式无条件 TryAddSingleton 一个
+        // "空的 DefaultAppManager"（HttpInvokeRegistrationGenerator），于是 RequireAppManager=true
+        // 时自检**恒通过**，缺陷延后到首个请求才暴露。现按"未注册 **或** 无任何可用应用"判定。
+        // 可用性口径由 AppManagerProbe 单点提供（与健康检查同源）。
+        if (!AppManagerProbe.HasAnyUsableApp(appManager))
         {
             Add(fatal, warnings, _options.RequireAppManager,
-            "IAppManager<IMudAppContext> 未注册。应用切换（UseApp/BeginScope）不可用，请注册 DefaultAppManager<IMudAppContext> 或自定义实现。");
+            "IAppManager<IMudAppContext> 未注册或未注册任何可用应用（源生成器可能自动注册了空的 DefaultAppManager；"
+            + "仅以 RegisterLazy 声明而未设默认应用同样视为不可用）。"
+            + "请显式注册应用管理器并调用 RegisterApp，或 RegisterLazy(appKey, factory, isDefault: true)。");
         }
 
         var authorizer = _serviceProvider.GetService<IAppAccessAuthorizer>();

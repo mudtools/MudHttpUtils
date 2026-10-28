@@ -89,6 +89,9 @@ public abstract class AppManagerCompliance<TAppContext>
         Verify_SetDefaultAppGuard();
         Verify_EventIsolation();
         Verify_LazyRegistrationSemantics();
+        // ADR-004 / AM2-11（2026-10-28 方案）：下游升级后可直接自查两条新不变量。
+        Verify_LazyDeclaredIsFirstClass();
+        Verify_DefaultChangeRaisesEvent();
     }
 
     /// <summary>注册 → GetApp/GetAllApps 往返一致；未注册键 GetApp 抛出。</summary>
@@ -247,6 +250,72 @@ public abstract class AppManagerCompliance<TAppContext>
 
         Check(manager.RemoveApp("lazy-app"), "移除懒加载声明应返回 true");
         Check(!manager.HasApp("lazy-app"), "移除后不得因懒加载声明复活");
+    }
+
+    /// <summary>
+    /// <b>ADR-004</b>：懒加载声明是"一等公民" —— <c>HasApp</c>/<c>TryGetApp</c>/<c>UpdateApp</c>/默认回退
+    /// 四项必须同源（"已声明即存在"）。被测管理器不支持懒加载时静默跳过。
+    /// </summary>
+    /// <remarks>
+    /// 覆盖的缺陷：<c>HasApp</c> 认声明、<c>GetApp</c> 会物化，但 <c>UpdateApp</c> 与默认回退只查注册表
+    /// ⇒ 同一时刻"存在但无法更新"，且默认应用被移除后回退键为空 ⇒ 后续全部请求硬失败。
+    /// </remarks>
+    public void Verify_LazyDeclaredIsFirstClass()
+    {
+        var manager = CreateManager();
+        if (!TryRegisterLazy(manager, "lazy-declared", () => CreateContext("lazy-declared"), isDefault: true))
+            return;   // 被测实现无懒加载面：跳过
+
+        Check(manager.HasApp("lazy-declared"), "HasApp 必须认\"仅声明\"的懒加载项");
+        Check(string.Equals(manager.DefaultAppKey, "lazy-declared", StringComparison.Ordinal),
+            "RegisterLazy(isDefault: true) 必须设置默认键");
+
+        // 更新：必须在任何物化之前执行 —— 这才是"声明态 → 物化态"的跃迁路径。
+        var replacement = CreateContext("lazy-declared-v2");
+        try
+        {
+            manager.UpdateApp("lazy-declared", replacement);
+        }
+        catch (InvalidOperationException)
+        {
+            Fail("UpdateApp 必须支持\"仅声明未物化\"的懒加载键（HasApp 为 true 时不应报\"未找到应用\"）");
+            return;
+        }
+
+        Check(ReferenceEquals(manager.GetApp("lazy-declared"), replacement),
+            "UpdateApp 后取到的必须是新上下文（声明态已升级为物化态）");
+
+        // 默认回退：仅剩懒加载声明时，移除默认应用必须回退到声明键而不是置空。
+        var manager2 = CreateManager();
+        manager2.RegisterApp("eager", CreateContext("eager"), isDefault: true);
+        if (!TryRegisterLazy(manager2, "lazy-only", () => CreateContext("lazy-only")))
+            return;
+
+        manager2.RemoveApp("eager");
+        Check(string.Equals(manager2.DefaultAppKey, "lazy-only", StringComparison.Ordinal),
+            "移除默认应用后，回退候选必须纳入\"仅声明\"的懒加载键（否则默认键被置空 ⇒ 后续请求全部失败）");
+    }
+
+    /// <summary>
+    /// <b>AM2-11</b>：默认应用切换必须可观测（<see cref="AppConfigurationChangedEventArgs.IsDefaultAppChanged"/>）。
+    /// </summary>
+    public void Verify_DefaultChangeRaisesEvent()
+    {
+        var manager = CreateManager();
+        manager.RegisterApp("app-a", CreateContext("app-a"), isDefault: true);
+        manager.RegisterApp("app-b", CreateContext("app-b"));
+
+        var defaultChanged = 0;
+        manager.ConfigurationChanged += (_, e) =>
+        {
+            if (e.IsDefaultAppChanged)
+                Interlocked.Increment(ref defaultChanged);
+        };
+
+        manager.SetDefaultApp("app-b");
+
+        Check(defaultChanged == 1, "SetDefaultApp 必须发布恰好一次 IsDefaultAppChanged=true 的事件");
+        Check(string.Equals(manager.DefaultAppKey, "app-b", StringComparison.Ordinal), "默认键应已切换到 app-b");
     }
 
     private void Check(bool condition, string message)

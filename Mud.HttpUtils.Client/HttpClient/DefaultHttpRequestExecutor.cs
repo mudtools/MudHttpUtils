@@ -86,6 +86,8 @@ public class DefaultHttpRequestExecutor(
     private readonly long _maxSuccessResponseBytes = maxSuccessResponseBytes;
     // M2-#18：日志脱敏掩码器（与 EnhancedHttpClient 同一回退链 MessageSanitizer）
     private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
+    // AM2-05：缺少应用上下文告警的一次性闸门（实例级 ⇒ 每宿主一次）
+    private int _warnedMissingContext;
 #if NET6_0_OR_GREATER
     private readonly Version? _httpVersion = httpVersion;
     private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy = httpVersionPolicy;
@@ -93,29 +95,124 @@ public class DefaultHttpRequestExecutor(
     private readonly Dictionary<string, object?>? _httpRequestMessageOptions = httpRequestMessageOptions;
 
     /// <summary>
+    /// 解析当前请求的应用维度键。优先级：<b>请求属性</b> → 环境上下文 → 默认应用。
+    /// </summary>
+    /// <param name="request">当前请求（生成代码在方法入口写入 appKey；为 <c>null</c> 时跳过第一级）。</param>
+    /// <returns>应用键；三级都不可得时返回 <c>null</c>。</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>AM2-12</b>：生成代码在<b>方法入口</b>捕获 <c>__appContext</c>，而本执行器此前在<b>执行期</b>
+    /// 重读 <c>holder.Current</c>。二者在"作用域提前释放 / 跨 <c>IAsyncEnumerable</c> 流式枚举"场景下不一致，
+    /// 导致 B 应用的响应被写入 A 应用的缓存维度与熔断作用域。现在生成代码把方法入口的 appKey 写进
+    /// 请求属性，本方法优先读取它 ⇒ 方法入口与执行期<b>同一个</b>应用维度。
+    /// </para>
+    /// <para>
+    /// <b>AM2-12（合并原 AM2-20）</b>：本方法是唯一解析点；<see cref="StampResilienceAppKey"/> 把结果
+    /// 写回请求属性，后续缓存键路径复用该值，每请求最多一次默认应用解析（原为 3 次）。
+    /// </para>
+    /// </remarks>
+    private string? ResolveRequestAppKey(HttpRequestMessage? request)
+    {
+        if (request is not null && TryReadAppKeyFromRequest(request, out var stamped))
+            return stamped;
+
+        var currentAppKey = _appContextHolder?.Current?.AppKey;
+        if (!string.IsNullOrEmpty(currentAppKey))
+            return currentAppKey;
+
+        return TryGetDefaultAppKey();
+    }
+
+    /// <summary>读取生成代码写入请求属性的应用维度键。</summary>
+    private static bool TryReadAppKeyFromRequest(HttpRequestMessage request, out string? appKey)
+    {
+#if NETSTANDARD2_0
+        if (request.Properties.TryGetValue(HttpExecutionConstants.AppKeyPropertyKey, out var raw)
+            && raw is string text && text.Length > 0)
+        {
+            appKey = text;
+            return true;
+        }
+#else
+        if (request.Options.TryGetValue(
+                new HttpRequestOptionsKey<string>(HttpExecutionConstants.AppKeyPropertyKey), out var text)
+            && !string.IsNullOrEmpty(text))
+        {
+            appKey = text;
+            return true;
+        }
+#endif
+        appKey = null;
+        return false;
+    }
+
+    /// <summary>
+    /// 取注册表默认应用键；确实无默认应用时返回 <c>null</c> 并<b>每宿主告警一次</b>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>AM2-05</b>：此前三处 `try { GetDefaultApp() } catch { }` 把任意异常（含默认应用配置损坏、
+    /// 并发移除、懒加载工厂故障）一并吞掉，请求静默退化到全局维度。
+    /// </para>
+    /// <para>
+    /// <b>为什么按"状态"而不是"异常类型"判定</b>：<c>GetDefaultApp()</c> 在默认键<b>非空</b>时会走
+    /// <c>TryMaterializeLazy</c> → <c>lazy.Value</c>，用户工厂抛出的 <c>InvalidOperationException</c>
+    /// 极为常见（"配置未就绪"）。若简单把 catch 收窄为 <c>catch (InvalidOperationException)</c>，
+    /// 这类真实故障仍会被当成"无默认应用"吞掉 —— 那只是把"吞全部"改成"吞一半"。
+    /// 因此这里先读 <see cref="IAppManager{TAppContext}.DefaultAppKey"/>：
+    /// 键为空时 <c>GetDefaultApp()</c> 的唯一抛出路径就是"注册表无任何可用应用"，捕获是精确的；
+    /// 键非空时一律不捕获，工厂故障必须上抛。
+    /// </para>
+    /// </remarks>
+    private string? TryGetDefaultAppKey()
+    {
+        if (_appManager is null)
+            return null;
+
+        if (!string.IsNullOrEmpty(_appManager.DefaultAppKey))
+        {
+            // 键非空：可能物化懒加载默认应用 —— 任何异常都必须上抛（不得静默降级）。
+            return _appManager.GetDefaultApp().AppKey;
+        }
+
+        try
+        {
+            return _appManager.GetDefaultApp().AppKey;
+        }
+        catch (InvalidOperationException)
+        {
+            WarnMissingContextOnce();
+            return null;
+        }
+    }
+
+    /// <summary>请求缺少应用上下文且无默认应用时的告警（每执行器实例一次）。</summary>
+    /// <remarks>
+    /// 用<b>实例字段</b>而非静态字段：<see cref="IHttpRequestExecutor"/> 以容器单例注册，
+    /// 实例闸门即"每宿主一次"，不会在多容器/并行测试间串味（与
+    /// <c>SsrfStrictModeAllowlistStartupCheck</c> 的"按容器单例保证每宿主一次"同口径）。
+    /// </remarks>
+    private void WarnMissingContextOnce()
+    {
+        if (Interlocked.Exchange(ref _warnedMissingContext, 1) != 0)
+            return;
+
+        _logger.LogWarning(
+            "请求缺少应用上下文且未配置默认应用：per-app 弹性策略与响应缓存的应用维度已退化为全局维度，"
+            + "多租户宿主存在跨应用串用策略/缓存的风险。请在请求入口调用 UseAppScope(appKey)，"
+            + "或确保注册表存在默认应用。");
+    }
+
+    /// <summary>
     /// 解析当前请求应使用的弹性策略解析器。
     /// 优先使用 per-app 解析器（如果可用且当前有应用上下文），回退到全局解析器。
     /// </summary>
-    private IResiliencePolicyResolver? ResolveEffectiveResilienceResolver()
+    /// <param name="request">当前请求（用于读取方法入口写入的应用维度，AM2-12）。</param>
+    private IResiliencePolicyResolver? ResolveEffectiveResilienceResolver(HttpRequestMessage? request)
     {
         if (_appResilienceResolver != null)
         {
-            // 1) 显式环境上下文优先（UseApp / BeginScope 建立）
-            var currentAppKey = _appContextHolder?.Current?.AppKey;
-
-            // 2) 回退：由注册表给出默认应用（不再依赖构造函数写入环境上下文）
-            if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
-            {
-                try
-                {
-                    currentAppKey = _appManager.GetDefaultApp().AppKey;
-                }
-                catch
-                {
-                    // 默认应用未设置时不阻断请求，回退到全局策略
-                }
-            }
-
+            var currentAppKey = ResolveRequestAppKey(request);
             if (!string.IsNullOrEmpty(currentAppKey))
             {
                 var perAppResolver = _appResilienceResolver.ResolveResolver(currentAppKey!);
@@ -134,26 +231,18 @@ public class DefaultHttpRequestExecutor(
     /// <para>
     /// <see cref="IHttpResponseCache"/> 为进程级单例，缓存键必须显式携带应用维度，否则
     /// AsyncLocal 切换应用后同名同参请求会跨应用串缓存。取键口径与
-    /// <see cref="ResolveEffectiveResilienceResolver"/> 的 per-app 策略解析一致：
-    /// 显式环境上下文（UseApp / BeginScope）优先，回退默认应用；默认应用未设置时回退
+    /// <see cref="ResolveEffectiveResilienceResolver"/> 的 per-app 策略解析一致
+    /// （<b>请求属性 → 环境上下文 → 默认应用</b>）：默认应用未设置时回退
     /// <c>"default"</c>（fail-open 仅影响键维度隔离，不产生脏读）。
     /// </para>
+    /// <para>
+    /// <b>AM2-12</b>：改为经 <see cref="ResolveRequestAppKey"/> 读取 —— 同一个请求在
+    /// "缓存维度"与"弹性作用域"两处必须得到<b>同一个</b>应用键，且该键来自方法入口而非执行期。
+    /// </para>
     /// </remarks>
-    private string ResolveCurrentCacheScopeKey()
+    private string ResolveCurrentCacheScopeKey(HttpRequestMessage? request)
     {
-        var currentAppKey = _appContextHolder?.Current?.AppKey;
-        if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
-        {
-            try
-            {
-                currentAppKey = _appManager.GetDefaultApp().AppKey;
-            }
-            catch
-            {
-                // 默认应用未设置时不阻断请求，回退 "default"（与弹性路径容错口径一致）
-            }
-        }
-
+        var currentAppKey = ResolveRequestAppKey(request);
         return string.IsNullOrEmpty(currentAppKey) ? "default" : currentAppKey!;
     }
 
@@ -180,9 +269,9 @@ public class DefaultHttpRequestExecutor(
     /// 键格式变更导致一次性全量缓存失效（与引入应用维度时同口径），已在 CHANGELOG 明示。
     /// </para>
     /// </remarks>
-    private string ResolveCacheScopePrefix(IBaseHttpClient? httpClient)
+    private string ResolveCacheScopePrefix(IBaseHttpClient? httpClient, HttpRequestMessage? request)
     {
-        var appKey = ResolveCurrentCacheScopeKey();
+        var appKey = ResolveCurrentCacheScopeKey(request);
         var clientName = (httpClient as IHttpClientIdentity)?.ClientName;
         return string.IsNullOrEmpty(clientName) ? appKey : appKey + "\u001F" + clientName;
     }
@@ -531,7 +620,7 @@ public class DefaultHttpRequestExecutor(
     IProgress<long>? progress = null,
     CancellationToken cancellationToken = default)
     {
-        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        var effectiveResolver = ResolveEffectiveResilienceResolver(request);
         if (executionDescriptor.Resilience != null && effectiveResolver != null)
         {
             // 设置 SkipResilience 标记，避免全局 ResilientHttpClient 双重包装弹性策略
@@ -861,7 +950,7 @@ public class DefaultHttpRequestExecutor(
     {
         // void 返回类型：仅应用弹性策略（不缓存无返回值的结果）
         // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
-        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        var effectiveResolver = ResolveEffectiveResilienceResolver(request);
         if (descriptor.Resilience != null && effectiveResolver != null)
         {
             SetSkipResilienceFlag(request);
@@ -919,7 +1008,7 @@ public class DefaultHttpRequestExecutor(
     Func<HttpRequestMessage, CancellationToken, Task<TResult>> coreExecute)
     {
         // 弹性策略包装（在缓存之前包装，使缓存命中时不触发弹性策略，缓存未命中时弹性策略保护实际请求）
-        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        var effectiveResolver = ResolveEffectiveResilienceResolver(request);
         if (descriptor.Resilience != null && effectiveResolver != null)
         {
             // 设置 SkipResilience 标记，避免全局弹性策略双重包装
@@ -941,7 +1030,7 @@ public class DefaultHttpRequestExecutor(
                     var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
                     // 透传滑动过期语义
                     // 键前置「应用维度 + 客户端维度」前缀，堵跨应用/跨客户端串缓存（与仅缓存路径口径一致）
-                    var scopedKey = $"{ResolveCacheScopePrefix(httpClient)}\u001F{descriptor.CacheKey}";
+                    var scopedKey = $"{ResolveCacheScopePrefix(httpClient, request)}\u001F{descriptor.CacheKey}";
                     return await _cacheProvider.GetOrFetchAsync(
                     scopedKey,
                     () => ResilienceWrapped(cancellationToken),
@@ -960,7 +1049,7 @@ public class DefaultHttpRequestExecutor(
             var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
             // 透传滑动过期语义
             // 键前置「应用维度 + 客户端维度」前缀，堵跨应用/跨客户端串缓存（与弹性+缓存路径口径一致）
-            var scopedKey = $"{ResolveCacheScopePrefix(httpClient)}\u001F{descriptor.CacheKey}";
+            var scopedKey = $"{ResolveCacheScopePrefix(httpClient, request)}\u001F{descriptor.CacheKey}";
             return await _cacheProvider.GetOrFetchAsync(
             scopedKey,
             () => coreExecute(request, cancellationToken),
@@ -994,19 +1083,11 @@ public class DefaultHttpRequestExecutor(
     /// </summary>
     private void StampResilienceAppKey(HttpRequestMessage request)
     {
-        var appKey = _appContextHolder?.Current?.AppKey;
-        if (string.IsNullOrEmpty(appKey) && _appManager != null)
-        {
-            try
-            {
-                appKey = _appManager.GetDefaultApp().AppKey;
-            }
-            catch
-            {
-                // 默认应用未设置时不阻断请求，作用域键保持无应用维度
-            }
-        }
+        // AM2-12：生成代码已在方法入口写入 appKey 时不覆盖（它是"身份"的权威来源）。
+        if (TryReadAppKeyFromRequest(request, out _))
+            return;
 
+        var appKey = ResolveRequestAppKey(request);
         if (string.IsNullOrEmpty(appKey))
             return;
 

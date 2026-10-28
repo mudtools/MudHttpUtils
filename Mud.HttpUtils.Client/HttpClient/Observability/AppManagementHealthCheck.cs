@@ -78,16 +78,20 @@ internal sealed class AppManagementHealthCheck : IHealthCheck
             issues.Add("IAppManager<IMudAppContext> 未注册（应用切换不可用）");
             data["appManager"] = "not registered";
             data["registeredAppCount"] = 0;
+            data["hasUsableApp"] = false;
         }
         else
         {
             var appCount = appManager.GetAllApps().Count();
+            // AM2-06/16：可用性判定与启动校验同源（AppManagerProbe），避免两处口径漂移。
+            var hasUsableApp = AppManagerProbe.HasAnyUsableApp(appManager);
             data["appManager"] = "registered";
             data["registeredAppCount"] = appCount;
-            if (appCount == 0)
+            data["hasUsableApp"] = hasUsableApp;
+            if (!hasUsableApp)
             {
                 status = WorstStatus(status, HealthStatus.Degraded);
-                issues.Add("IAppManager 已注册但未注册任何应用");
+                issues.Add("IAppManager 已注册但没有可用应用（未注册任何应用，或懒加载项未设为默认应用）");
             }
         }
 
@@ -105,9 +109,11 @@ internal sealed class AppManagementHealthCheck : IHealthCheck
         }
 
         // 检查默认应用键
+        // AM2-16：不输出 appKey 原文 —— 健康检查的 Data 会被 /health 探针、监控系统、工单系统外发，
+        // 默认应用键往往就是租户标识。只报告"有没有"。
         if (appManager != null)
         {
-            data["defaultAppKey"] = appManager.DefaultAppKey ?? "(none)";
+            data["hasDefaultApp"] = !string.IsNullOrEmpty(appManager.DefaultAppKey);
         }
 
         var description = issues.Count > 0
@@ -126,8 +132,11 @@ internal sealed class AppManagementHealthCheck : IHealthCheck
 
     private static HealthStatus WorstStatus(HealthStatus current, HealthStatus next)
     {
-        // Unhealthy > Degraded > Healthy
-        return (int)next > (int)current ? next : current;
+        // 严重度顺序：Unhealthy(0) < Degraded(1) < Healthy(2)，即枚举值越小越严重。
+        // 修复（2026-10-28 复核附带发现）：原实现为 `(int)next > (int)current ? next : current`，
+        // 语义正好相反 —— Healthy(2) 被当成"最严重"，导致 WorstStatus 恒返回 Healthy，
+        // 本健康检查的所有 Degraded/Unhealthy 判定（含缺失 IAppManager / IAppAccessAuthorizer）全部失效。
+        return (int)next < (int)current ? next : current;
     }
 }
 

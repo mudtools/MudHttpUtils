@@ -182,6 +182,74 @@ public class AppManagementStartupValidatorTests
     }
 
     [Fact]
+    public async Task StartupValidator_AutoRegisteredEmptyManager_ReportsFatal()
+    {
+        // AM2-06：源生成器会为默认模式无条件 TryAddSingleton 一个"空的 DefaultAppManager"，
+        // 于是 RequireAppManager=true 时自检恒通过，缺陷延后到首个请求才暴露。
+        var options = new MudHttpAppManagementOptions
+        {
+            RequireAppContextHolder = false,
+            RequireAppManager = true,
+        };
+
+        var emptyManager = new DefaultAppManager<IMudAppContext>();
+        using var sp = (ServiceProvider)BuildProvider(
+            s => s.AddSingleton<IAppManager<IMudAppContext>>(emptyManager));
+        var validator = CreateValidator(sp, options);
+
+        var act = async () => await validator.StartAsync(CancellationToken.None);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("*未注册任何可用应用*",
+                "AM2-06：已注册但无可用应用必须与「未注册」同等对待");
+    }
+
+    [Fact]
+    public async Task StartupValidator_LazyOnlyWithDefaultKey_NotReported()
+    {
+        var options = new MudHttpAppManagementOptions
+        {
+            RequireAppContextHolder = false,
+            RequireAppManager = true,
+        };
+
+        var manager = new DefaultAppManager<IMudAppContext>();
+        manager.RegisterLazy("lazy-app", () => new FakeAppContext("lazy-app"), isDefault: true);
+
+        using var sp = (ServiceProvider)BuildProvider(
+            s => s.AddSingleton<IAppManager<IMudAppContext>>(manager));
+        var validator = CreateValidator(sp, options);
+
+        var act = async () => await validator.StartAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync("仅声明但已设为默认应用的懒加载项算可用（HasApp 认声明，且不物化）");
+    }
+
+    [Fact]
+    public async Task StartupValidator_LazyOnlyWithoutDefaultKey_ReportsFatal()
+    {
+        // AM2-06（X10）：IAppManager 没有"枚举懒加载声明"的成员 ⇒ "lazy-only 且无默认键"
+        // 与"空管理器"在接口层面不可区分；行为上也确实等价（首个 GetDefaultApp 必然抛）。
+        var options = new MudHttpAppManagementOptions
+        {
+            RequireAppContextHolder = false,
+            RequireAppManager = true,
+        };
+
+        var manager = new DefaultAppManager<IMudAppContext>();
+        manager.RegisterLazy("lazy-app", () => new FakeAppContext("lazy-app"));
+
+        using var sp = (ServiceProvider)BuildProvider(
+            s => s.AddSingleton<IAppManager<IMudAppContext>>(manager));
+        var validator = CreateValidator(sp, options);
+
+        var act = async () => await validator.StartAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>(
+            "无默认键的 lazy-only 管理器无法服务任何请求，启动期即应报出");
+    }
+
+    [Fact]
     public async Task AddMudHttpAppManagementStartupValidation_ShouldRegisterHostedService()
     {
         var services = new ServiceCollection();

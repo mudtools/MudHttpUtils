@@ -4,6 +4,68 @@
 
 ---
 
+## 3.1.0（多应用语义收敛，2026-10-28，未发布）
+
+> 本节的 P0 子集（默认应用链路 / 懒加载状态机 / URL 校验假接线 / 启动诊断）可按 3.1.1 patch 单独发布；
+> 其余条目含**行为变更**，必须走次版本。下面按"是否行为变更"分组标注。
+
+### 破坏性变更 / 升级注意
+
+- **容器级 `IUrlValidator` 从此真正生效**：该实现**此前从未被调用**（`EnhancedHttpClient` 直接调用静态
+  `UrlValidator`，而承诺"转发到 DI 实例"的 `UrlValidator.Instance` 是既无写入也无读取的死字段）。
+  升级后原先被静默放行的 URL 可能开始被拒绝。**需要旧行为时移除该自定义注册即可**（DI 回退到
+  `DefaultUrlValidator`/静态门面，语义精确，无需额外开关）。
+- **作用域乱序释放的终态变化**：此前"先释放外层作用域"会残留中间应用上下文（可能串租户），
+  现按作用域栈回退到正确祖先。
+- **缓存键/熔断作用域的应用维度来源变化**：改为"方法入口写入的 appKey"优先（此前为执行期重读环境上下文），
+  修复"作用域提前释放 → B 应用响应写入 A 应用缓存维度"。
+- **生成产物有变化**：默认模式改用 `__ResolveDefaultApp()`；非 HttpClient 模式的生成方法会向请求写入应用维度。
+  请重新编译（无需改代码）。
+- **`clientName` 非规范字符开始告警**（仅告警，不阻断、无开关）。
+
+### 新增
+
+- `EnhancedHttpClientOptions.UrlValidator`：URL 验证器的唯一注入点（`null` ⇒ 回落静态门面，无 DI 路径零漂移）。
+- `AddMudHttpAppScopeSwitcher<TSwitcher>()`：以**同一实例**同时暴露 `IAppContextHolder` 与 `IAppScopeSwitcher`。
+- `AppConfigurationChangedEventArgs.IsDefaultAppChanged`（含新增构造重载，原构造保持兼容）：默认应用切换可观测。
+- `DefaultAppManager<TAppContext>.RetireDelay`（protected virtual）：旧上下文延迟释放窗口（默认 60 秒）。
+
+### 修复
+
+- **默认应用回退分支是死代码**：`_appManager?.GetDefaultApp() ?? _defaultAppContext` 在管理器非空时，
+  `GetDefaultApp()` 抛异常直接穿出，构造期绑定值永远用不上，且注册表默认键的运行期热切换不生效。
+  现改为"注册表默认键存在则跟随（`TryGetApp`），否则回退构造期绑定值"。
+- **`UrlValidator.Instance` 为死字段**：删除误导性状态与三处"静态弱引用桥接"文档；自定义 `IUrlValidator`
+  经 `EnhancedHttpClientOptions` 真正接入（含重定向逐跳复验路径）。
+- **懒加载（`RegisterLazy`）应用无法 `UpdateApp`**：`HasApp`/`GetApp` 认声明，`UpdateApp` 只认已物化实例。
+  现统一为"声明态 ∪ 物化态"口径，`UpdateApp`/`UpdateAppAsync` 可将声明态升级为物化态（含并发 CAS 重试）。
+- **默认应用被移除后回退忽略懒加载声明**：仅剩懒加载应用时默认键被置空，导致后续全部请求失败。
+  回退候选现纳入声明态（不物化，避免锁内执行用户工厂）。
+- **并发首次访问懒加载应用重复发布 `AppInstantiated` 并重复重建外部标识索引**：现以注册表 `Add` 返回值
+  作一次性闸门，并在物化后摘除声明（工厂闭包不再常驻）。
+- **执行器把任意异常当成"无默认应用"吞掉**：三处裸 `catch { }` 收敛为一处，并改为**按状态判定**——
+  仅当默认键为空（此时唯一抛出路径是"无应用"）才捕获；默认键非空时懒加载工厂异常一律上抛。
+  回退时每宿主告警一次。
+- **启动期"多应用接线自检"被空的自动注册管理器掩盖**：`RequireAppManager` 此前恒通过；现按
+  "未注册 **或** 无任何可用应用"判定并给出可执行指引。
+- **`RegisterApp` 覆盖"仅声明"的键时事件类型错报 `Added`**：修正为 `Updated` 并清理过期声明
+  （并发同键注册仍保证 `Added` 恰好一次）。
+- **应用上下文被替换/移除后旧实例永不释放**（`IServiceScope`/`HttpClient`/定时器泄漏）：改为延迟释放
+  （默认 60s，`RetireDelay` 可覆写；≤ 0 立即释放）。
+- **作用域乱序释放残留他人应用上下文**：`AsyncLocalAppContextSwitcher` 改为链表栈（ADR-005），
+  释放只标记节点，回退由读取端沿链完成 ⇒ 乱序/跨流释放终态可预测。
+- **缓存键与熔断作用域的应用维度来源错配**：生成代码在方法入口把 appKey 写入请求选项，执行器优先读取；
+  同时把每请求 3 次默认应用解析合并为 1 次。
+- **健康检查输出 `defaultAppKey` 租户标识**：改为 `hasDefaultApp` + `hasUsableApp`；并修复
+  `WorstStatus` 严重度比较方向写反（此前 `Degraded`/`Unhealthy` 永不生效、恒报 Healthy）。
+- **`AppManagerDiagnostics` 静态通道在多容器下互相覆盖且容器释放后仍持有 `ILogger`**：接线改为可注销（owner 判定）。
+- **`RegisterAppAsync`/`UpdateAppAsync` 在初始化完成后不再响应取消**：现于注册前检查取消并释放新实例。
+- **URL 校验失败消息回显全部白名单域名**：改为只报数量。
+- **per-app 弹性策略缓存**：`ConcurrentDictionary.Count`（O(n) + 全桶加锁）与每次未命中分配闭包改为
+  共享的 `BoundedAppCache`（独立计数 + 最旧淘汰 + 零闭包）；溢出时不再"每请求新建 provider"导致熔断器归零。
+
+---
+
 ## 3.1.0（多应用缓存隔离，2026-10-25）
 
 ### 破坏性变更 / 升级注意

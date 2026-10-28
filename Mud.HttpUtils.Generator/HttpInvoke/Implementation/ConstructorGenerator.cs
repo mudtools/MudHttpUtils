@@ -995,7 +995,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
         {
-            codeBuilder.AppendLine("            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;");
+            codeBuilder.AppendLine("            var context = __ResolveDefaultApp();");
         }
         else
         {
@@ -1020,7 +1020,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
         {
-            codeBuilder.AppendLine("            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;");
+            codeBuilder.AppendLine("            var context = __ResolveDefaultApp();");
         }
         else
         {
@@ -1030,7 +1030,63 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
+        GenerateDefaultAppResolver(codeBuilder, isDefaultMode);
+
         GenerateBeginScopeMethod(codeBuilder);
+    }
+
+    /// <summary>
+    /// AM2-01：发射默认应用解析辅助方法（<b>仅默认模式</b> ── 只有该模式同时持有
+    /// <c>_appManager</c> 与 <c>_defaultAppContext</c> 两个来源）。
+    /// </summary>
+    /// <param name="codeBuilder">代码构建器。</param>
+    /// <param name="isDefaultMode">是否为默认模式（无 TokenManager）。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>修复的缺陷</b>：原产物为 <c>_appManager?.GetDefaultApp() ?? _defaultAppContext</c>。
+    /// <c>GetDefaultApp()</c> 在"管理器非空但没有默认应用"时<b>抛异常</b>而不是返回 <c>null</c>，
+    /// 异常直接穿出 ⇒ <c>??</c> 右侧是<b>死代码</b>，构造期绑定的默认上下文永远用不上；
+    /// 同时"注册表默认键"在构造之后的运行期切换也完全不生效（两个真相源）。
+    /// </para>
+    /// <para>
+    /// <b>为什么用 <c>TryGetApp</c> 而不是 <c>GetApp</c></b>：<c>TryGetApp</c> 未命中时返回 <c>false</c>
+    /// 且对非法 key 同样 fail-closed，可以安全地作为"回退链"的一环；<c>GetApp</c> 会抛，无法参与回退。
+    /// 也不改成再调一次 <c>GetDefaultApp()</c> —— 那在空管理器下仍会抛，等于没修。
+    /// </para>
+    /// <para>
+    /// <b>产物必须兼容 netstandard2.0 消费方</b>：只使用 C# 7.3 语法与 <c>global::</c> 限定名，
+    /// 不使用 <c>is not null</c> 等 C# 9 特性。
+    /// </para>
+    /// </remarks>
+    private static void GenerateDefaultAppResolver(StringBuilder codeBuilder, bool isDefaultMode)
+    {
+        if (!isDefaultMode)
+            return;
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 解析默认应用上下文（AM2-01）。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// 优先跟随<b>注册表默认键</b>（支持运行期 <c>SetDefaultApp</c> 热切换，命中懒加载声明时会物化），");
+        codeBuilder.AppendLine("        /// 键为空或不可解析时回退<b>构造期绑定值</b> <c>_defaultAppContext</c>。");
+        codeBuilder.AppendLine("        /// 不使用 <c>GetDefaultApp()</c>：它在无默认应用时抛异常，无法参与回退。");
+        codeBuilder.AppendLine("        /// </remarks>");
+        codeBuilder.AppendLine("        private IMudAppContext __ResolveDefaultApp()");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            if (_appManager != null)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                var __defaultKey = _appManager.DefaultAppKey;");
+        codeBuilder.AppendLine("                if (__defaultKey != null && __defaultKey.Length > 0");
+        codeBuilder.AppendLine("                    && _appManager.TryGetApp(__defaultKey, out var __resolved)");
+        codeBuilder.AppendLine("                    && __resolved != null)");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine("                    return __resolved;");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("            }");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("            return _defaultAppContext;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
     }
 
     /// <summary>

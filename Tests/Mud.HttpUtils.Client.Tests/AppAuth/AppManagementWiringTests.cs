@@ -153,6 +153,40 @@ public class AppManagementWiringTests
     }
 
     [Fact]
+    public void TwoContainers_DisposeFirst_SecondStillReceivesDiagnostics()
+    {
+        // AM2-14：静态槽位在多容器下互相覆盖。先释放的容器绝不能清掉仍在运行的容器的日志出口。
+        var (_, configurationA) = BuildConfig("wired");
+        var (_, configurationB) = BuildConfig("wired");
+
+        var logA = new CollectingLoggerProvider();
+        var logB = new CollectingLoggerProvider();
+
+        var spA = BuildConfiguredContainer(configurationA, logA);
+        var spB = BuildConfiguredContainer(configurationB, logB);
+
+        _ = spA.GetRequiredService<IEnhancedHttpClientFactory>().CreateClient("wired");
+        _ = spB.GetRequiredService<IEnhancedHttpClientFactory>().CreateClient("wired");
+
+        spA.Dispose(); // 先释放 A：其 wiring 的 Unwire 因 owner 已变成 B 而为空操作
+
+        AppManagerDiagnostics.SubscriberFailed.Should().NotBeNull(
+            "AM2-14：A 释放后 B 的接线必须仍然有效（owner 判定，不误清）");
+
+        AppManagerDiagnostics.SubscriberFailed!(new InvalidOperationException("订阅者故障模拟"), "app-2",
+            AppConfigurationChangeType.Updated);
+
+        logB.GetLogRecords(LogLevel.Warning)
+            .Should().Contain(r => r.Message.Contains("app-2", StringComparison.Ordinal),
+                "存活容器 B 必须仍能收到诊断");
+
+        spB.Dispose();
+
+        AppManagerDiagnostics.SubscriberFailed.Should().BeNull(
+            "唯一剩余容器 B 释放后应清空槽位（避免向已释放的日志管道写入）");
+    }
+
+    [Fact]
     public void SubscriberFailure_ShouldNotBreakRegistryStateMachine()
     {
         // 行为契约：订阅者抛异常不得影响注册表状态机（DefaultAppManager 吞异常后走诊断出口）。

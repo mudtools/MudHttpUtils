@@ -249,3 +249,6 @@ Mud.HttpUtils.IAsyncHttpContentSerializer
 Mud.HttpUtils.IAsyncHttpContentSerializer.ToHttpContentAsync<T>(T item, object? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Net.Http.HttpContent?>
 Mud.HttpUtils.IHttpClientIdentity
 Mud.HttpUtils.IHttpClientIdentity.ClientName.get -> string?
+Mud.HttpUtils.AppConfigurationChangedEventArgs.AppConfigurationChangedEventArgs(string! appKey, Mud.HttpUtils.AppConfigurationChangeType changeType, bool isDefaultAppChanged) -> void
+Mud.HttpUtils.AppConfigurationChangedEventArgs.IsDefaultAppChanged.get -> bool
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.RetireDelay.get -> System.TimeSpan

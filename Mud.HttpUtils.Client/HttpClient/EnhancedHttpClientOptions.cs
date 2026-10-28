@@ -56,6 +56,27 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     public IAppAccessAuthorizer? AppAccessAuthorizer { get; set; }
 
     /// <summary>
+    /// 获取或设置 URL 验证器（SSRF 白名单校验）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>：回落进程级静态门面 <see cref="UrlValidator"/>（无 DI 路径行为不变）。</value>
+    /// <remarks>
+    /// <para>
+    /// <b>AM2-02</b>：此前 <see cref="EnhancedHttpClient"/> 的主校验链路<b>直接调用</b>静态
+    /// <see cref="UrlValidator"/>，导致宿主注册的容器级 <see cref="IUrlValidator"/> 实现<b>从未生效</b>
+    /// （<c>UrlValidator.Instance</c> 是既无写入也无读取的死字段）。本属性是该依赖的唯一注入点。
+    /// </para>
+    /// <para>
+    /// DI 路径由 <c>CreateEnhancedClient</c> 从容器回填 <c>sp.GetService&lt;IUrlValidator&gt;()</c>；
+    /// 无 DI 路径保持 <c>null</c> ⇒ 逐位复用静态门面，行为零漂移。
+    /// </para>
+    /// <para>
+    /// <b>维护约束</b>：本类新增可写属性时，必须同步更新 <see cref="Clone"/> 与
+    /// <c>EnhancedHttpClientOptionsCloner</c>（后者对 DI 解析面属性刻意不拷贝）。
+    /// </para>
+    /// </remarks>
+    public IUrlValidator? UrlValidator { get; set; }
+
+    /// <summary>
     /// 获取或设置是否允许自定义基础URL。
     /// </summary>
     /// <value>如果允许自定义基础URL则为 <c>true</c>;否则为 <c>false</c>。默认为 <c>false</c>。</value>
@@ -232,6 +253,7 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
         ResponseInterceptors = ResponseInterceptors,
         SensitiveDataMasker = SensitiveDataMasker,
         AppAccessAuthorizer = AppAccessAuthorizer,
+        UrlValidator = UrlValidator,
         // 运行期配置面
         AllowCustomBaseUrls = AllowCustomBaseUrls,
         RequestBodySerialization = RequestBodySerialization,

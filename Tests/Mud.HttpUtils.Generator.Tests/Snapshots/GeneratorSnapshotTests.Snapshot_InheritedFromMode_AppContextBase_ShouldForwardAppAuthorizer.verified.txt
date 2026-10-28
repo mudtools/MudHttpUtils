@@ -169,8 +169,32 @@ namespace TestNamespace.Internal
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
         public IDisposable UseDefaultAppScope()
         {
-            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;
+            var context = __ResolveDefaultApp();
             return _appContextHolder.BeginScope(context);
+        }
+
+        /// <summary>
+        /// 解析默认应用上下文（AM2-01）。
+        /// </summary>
+        /// <remarks>
+        /// 优先跟随<b>注册表默认键</b>（支持运行期 <c>SetDefaultApp</c> 热切换，命中懒加载声明时会物化），
+        /// 键为空或不可解析时回退<b>构造期绑定值</b> <c>_defaultAppContext</c>。
+        /// 不使用 <c>GetDefaultApp()</c>：它在无默认应用时抛异常，无法参与回退。
+        /// </remarks>
+        private IMudAppContext __ResolveDefaultApp()
+        {
+            if (_appManager != null)
+            {
+                var __defaultKey = _appManager.DefaultAppKey;
+                if (__defaultKey != null && __defaultKey.Length > 0
+                    && _appManager.TryGetApp(__defaultKey, out var __resolved)
+                    && __resolved != null)
+                {
+                    return __resolved;
+                }
+            }
+
+            return _defaultAppContext;
         }
 
 
@@ -190,6 +214,13 @@ namespace TestNamespace.Internal
 
             var __url = $"/base";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
+#if NETSTANDARD2_0
+#pragma warning disable CS0618 // netstandard2.0 无 HttpRequestMessage.Options，只能写已过时的 Properties
+            __httpRequest.Properties[global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey] = __appContext.AppKey;
+#pragma warning restore CS0618
+#else
+            __httpRequest.Options.Set(new System.Net.Http.HttpRequestOptionsKey<string>(global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey), __appContext.AppKey);
+#endif
 
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
@@ -270,6 +301,13 @@ namespace TestNamespace.Internal
 
             var __url = $"/derived";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
+#if NETSTANDARD2_0
+#pragma warning disable CS0618 // netstandard2.0 无 HttpRequestMessage.Options，只能写已过时的 Properties
+            __httpRequest.Properties[global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey] = __appContext.AppKey;
+#pragma warning restore CS0618
+#else
+            __httpRequest.Options.Set(new System.Net.Http.HttpRequestOptionsKey<string>(global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey), __appContext.AppKey);
+#endif
 
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,

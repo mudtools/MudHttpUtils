@@ -5,6 +5,15 @@
 
 ---
 
+## 本轮（2026-10-28 多应用管理审查修复）
+
+| 文档 | 内容 |
+| --- | --- |
+| `2026-10-28-多应用管理-审查修复与功能完善方案.md` | **本轮主方案**：33 条审查结论（高 6 / 中 21 / 低 6）→ 6 组根因 → 4 批（P0 `3.1.1` / P1 `3.2.0` / P2 `3.3.0` / P3 测试门禁）+ 24 张修复卡（AM2-01~24：现象 / 最小 diff / 测试 / 回退）+ 风险登记 + DoD + 待决事项 5 条 + CHANGELOG 草稿；含本轮增量新发现 **C9**（`UrlValidator.Instance` 死字段 ⇒ 自定义 `IUrlValidator` 从未生效且告警被掩盖） |
+| `adr/ADR-001-默认应用解析的单一真相源.md` | 生成器 `_defaultAppContext` 与注册表 `DefaultAppKey` 两个真相源的收口（AM2-01） |
+| `adr/ADR-002-应用切换面的DI注册与生命周期.md` | `IAppScopeSwitcher` 显式单例注册入口 `AddMudHttpAppScopeSwitcher<T>()`（AM2-13） |
+| `adr/ADR-003-per-app域名白名单的承载方式.md` | 新接口 `IAppScopedUrlValidator`（只增不改）+ 静态门面降级为兼容层（AM2-02/22） |
+
 ## 本轮（2026-10-09 下游消费分析）
 
 | 文档 | 内容 |

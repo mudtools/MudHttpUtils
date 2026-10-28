@@ -597,6 +597,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
+
+        // AM2-12：把"方法入口捕获的应用上下文"随请求下发。
+        // 执行器（DefaultHttpRequestExecutor）据此计算响应缓存维度与熔断作用域，不再在执行期重读
+        // _appContextHolder.Current —— 后者与入口捕获值会在"作用域提前释放 / 跨流枚举"时错配，
+        // 导致 B 应用的响应被写入 A 应用的缓存维度（跨租户串缓存）。
+        // 仅非 HttpClient 模式有 __appContext 局部变量（HttpClient 模式无应用上下文概念）。
+        if (!hasHttpClient)
+        {
+            codeBuilder.AppendLine("#if NETSTANDARD2_0");
+            codeBuilder.AppendLine("#pragma warning disable CS0618 // netstandard2.0 无 HttpRequestMessage.Options，只能写已过时的 Properties");
+            codeBuilder.AppendLine("            __httpRequest.Properties[global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey] = __appContext.AppKey;");
+            codeBuilder.AppendLine("#pragma warning restore CS0618");
+            codeBuilder.AppendLine("#else");
+            codeBuilder.AppendLine("            __httpRequest.Options.Set(new System.Net.Http.HttpRequestOptionsKey<string>(global::Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey), __appContext.AppKey);");
+            codeBuilder.AppendLine("#endif");
+        }
         // 传入 context/methodSymbol 以分派 [HeaderCollection] 并发射 HTTPCLIENT037 提示
         _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo, context, methodSymbol);
 
